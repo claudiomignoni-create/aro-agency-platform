@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getModel } from "@/lib/models";
-import { ModelForm } from "../../model-form";
+import { getModelProfile } from "@/lib/models";
+import {
+  isModelProfileTab,
+  ModelProfileEditor,
+  type ModelProfileTab
+} from "../../model-form";
 import {
   archiveModelAction,
   deleteModelAction,
-  updateModelAction,
   updateModelStatusAction
 } from "../../actions";
 
@@ -13,23 +16,40 @@ type EditModelPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    saved?: string;
+    tab?: string;
+  }>;
 };
 
-export default async function EditModelPage({ params }: EditModelPageProps) {
+export default async function EditModelPage({
+  params,
+  searchParams
+}: EditModelPageProps) {
   const { id } = await params;
-  const model = await getModel(id);
+  const { saved, tab } = (await searchParams) ?? {};
+  const activeTab: ModelProfileTab =
+    tab && isModelProfileTab(tab) ? tab : "basic";
+  const profile = await getModelProfile(id);
 
-  if (!model) {
+  if (!profile) {
     notFound();
   }
 
+  const model = profile.model;
+  const modelName = model.stage_name ?? model.display_name;
+
   return (
     <div className="stack">
+      {saved ? <p className="toast">Alteração salva com sucesso.</p> : null}
       <section className="panel">
         <span className="eyebrow">Editar modelo</span>
-        <h2>{model.display_name}</h2>
-        <p>Edite os dados principais, publicação e status do modelo.</p>
+        <h2>{modelName}</h2>
+        <p>Perfil profissional completo para uso administrativo e comercial.</p>
         <div className="actions">
+          <Link className="button secondary" href="/admin/models">
+            Voltar
+          </Link>
           <form action={updateModelStatusAction.bind(null, model.id, "approved")}>
             <button className="button secondary" type="submit">
               Aprovar
@@ -52,13 +72,7 @@ export default async function EditModelPage({ params }: EditModelPageProps) {
           </form>
         </div>
       </section>
-      <section className="panel">
-        <ModelForm
-          action={updateModelAction.bind(null, model.id)}
-          model={model}
-          submitLabel="Salvar alterações"
-        />
-      </section>
+      <ModelProfileEditor activeTab={activeTab} profile={profile} />
       <Link className="button secondary" href="/admin/models">
         Voltar para modelos
       </Link>
