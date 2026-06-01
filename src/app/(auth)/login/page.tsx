@@ -18,26 +18,38 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage = params.error ? errorMessages[params.error] : null;
 
   return (
-    <main className="page stack">
-      <section className="panel stack">
-        <span className="eyebrow">Login</span>
-        <h1>Acesse o sistema</h1>
-        <p>Entre com o e-mail e senha cadastrados no Supabase Auth.</p>
-        {errorMessage ? <p className="notice">{errorMessage}</p> : null}
-        <form action={signIn} className="form">
-          <input name="next" type="hidden" value={params.next ?? ""} />
-          <label>
-            E-mail
-            <input name="email" required type="email" />
-          </label>
-          <label>
-            Senha
-            <input name="password" required type="password" />
-          </label>
-          <button className="button" type="submit">
-            Entrar
-          </button>
-        </form>
+    <main className="page entry-page">
+      <section className="entry-stage">
+        <div className="entry-copy">
+          <span className="brand-mark">
+            <strong>ARO</strong>LAB
+          </span>
+          <h1 className="hero-title">Casting operations, refined.</h1>
+          <p>
+            Acesso seguro para administrar talentos, briefings, revisões e
+            material comercial.
+          </p>
+        </div>
+        <div className="panel stack entry-panel">
+          <span className="eyebrow">Login</span>
+          <h2>Acesse o sistema</h2>
+          <p>Entre com o e-mail e senha cadastrados.</p>
+          {errorMessage ? <p className="notice error">{errorMessage}</p> : null}
+          <form action={signIn} className="form">
+            <input name="next" type="hidden" value={params.next ?? ""} />
+            <label>
+              E-mail
+              <input name="email" required type="email" />
+            </label>
+            <label>
+              Senha
+              <input name="password" required type="password" />
+            </label>
+            <button className="button" type="submit">
+              Entrar
+            </button>
+          </form>
+        </div>
       </section>
     </main>
   );

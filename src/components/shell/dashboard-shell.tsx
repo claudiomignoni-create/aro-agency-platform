@@ -20,29 +20,52 @@ export function DashboardShell({
   navItems,
   title
 }: DashboardShellProps) {
+  const renderNav = () => (
+    <nav className="side-nav" aria-label="Navegação da área">
+      {navItems.map((item) => (
+        <Link href={item.href} key={item.href}>
+          {item.label}
+        </Link>
+      ))}
+    </nav>
+  );
+
+  const renderSignOutForm = () => (
+    <form action={signOut}>
+      <button className="link-button" type="submit">
+        Sair
+      </button>
+    </form>
+  );
+
   return (
     <main className="dashboard">
+      <details className="mobile-nav">
+        <summary>
+          <Link className="brand" href="/">
+            <strong>ARO</strong>LAB
+          </Link>
+          <span className="badge">Menu</span>
+        </summary>
+        <div className="mobile-nav-panel">
+          {renderNav()}
+          {renderSignOutForm()}
+        </div>
+      </details>
       <aside className="sidebar">
         <Link className="brand" href="/">
-          ARO Lab
+          <strong>ARO</strong>LAB
         </Link>
-        <nav className="side-nav" aria-label="Navegação da área">
-          {navItems.map((item) => (
-            <Link href={item.href} key={item.href}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <form action={signOut}>
-          <button className="link-button" type="submit">
-            Sair
-          </button>
-        </form>
+        {renderNav()}
+        <div className="sidebar-footer">{renderSignOutForm()}</div>
       </aside>
       <section className="workspace">
         <header className="workspace-header">
-          <span className="eyebrow">{eyebrow}</span>
-          <h1>{title}</h1>
+          <div>
+            <span className="eyebrow">{eyebrow}</span>
+            <h1>{title}</h1>
+          </div>
+          <span className="badge">AROLAB OS</span>
         </header>
         {children}
       </section>

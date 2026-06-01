@@ -10,25 +10,33 @@ export default async function AdminPage() {
 
   return (
     <div className="stack">
-      <div className="grid">
-        <section className="panel">
+      <div className="grid stats-grid">
+        <section className="mini-panel">
           <span className="eyebrow">Modelos pendentes</span>
-          <h2>{pendingModels}</h2>
+          <strong>{pendingModels}</strong>
         </section>
-        <section className="panel">
+        <section className="mini-panel">
           <span className="eyebrow">Modelos publicados</span>
-          <h2>{publishedModels}</h2>
+          <strong>{publishedModels}</strong>
         </section>
-        <section className="panel">
+        <section className="mini-panel">
           <span className="eyebrow">Total de modelos</span>
-          <h2>{models.length}</h2>
+          <strong>{models.length}</strong>
         </section>
-        <section className="panel">
+        <section className="mini-panel">
           <span className="eyebrow">Pedidos novos</span>
-          <h2>0</h2>
+          <strong>0</strong>
         </section>
       </div>
       <section className="panel stack">
+        <div>
+          <span className="eyebrow">Próxima ação</span>
+          <h2>Operação pronta para casting</h2>
+          <p>
+            Crie novos perfis, revise pendências ou abra a lista completa de
+            modelos.
+          </p>
+        </div>
         <div className="actions">
           <Link className="button" href="/admin/models/new">
             Criar modelo

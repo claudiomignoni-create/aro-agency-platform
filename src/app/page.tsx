@@ -11,27 +11,38 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="page stack">
-      <section className="panel stack">
-        <span className="eyebrow">ARO Lab</span>
-        <h1>Sistema interno</h1>
-        <p>
-          Aplicação independente para portal de modelos, portal de clientes e
-          painel administrativo.
-        </p>
-        <div className="grid">
-          <Link className="button" href="/login">
-            Entrar
+    <main className="page entry-page">
+      <section className="entry-stage">
+        <div className="entry-copy">
+          <Link className="brand-mark" href="/">
+            <strong>ARO</strong>LAB
           </Link>
-          <Link className="button" href="/admin">
-            Admin
-          </Link>
-          <Link className="button" href="/model">
-            Modelo
-          </Link>
-          <Link className="button" href="/client">
-            Cliente
-          </Link>
+          <h1 className="hero-title">
+            We don&apos;t just sign faces, we craft obsessions.
+          </h1>
+          <p>
+            Sistema interno para casting, gestão de modelos, clientes e
+            operação comercial com a precisão visual da AROLAB.
+          </p>
+        </div>
+        <div className="panel stack entry-panel">
+          <span className="eyebrow">Acesso privado</span>
+          <h2>Entrar na plataforma</h2>
+          <p>Escolha sua área de trabalho para continuar.</p>
+          <div className="grid">
+            <Link className="button" href="/login">
+              Entrar
+            </Link>
+            <Link className="button secondary" href="/admin">
+              Admin
+            </Link>
+            <Link className="button secondary" href="/model">
+              Modelo
+            </Link>
+            <Link className="button secondary" href="/client">
+              Cliente
+            </Link>
+          </div>
         </div>
       </section>
     </main>
