@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getModelProfile } from "@/lib/models";
 import {
+  isModelMediaFilter,
   isModelProfileTab,
   ModelProfileEditor,
+  type ModelMediaFilter,
   type ModelProfileTab
 } from "../../model-form";
 import {
@@ -17,6 +19,7 @@ type EditModelPageProps = {
     id: string;
   }>;
   searchParams?: Promise<{
+    mediaFilter?: string;
     saved?: string;
     tab?: string;
   }>;
@@ -27,9 +30,11 @@ export default async function EditModelPage({
   searchParams
 }: EditModelPageProps) {
   const { id } = await params;
-  const { saved, tab } = (await searchParams) ?? {};
+  const { mediaFilter, saved, tab } = (await searchParams) ?? {};
   const activeTab: ModelProfileTab =
     tab && isModelProfileTab(tab) ? tab : "basic";
+  const activeMediaFilter: ModelMediaFilter =
+    mediaFilter && isModelMediaFilter(mediaFilter) ? mediaFilter : "all";
   const profile = await getModelProfile(id);
 
   if (!profile) {
@@ -72,7 +77,11 @@ export default async function EditModelPage({
           </form>
         </div>
       </section>
-      <ModelProfileEditor activeTab={activeTab} profile={profile} />
+      <ModelProfileEditor
+        activeTab={activeTab}
+        mediaFilter={activeMediaFilter}
+        profile={profile}
+      />
       <Link className="button secondary" href="/admin/models">
         Voltar para modelos
       </Link>
