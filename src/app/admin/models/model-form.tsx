@@ -195,16 +195,16 @@ export function ModelForm({ action, model, submitLabel }: ModelFormProps) {
 export const modelProfileTabs = [
   { id: "basic", label: "Perfil básico" },
   { id: "measurements", label: "Medidas" },
-  { id: "contact", label: "Contato" },
+  { id: "contact", label: "Contato e endereço" },
   { id: "social", label: "Redes sociais" },
   { id: "documents", label: "Documentos" },
   { id: "media", label: "Mídia" },
   { id: "skills", label: "Habilidades" },
-  { id: "work", label: "Trabalhos" },
+  { id: "work", label: "Trabalhos importantes" },
   { id: "health", label: "Saúde e logística" },
-  { id: "representation", label: "Representação" },
+  { id: "representation", label: "Representação e carreira" },
   { id: "internal", label: "Observações internas" },
-  { id: "history", label: "Histórico" }
+  { id: "history", label: "Histórico e atualizações" }
 ] as const;
 
 export type ModelProfileTab = (typeof modelProfileTabs)[number]["id"];
@@ -994,12 +994,30 @@ export function ModelProfileEditor({
 
   return (
     <div className="stack">
-      <nav aria-label="Abas do perfil do modelo" className="tabs">
+      <nav
+        aria-label="Abas do perfil do modelo"
+        className="tabs"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          overflowX: "auto"
+        }}
+      >
         {modelProfileTabs.map((tab) => (
           <Link
             className={`tab-link${activeTab === tab.id ? " active" : ""}`}
             href={`/admin/models/${model.id}/edit?tab=${tab.id}`}
             key={tab.id}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "999px",
+              display: "inline-flex",
+              fontWeight: activeTab === tab.id ? 700 : 500,
+              padding: "0.65rem 0.9rem",
+              textDecoration: "none",
+              whiteSpace: "nowrap"
+            }}
           >
             {tab.label}
           </Link>
