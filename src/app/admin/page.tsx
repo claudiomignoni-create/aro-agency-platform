@@ -1,13 +1,6 @@
 import Link from "next/link";
 import { listModels } from "@/lib/models";
 
-const metrics = [
-  "Modelos pendentes",
-  "Mídias pendentes",
-  "Pedidos novos",
-  "Bookings próximos"
-];
-
 export default async function AdminPage() {
   const models = await listModels();
   const pendingModels = models.filter(
