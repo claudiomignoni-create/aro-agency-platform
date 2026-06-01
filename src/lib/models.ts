@@ -263,7 +263,7 @@ export type ModelInput = {
   notes?: string | null;
   phone?: string | null;
   shoe_size?: string | null;
-  stage_name?: string | null;
+  stage_name?: string;
   status?: ModelStatus;
   tags?: string[];
   waist_cm?: number | null;
