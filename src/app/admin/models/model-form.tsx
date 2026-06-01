@@ -215,6 +215,7 @@ export function isModelProfileTab(tab: string): tab is ModelProfileTab {
 
 type ModelProfileEditorProps = {
   activeTab: ModelProfileTab;
+  mediaFilter?: ModelMediaFilter;
   profile: ModelProfile;
 };
 
@@ -289,6 +290,122 @@ function formatDateTime(value: string | null | undefined) {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+const modelMediaFilters = [
+  "all",
+  "book",
+  "polaroids",
+  "work-videos",
+  "casting-videos",
+  "composite",
+  "documents",
+  "pending",
+  "approved"
+] as const;
+
+export type ModelMediaFilter = (typeof modelMediaFilters)[number];
+
+export function isModelMediaFilter(filter: string): filter is ModelMediaFilter {
+  return modelMediaFilters.some((item) => item === filter);
+}
+
+type ModelMediaItem = ModelProfile["media"][number];
+
+type ModelMediaCategory = {
+  description: string;
+  filter: ModelMediaFilter;
+  id: string;
+  isPlanned?: boolean;
+  items: ModelMediaItem[];
+  label: string;
+};
+
+function isCompositeMedia(item: ModelMediaItem) {
+  const text = `${item.title ?? ""} ${item.storage_path}`.toLowerCase();
+
+  return text.includes("composite");
+}
+
+function isCastingVideo(item: ModelMediaItem) {
+  const text = `${item.title ?? ""} ${item.storage_path}`.toLowerCase();
+
+  return item.media_type === "video" && text.includes("casting");
+}
+
+function getMediaPreviewLabel(item: ModelMediaItem) {
+  if (item.thumbnail_path) {
+    return "Thumbnail cadastrada";
+  }
+
+  if (item.media_type === "video") {
+    return "Vídeo";
+  }
+
+  if (item.media_type === "document") {
+    return "Documento privado";
+  }
+
+  return "Sem preview";
+}
+
+function buildMediaCategories(media: ModelMediaItem[]): ModelMediaCategory[] {
+  return [
+    {
+      description: "Mapeado de portfolio.",
+      filter: "book",
+      id: "media-book",
+      items: media.filter(
+        (item) => item.media_type === "portfolio" && !isCompositeMedia(item)
+      ),
+      label: "Book"
+    },
+    {
+      description: "Mapeado de polaroid.",
+      filter: "polaroids",
+      id: "media-polaroids",
+      items: media.filter((item) => item.media_type === "polaroid"),
+      label: "Polaroids"
+    },
+    {
+      description: "Vídeos sem subtipo de casting no nome ou caminho.",
+      filter: "work-videos",
+      id: "media-work-videos",
+      items: media.filter(
+        (item) => item.media_type === "video" && !isCastingVideo(item)
+      ),
+      label: "Work videos"
+    },
+    {
+      description: "Separação provisória por título/caminho contendo casting.",
+      filter: "casting-videos",
+      id: "media-casting-videos",
+      isPlanned: true,
+      items: media.filter(isCastingVideo),
+      label: "Casting videos"
+    },
+    {
+      description: "Preparado para JPEG, PNG ou PDF em etapa futura.",
+      filter: "composite",
+      id: "media-composite",
+      isPlanned: true,
+      items: media.filter(isCompositeMedia),
+      label: "Composite"
+    },
+    {
+      description: "Mapeado de document. Deve permanecer privado.",
+      filter: "documents",
+      id: "media-documents",
+      items: media.filter(
+        (item) => item.media_type === "document" && !isCompositeMedia(item)
+      ),
+      label: "Documentos"
+    }
+  ];
+}
+
+function mediaFilterHref(modelId: string, filter: ModelMediaFilter) {
+  return `/admin/models/${modelId}/edit?tab=media&mediaFilter=${filter}`;
 }
 
 function listValue(values: string[] | null | undefined) {
@@ -525,71 +642,225 @@ function DocumentsTab({ profile }: { profile: ModelProfile }) {
   );
 }
 
-function MediaTab({ profile }: { profile: ModelProfile }) {
+function MediaCard({
+  item,
+  modelId
+}: {
+  item: ModelMediaItem;
+  modelId: string;
+}) {
+  return (
+    <article className="mini-panel stack">
+      <div className="actions spread">
+        <div>
+          <strong>{item.title ?? item.storage_path}</strong>
+          <br />
+          <span className="muted">{item.media_type}</span>
+        </div>
+        <span className="status">{item.status}</span>
+      </div>
+      <div className="panel">
+        <span className="muted">{getMediaPreviewLabel(item)}</span>
+      </div>
+      <div className="compact-list">
+        <span>Visibilidade: {item.visibility}</span>
+        <span>Arquivo: {item.storage_path}</span>
+        <span>Thumbnail: {item.thumbnail_path ?? "-"}</span>
+        <span>Criado em: {formatDateTime(item.created_at)}</span>
+      </div>
+      <div className="actions">
+        <form
+          action={updateModelMediaStatusAction.bind(
+            null,
+            modelId,
+            item.id,
+            "approved"
+          )}
+        >
+          <button className="button secondary" type="submit">
+            Aprovar
+          </button>
+        </form>
+        <form
+          action={updateModelMediaStatusAction.bind(
+            null,
+            modelId,
+            item.id,
+            "rejected"
+          )}
+        >
+          <button className="button secondary" type="submit">
+            Rejeitar
+          </button>
+        </form>
+      </div>
+    </article>
+  );
+}
+
+function MediaCategorySection({
+  category,
+  modelId
+}: {
+  category: ModelMediaCategory;
+  modelId: string;
+}) {
+  return (
+    <section className="stack" id={category.id}>
+      <div className="actions spread">
+        <div>
+          <h3>{category.label}</h3>
+          <p className="muted">{category.description}</p>
+        </div>
+        <div className="actions">
+          {category.isPlanned ? <span className="badge">Planejado</span> : null}
+          <span className="status">{category.items.length} itens</span>
+        </div>
+      </div>
+      {category.items.length > 0 ? (
+        <div className="grid">
+          {category.items.map((item) => (
+            <MediaCard item={item} key={item.id} modelId={modelId} />
+          ))}
+        </div>
+      ) : (
+        <p className="muted">
+          {category.isPlanned
+            ? "Categoria preparada para etapa futura."
+            : "Nenhum material cadastrado."}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function MediaTab({
+  activeFilter,
+  profile
+}: {
+  activeFilter: ModelMediaFilter;
+  profile: ModelProfile;
+}) {
   const { media, model } = profile;
+  const categories = buildMediaCategories(media);
+  const filteredCategories = categories
+    .map((category) => {
+      if (activeFilter === "all" || activeFilter === category.filter) {
+        return category;
+      }
+
+      if (activeFilter === "pending") {
+        return {
+          ...category,
+          items: category.items.filter((item) => item.status === "pending_review")
+        };
+      }
+
+      if (activeFilter === "approved") {
+        return {
+          ...category,
+          items: category.items.filter((item) => item.status === "approved")
+        };
+      }
+
+      return {
+        ...category,
+        items: []
+      };
+    })
+    .filter(
+      (category) =>
+        activeFilter === "all" ||
+        activeFilter === category.filter ||
+        category.items.length > 0
+    );
+  const hasApprovedBook = categories
+    .find((category) => category.filter === "book")
+    ?.items.some((item) => item.status === "approved");
+  const hasApprovedPolaroids = categories
+    .find((category) => category.filter === "polaroids")
+    ?.items.some((item) => item.status === "approved");
+  const hasApprovedVideo = media.some(
+    (item) => item.media_type === "video" && item.status === "approved"
+  );
+  const hasComposite = categories.some(
+    (category) => category.filter === "composite" && category.items.length > 0
+  );
+  const hasPending = media.some((item) => item.status === "pending_review");
+  const hasPrivateDocuments = media.some(
+    (item) => item.media_type === "document" && item.visibility === "private"
+  );
+  const filterLinks: Array<{ label: string; value: ModelMediaFilter }> = [
+    { label: "Todos", value: "all" },
+    { label: "Book", value: "book" },
+    { label: "Polaroids", value: "polaroids" },
+    { label: "Work videos", value: "work-videos" },
+    { label: "Casting videos", value: "casting-videos" },
+    { label: "Composite", value: "composite" },
+    { label: "Documentos", value: "documents" },
+    { label: "Pendentes", value: "pending" },
+    { label: "Aprovados", value: "approved" }
+  ];
 
   return (
     <div className="stack">
-      <div className="actions">
-        <form action={markMediaUpdatedAction.bind(null, model.id)}>
-          <button className="button" type="submit">
-            Marcar mídia como atualizada
-          </button>
-        </form>
-        <Link className="button secondary" href="/admin/media">
-          Abrir Admin Media
-        </Link>
+      <div className="actions spread">
+        <div className="actions">
+          <form action={markMediaUpdatedAction.bind(null, model.id)}>
+            <button className="button" type="submit">
+              Marcar mídia como atualizada
+            </button>
+          </form>
+          <Link className="button secondary" href="/admin/media">
+            Abrir Admin Media
+          </Link>
+        </div>
+        <details>
+          <summary className="button secondary">Resumo de mídia</summary>
+          <div className="actions">
+            {!hasApprovedBook ? <span className="badge">Sem book aprovado</span> : null}
+            {!hasApprovedPolaroids ? (
+              <span className="badge">Sem polaroids aprovadas</span>
+            ) : null}
+            {!hasApprovedVideo ? <span className="badge">Sem vídeo aprovado</span> : null}
+            {!hasComposite ? <span className="badge">Sem composite</span> : null}
+            {hasPending ? <span className="badge">Há mídias pendentes</span> : null}
+            {hasPrivateDocuments ? (
+              <span className="badge">Há documentos privados</span>
+            ) : null}
+          </div>
+        </details>
       </div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Título</th>
-              <th>Status</th>
-              <th>Visibilidade</th>
-              <th>Arquivo</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {media.map((item) => (
-              <tr key={item.id}>
-                <td>{item.media_type}</td>
-                <td>{item.title ?? "-"}</td>
-                <td><span className="status">{item.status}</span></td>
-                <td>{item.visibility}</td>
-                <td>{item.storage_path}</td>
-                <td>
-                  <div className="actions">
-                    <form
-                      action={updateModelMediaStatusAction.bind(
-                        null,
-                        model.id,
-                        item.id,
-                        "approved"
-                      )}
-                    >
-                      <button className="button secondary" type="submit">Aprovar</button>
-                    </form>
-                    <form
-                      action={updateModelMediaStatusAction.bind(
-                        null,
-                        model.id,
-                        item.id,
-                        "rejected"
-                      )}
-                    >
-                      <button className="button secondary" type="submit">Rejeitar</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {media.length === 0 ? <p>Nenhuma mídia cadastrada para este modelo.</p> : null}
-      </div>
+
+      <nav aria-label="Filtros de mídia" className="actions">
+        {filterLinks.map((filter) => (
+          <Link
+            className={`button secondary${activeFilter === filter.value ? " active" : ""}`}
+            href={mediaFilterHref(model.id, filter.value)}
+            key={filter.value}
+          >
+            {filter.label}
+          </Link>
+        ))}
+      </nav>
+
+      <p className="muted">
+        Work videos e casting videos usam o tipo video atual; casting é separado
+        provisoriamente por título ou caminho contendo casting.
+      </p>
+
+      {filteredCategories.map((category) => (
+        <MediaCategorySection
+          category={category}
+          key={category.id}
+          modelId={model.id}
+        />
+      ))}
+
+      {media.length === 0 ? <p>Nenhuma mídia cadastrada para este modelo.</p> : null}
+      {filteredCategories.length === 0 && media.length > 0 ? (
+        <p>Nenhum material encontrado neste filtro.</p>
+      ) : null}
     </div>
   );
 }
@@ -957,7 +1228,11 @@ function HistoryTab({ profile }: { profile: ModelProfile }) {
   );
 }
 
-function renderActiveTab(profile: ModelProfile, activeTab: ModelProfileTab) {
+function renderActiveTab(
+  profile: ModelProfile,
+  activeTab: ModelProfileTab,
+  mediaFilter: ModelMediaFilter
+) {
   switch (activeTab) {
     case "basic":
       return <BasicTab model={profile.model} />;
@@ -970,7 +1245,7 @@ function renderActiveTab(profile: ModelProfile, activeTab: ModelProfileTab) {
     case "documents":
       return <DocumentsTab profile={profile} />;
     case "media":
-      return <MediaTab profile={profile} />;
+      return <MediaTab activeFilter={mediaFilter} profile={profile} />;
     case "skills":
       return <SkillsTab profile={profile} />;
     case "work":
@@ -988,6 +1263,7 @@ function renderActiveTab(profile: ModelProfile, activeTab: ModelProfileTab) {
 
 export function ModelProfileEditor({
   activeTab,
+  mediaFilter = "all",
   profile
 }: ModelProfileEditorProps) {
   const model = profile.model;
@@ -1023,7 +1299,9 @@ export function ModelProfileEditor({
           </Link>
         ))}
       </nav>
-      <section className="panel stack">{renderActiveTab(profile, activeTab)}</section>
+      <section className="panel stack">
+        {renderActiveTab(profile, activeTab, mediaFilter)}
+      </section>
     </div>
   );
 }
