@@ -118,20 +118,6 @@ function getInitials(model: Model) {
   return initials.toUpperCase() || "AR";
 }
 
-function formatMeasurements(model: Model) {
-  const shoeSize = model.shoe_size_br ?? model.shoe_size;
-
-  return [
-    model.height_cm ? `${model.height_cm} cm` : null,
-    model.bust_cm ? `Busto ${model.bust_cm}` : null,
-    model.waist_cm ? `Cintura ${model.waist_cm}` : null,
-    model.hips_cm ? `Quadril ${model.hips_cm}` : null,
-    shoeSize ? `Sapato ${shoeSize}` : null
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
 export default async function AdminModelsPage({
   searchParams
 }: AdminModelsPageProps) {
@@ -289,50 +275,9 @@ export default async function AdminModelsPage({
               <div className="model-card-caption">
                 <strong>{getDisplayName(model)}</strong>
                 <span>{getLocation(model)}</span>
+                <small>{model.status}</small>
               </div>
             </Link>
-
-            <details className="model-card-menu">
-              <summary aria-label="Ver detalhes do modelo">
-                +
-              </summary>
-              <div className="model-card-menu-panel">
-                <strong>Detalhes rápidos</strong>
-                <dl>
-                  <div>
-                    <dt>Medidas</dt>
-                    <dd>{formatMeasurements(model) || "Medidas incompletas"}</dd>
-                  </div>
-                  <div>
-                    <dt>E-mail</dt>
-                    <dd>{model.email ?? "Sem e-mail"}</dd>
-                  </div>
-                  <div>
-                    <dt>WhatsApp/telefone</dt>
-                    <dd>{model.whatsapp ?? model.phone ?? "Sem telefone"}</dd>
-                  </div>
-                  <div>
-                    <dt>Base</dt>
-                    <dd>{getLocation(model)}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{model.status}</dd>
-                  </div>
-                </dl>
-                <div className="model-card-menu-actions">
-                  <Link
-                    className="button secondary"
-                    href={`/admin/models/${model.id}/edit`}
-                  >
-                    Editar Cadastro360
-                  </Link>
-                  <button className="button secondary" disabled type="button">
-                    Agenda - Em breve
-                  </button>
-                </div>
-              </div>
-            </details>
           </article>
         ))}
       </section>
@@ -376,7 +321,6 @@ export default async function AdminModelsPage({
         .models-gallery-header-actions,
         .models-filter-actions,
         .models-planned-actions,
-        .model-card-menu-actions,
         .models-summary-chips {
           align-items: center;
           display: flex;
@@ -392,8 +336,7 @@ export default async function AdminModelsPage({
           list-style: none;
         }
 
-        .models-toolbar-panel summary::-webkit-details-marker,
-        .model-card-menu summary::-webkit-details-marker {
+        .models-toolbar-panel summary::-webkit-details-marker {
           display: none;
         }
 
@@ -543,98 +486,21 @@ export default async function AdminModelsPage({
           white-space: nowrap;
         }
 
+        .model-card-caption small {
+          border: 1px solid rgba(255, 255, 255, 0.46);
+          border-radius: 999px;
+          font-size: 0.68rem;
+          line-height: 1;
+          opacity: 0.92;
+          padding: 0.28rem 0.45rem;
+          width: fit-content;
+        }
+
         .model-card-checkbox {
           left: 0.65rem;
           position: absolute;
           top: 0.65rem;
           z-index: 3;
-        }
-
-        .model-card-menu {
-          inset: 0;
-          pointer-events: none;
-          position: absolute;
-          z-index: 4;
-        }
-
-        .model-card-menu summary {
-          align-items: center;
-          backdrop-filter: blur(16px);
-          background: rgba(255, 255, 255, 0.76);
-          border: 1px solid rgba(255, 255, 255, 0.58);
-          border-radius: 999px;
-          color: #111827;
-          cursor: pointer;
-          display: inline-flex;
-          font-size: 1rem;
-          font-weight: 700;
-          height: 1.85rem;
-          justify-content: center;
-          line-height: 1;
-          list-style: none;
-          padding: 0;
-          pointer-events: auto;
-          position: absolute;
-          right: 0.55rem;
-          top: 0.55rem;
-          width: 1.85rem;
-        }
-
-        .model-card-menu[open] summary {
-          background: var(--panel);
-          border-color: var(--border);
-        }
-
-        .model-card-menu-panel {
-          background: var(--panel);
-          border-top: 1px solid var(--border);
-          bottom: 0;
-          color: var(--foreground);
-          display: grid;
-          gap: 0.7rem;
-          left: 0;
-          max-height: 68%;
-          overflow: auto;
-          padding: 0.85rem;
-          pointer-events: auto;
-          position: absolute;
-          right: 0;
-        }
-
-        .model-card-menu-panel > strong {
-          font-size: 0.82rem;
-          line-height: 1.2;
-        }
-
-        .model-card-menu-panel dl {
-          display: grid;
-          gap: 0.5rem;
-          margin: 0;
-        }
-
-        .model-card-menu-panel dl div {
-          display: grid;
-          gap: 0.12rem;
-        }
-
-        .model-card-menu-panel dt {
-          color: var(--muted);
-          font-size: 0.68rem;
-          line-height: 1.2;
-          text-transform: uppercase;
-        }
-
-        .model-card-menu-panel dd {
-          font-size: 0.78rem;
-          line-height: 1.35;
-          margin: 0;
-          overflow-wrap: anywhere;
-        }
-
-        .model-card-menu-actions .button {
-          font-size: 0.72rem;
-          min-height: 2rem;
-          padding: 0.35rem 0.6rem;
         }
 
         @media (max-width: 1180px) {
