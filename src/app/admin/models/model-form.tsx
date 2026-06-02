@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Model, ModelProfile } from "@/types/database";
+import type { Model, ModelMedia, ModelProfile } from "@/types/database";
 import {
   createModelWorkHistoryAction,
   deleteModelWorkHistoryAction,
@@ -295,6 +295,98 @@ function listValue(values: string[] | null | undefined) {
   return values?.length ? values.join(", ") : "";
 }
 
+type MediaMaterialSection = {
+  id: string;
+  title: string;
+  description: string;
+  mediaTypes: ModelMedia["media_type"][];
+  previewLabel: string;
+  emptyText: string;
+};
+
+const mediaMaterialSections: MediaMaterialSection[] = [
+  {
+    id: "book",
+    title: "Book",
+    description: "Fotos profissionais do modelo para uso comercial e curadoria.",
+    mediaTypes: ["portfolio"],
+    previewLabel: "Sem preview",
+    emptyText: "Ainda sem materiais cadastrados"
+  },
+  {
+    id: "polaroids",
+    title: "Polaroids",
+    description: "Digitals do modelo, incluindo corpo inteiro, rosto, perfil, mãos e pés.",
+    mediaTypes: ["polaroid"],
+    previewLabel: "Sem preview",
+    emptyText: "Ainda sem materiais cadastrados"
+  },
+  {
+    id: "composite",
+    title: "Composite",
+    description: "Cartão de apresentação com fotos, medidas e informações principais.",
+    mediaTypes: [],
+    previewLabel: "Sem preview",
+    emptyText: "Categoria preparada para etapa futura"
+  },
+  {
+    id: "videos",
+    title: "Vídeos",
+    description: "Vídeos gerais do modelo.",
+    mediaTypes: ["video"],
+    previewLabel: "Vídeo",
+    emptyText: "Ainda sem materiais cadastrados"
+  },
+  {
+    id: "work-videos",
+    title: "Work videos",
+    description: "Vídeos de trabalhos já realizados.",
+    mediaTypes: [],
+    previewLabel: "Vídeo",
+    emptyText: "Categoria preparada para etapa futura"
+  },
+  {
+    id: "video-casting",
+    title: "Video casting",
+    description: "Vídeos de apresentação e casting.",
+    mediaTypes: [],
+    previewLabel: "Vídeo",
+    emptyText: "Categoria preparada para etapa futura"
+  },
+  {
+    id: "documents",
+    title: "Documentos",
+    description: "Documentos administrativos privados do modelo.",
+    mediaTypes: ["document"],
+    previewLabel: "Arquivo privado",
+    emptyText: "Ainda sem materiais cadastrados"
+  },
+  {
+    id: "mother-agency",
+    title: "Materiais de agência mãe",
+    description: "Materiais recebidos de agências parceiras ou mother agencies.",
+    mediaTypes: [],
+    previewLabel: "Sem preview",
+    emptyText: "Categoria preparada para etapa futura"
+  },
+  {
+    id: "client-materials",
+    title: "Materiais para cliente",
+    description: "Seleções de materiais que poderão ser enviadas futuramente para clientes.",
+    mediaTypes: [],
+    previewLabel: "Sem preview",
+    emptyText: "Categoria preparada para etapa futura"
+  }
+];
+
+function mediaCountLabel(count: number) {
+  return `${count} ${count === 1 ? "item" : "itens"}`;
+}
+
+function mediaTitleFallback(item: ModelMedia, sectionTitle: string, index: number) {
+  return item.title?.trim() || `${sectionTitle} ${index + 1}`;
+}
+
 function BasicTab({ model }: { model: Model }) {
   return (
     <form action={updateModelBasicAction.bind(null, model.id)} className="form wide-form">
@@ -525,70 +617,203 @@ function DocumentsTab({ profile }: { profile: ModelProfile }) {
   );
 }
 
+function MediaMaterialItem({
+  index,
+  item,
+  modelId,
+  section
+}: {
+  index: number;
+  item: ModelMedia;
+  modelId: string;
+  section: MediaMaterialSection;
+}) {
+  return (
+    <article
+      style={{
+        alignItems: "flex-start",
+        border: "1px solid var(--border)",
+        borderRadius: "8px",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "1rem",
+        padding: "1rem"
+      }}
+    >
+      <div
+        aria-label="Preview indisponível"
+        style={{
+          alignItems: "center",
+          background: "var(--surface)",
+          border: "1px dashed var(--border)",
+          borderRadius: "8px",
+          color: "var(--muted)",
+          display: "flex",
+          flex: "0 0 9rem",
+          fontSize: "0.85rem",
+          justifyContent: "center",
+          minHeight: "5.5rem",
+          padding: "0.75rem",
+          textAlign: "center"
+        }}
+      >
+        {section.previewLabel}
+      </div>
+
+      <div className="stack" style={{ flex: "1 1 18rem", gap: "0.65rem" }}>
+        <div>
+          <strong>{mediaTitleFallback(item, section.title, index)}</strong>
+          <div className="compact-list" style={{ marginTop: "0.5rem" }}>
+            <span>{item.media_type}</span>
+            <span>{item.visibility}</span>
+            <span>{formatDateTime(item.created_at)}</span>
+            <span className="status">{item.status}</span>
+          </div>
+        </div>
+
+        <div className="muted" style={{ fontSize: "0.9rem" }}>
+          <div style={{ wordBreak: "break-all" }}>
+            Arquivo: {item.storage_path}
+          </div>
+          {item.thumbnail_path ? (
+            <div style={{ wordBreak: "break-all" }}>
+              Thumbnail: {item.thumbnail_path}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="actions" style={{ flex: "0 1 auto" }}>
+        <form
+          action={updateModelMediaStatusAction.bind(
+            null,
+            modelId,
+            item.id,
+            "approved"
+          )}
+        >
+          <button className="button secondary" type="submit">
+            Aprovar
+          </button>
+        </form>
+        <form
+          action={updateModelMediaStatusAction.bind(
+            null,
+            modelId,
+            item.id,
+            "rejected"
+          )}
+        >
+          <button className="button secondary" type="submit">
+            Rejeitar
+          </button>
+        </form>
+      </div>
+    </article>
+  );
+}
+
+function MediaMaterialSectionView({
+  items,
+  modelId,
+  section
+}: {
+  items: ModelMedia[];
+  modelId: string;
+  section: MediaMaterialSection;
+}) {
+  return (
+    <section
+      className="stack"
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: "8px",
+        gap: "1rem",
+        padding: "1rem"
+      }}
+    >
+      <div className="actions spread" style={{ alignItems: "flex-start" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>{section.title}</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {section.description}
+          </p>
+        </div>
+        <span
+          className="status"
+          style={{
+            flex: "0 0 auto",
+            whiteSpace: "nowrap"
+          }}
+        >
+          {mediaCountLabel(items.length)}
+        </span>
+      </div>
+
+      {items.length > 0 ? (
+        <div className="stack" style={{ gap: "0.75rem" }}>
+          {items.map((item, index) => (
+            <MediaMaterialItem
+              index={index}
+              item={item}
+              key={item.id}
+              modelId={modelId}
+              section={section}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          className="muted"
+          style={{
+            border: "1px dashed var(--border)",
+            borderRadius: "8px",
+            padding: "0.9rem"
+          }}
+        >
+          {section.emptyText}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function MediaTab({ profile }: { profile: ModelProfile }) {
   const { media, model } = profile;
 
   return (
     <div className="stack">
-      <div className="actions">
-        <form action={markMediaUpdatedAction.bind(null, model.id)}>
-          <button className="button" type="submit">
-            Marcar mídia como atualizada
-          </button>
-        </form>
-        <Link className="button secondary" href="/admin/media">
-          Abrir Admin Media
-        </Link>
+      <div className="actions spread">
+        <div className="actions">
+          <form action={markMediaUpdatedAction.bind(null, model.id)}>
+            <button className="button" type="submit">
+              Marcar mídia como atualizada
+            </button>
+          </form>
+          <Link className="button secondary" href="/admin/media">
+            Abrir Admin Media
+          </Link>
+        </div>
+        <span className="muted" style={{ fontSize: "0.9rem" }}>
+          {mediaCountLabel(media.length)} cadastrados
+        </span>
       </div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Título</th>
-              <th>Status</th>
-              <th>Visibilidade</th>
-              <th>Arquivo</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {media.map((item) => (
-              <tr key={item.id}>
-                <td>{item.media_type}</td>
-                <td>{item.title ?? "-"}</td>
-                <td><span className="status">{item.status}</span></td>
-                <td>{item.visibility}</td>
-                <td>{item.storage_path}</td>
-                <td>
-                  <div className="actions">
-                    <form
-                      action={updateModelMediaStatusAction.bind(
-                        null,
-                        model.id,
-                        item.id,
-                        "approved"
-                      )}
-                    >
-                      <button className="button secondary" type="submit">Aprovar</button>
-                    </form>
-                    <form
-                      action={updateModelMediaStatusAction.bind(
-                        null,
-                        model.id,
-                        item.id,
-                        "rejected"
-                      )}
-                    >
-                      <button className="button secondary" type="submit">Rejeitar</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {media.length === 0 ? <p>Nenhuma mídia cadastrada para este modelo.</p> : null}
+
+      <div className="stack" style={{ gap: "1rem" }}>
+        {mediaMaterialSections.map((section) => {
+          const sectionItems = media.filter((item) =>
+            section.mediaTypes.includes(item.media_type)
+          );
+
+          return (
+            <MediaMaterialSectionView
+              items={sectionItems}
+              key={section.id}
+              modelId={model.id}
+              section={section}
+            />
+          );
+        })}
       </div>
     </div>
   );
