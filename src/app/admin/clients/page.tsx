@@ -141,6 +141,9 @@ export default async function AdminClientsPage({
         <div className="clients-header-meta">
           <span>{filteredClients.length} na visualização</span>
           <span>{clients.length} no CRM</span>
+          <Link className="button" href="/admin/clients/new">
+            Novo cliente
+          </Link>
         </div>
       </section>
 
@@ -262,8 +265,8 @@ export default async function AdminClientsPage({
           <span className="eyebrow">CRM</span>
           <h3>Nenhum cliente cadastrado ainda.</h3>
           <p>
-            A base do CRM já está pronta. Na próxima etapa, criaremos o cadastro
-            de clientes e contatos.
+            A base do CRM já está pronta. Use o cadastro básico para iniciar a
+            lista de empresas, agências e parceiros.
           </p>
         </section>
       )}
@@ -310,6 +313,12 @@ export default async function AdminClientsPage({
           display: flex;
           flex-direction: column;
           gap: 0.45rem;
+        }
+
+        .clients-header-meta .button {
+          font-size: 0.72rem;
+          min-height: 2rem;
+          padding: 0.35rem 0.65rem;
         }
 
         .clients-header-meta span,
