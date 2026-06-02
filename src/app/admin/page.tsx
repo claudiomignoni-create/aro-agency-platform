@@ -10,28 +10,10 @@ export default async function AdminPage() {
 
   return (
     <div className="stack">
-      <div className="grid stats-grid">
-        <section className="mini-panel">
-          <span className="eyebrow">Modelos pendentes</span>
-          <strong>{pendingModels}</strong>
-        </section>
-        <section className="mini-panel">
-          <span className="eyebrow">Modelos publicados</span>
-          <strong>{publishedModels}</strong>
-        </section>
-        <section className="mini-panel">
-          <span className="eyebrow">Total de modelos</span>
-          <strong>{models.length}</strong>
-        </section>
-        <section className="mini-panel">
-          <span className="eyebrow">Pedidos novos</span>
-          <strong>0</strong>
-        </section>
-      </div>
       <section className="panel stack">
         <div>
-          <span className="eyebrow">Próxima ação</span>
-          <h2>Operação pronta para casting</h2>
+          <span className="eyebrow">Admin</span>
+          <h2>Operação da agência</h2>
           <p>
             Crie novos perfis, revise pendências ou abra a lista completa de
             modelos.
@@ -46,6 +28,27 @@ export default async function AdminPage() {
           </Link>
         </div>
       </section>
+      <details className="panel stack">
+        <summary className="button secondary">Resumo do painel</summary>
+        <div className="grid stats-grid">
+          <section className="mini-panel">
+            <span className="eyebrow">Modelos pendentes</span>
+            <strong>{pendingModels}</strong>
+          </section>
+          <section className="mini-panel">
+            <span className="eyebrow">Modelos publicados</span>
+            <strong>{publishedModels}</strong>
+          </section>
+          <section className="mini-panel">
+            <span className="eyebrow">Total de modelos</span>
+            <strong>{models.length}</strong>
+          </section>
+          <section className="mini-panel">
+            <span className="eyebrow">Pedidos novos</span>
+            <strong>0</strong>
+          </section>
+        </div>
+      </details>
     </div>
   );
 }
