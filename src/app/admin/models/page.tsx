@@ -202,50 +202,66 @@ export default async function AdminModelsPage({
         <div className="models-gallery-header-actions">
           <details className="models-toolbar-panel">
             <summary className="button secondary">Busca e filtros</summary>
-            <form className="models-filter-form" method="get">
-              <label>
-                Busca
-                <input
-                  defaultValue={filters.q ?? ""}
-                  name="q"
-                  placeholder="Nome, e-mail, cidade ou nacionalidade"
-                />
-              </label>
-              <label>
-                Status
-                <select defaultValue={statusFilter} name="status">
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Publicado
-                <select defaultValue={publishedFilter} name="published">
-                  <option value="all">Todos</option>
-                  <option value="published">Publicado</option>
-                  <option value="unpublished">Não publicado</option>
-                </select>
-              </label>
-              <label>
-                Cadastro
-                <select defaultValue={incompleteFilter} name="incomplete">
-                  <option value="all">Todos</option>
-                  <option value="incomplete">Incompleto</option>
-                  <option value="complete">Completo</option>
-                </select>
-              </label>
-              <div className="models-filter-actions">
-                <button className="button" type="submit">
-                  Aplicar
+            <div className="models-filter-panel">
+              <form className="models-filter-form" method="get">
+                <label>
+                  Busca
+                  <input
+                    defaultValue={filters.q ?? ""}
+                    name="q"
+                    placeholder="Nome, e-mail, cidade ou nacionalidade"
+                  />
+                </label>
+                <label>
+                  Status
+                  <select defaultValue={statusFilter} name="status">
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Publicado
+                  <select defaultValue={publishedFilter} name="published">
+                    <option value="all">Todos</option>
+                    <option value="published">Publicado</option>
+                    <option value="unpublished">Não publicado</option>
+                  </select>
+                </label>
+                <label>
+                  Cadastro
+                  <select defaultValue={incompleteFilter} name="incomplete">
+                    <option value="all">Todos</option>
+                    <option value="incomplete">Incompleto</option>
+                    <option value="complete">Completo</option>
+                  </select>
+                </label>
+                <div className="models-filter-actions">
+                  <button className="button" type="submit">
+                    Aplicar
+                  </button>
+                  <Link className="button secondary" href="/admin/models">
+                    Limpar
+                  </Link>
+                </div>
+              </form>
+              <div className="models-planned-actions">
+                <label>
+                  <input aria-label="Selecionar todos os modelos" type="checkbox" /> Selecionar
+                </label>
+                <button className="button secondary" disabled type="button">
+                  Solicitar atualização
                 </button>
-                <Link className="button secondary" href="/admin/models">
-                  Limpar
-                </Link>
+                <button className="button secondary" disabled type="button">
+                  Exportar seleção
+                </button>
+                <button className="button secondary" disabled type="button">
+                  Criar shortlist
+                </button>
               </div>
-            </form>
+            </div>
           </details>
 
           <details className="models-toolbar-panel">
@@ -264,22 +280,6 @@ export default async function AdminModelsPage({
             Criar modelo
           </Link>
         </div>
-      </section>
-
-      <section className="models-bulk-actions">
-        <label>
-          <input aria-label="Selecionar todos os modelos" type="checkbox" /> Selecionar
-        </label>
-        <button className="button secondary" disabled type="button">
-          Solicitar atualização
-        </button>
-        <button className="button secondary" disabled type="button">
-          Exportar seleção
-        </button>
-        <button className="button secondary" disabled type="button">
-          Criar shortlist
-        </button>
-        <span className="muted">Ações em breve, sem envio real nesta etapa.</span>
       </section>
 
       <section className="models-gallery-grid" aria-label="Galeria de modelos">
@@ -306,8 +306,8 @@ export default async function AdminModelsPage({
             </Link>
 
             <details className="model-card-menu">
-              <summary aria-label={`Mais informações de ${getDisplayName(model)}`}>
-                Mais
+              <summary aria-label="Ver detalhes do modelo">
+                +
               </summary>
               <div className="model-card-menu-panel">
                 <dl>
@@ -415,8 +415,7 @@ export default async function AdminModelsPage({
           gap: 1rem;
         }
 
-        .models-gallery-header,
-        .models-bulk-actions {
+        .models-gallery-header {
           align-items: flex-start;
           background: color-mix(in srgb, var(--panel) 92%, transparent);
           border: 1px solid var(--border);
@@ -440,8 +439,8 @@ export default async function AdminModelsPage({
         }
 
         .models-gallery-header-actions,
-        .models-bulk-actions,
         .models-filter-actions,
+        .models-planned-actions,
         .model-card-menu-actions,
         .model-card-status-actions,
         .model-card-flags,
@@ -453,7 +452,7 @@ export default async function AdminModelsPage({
         }
 
         .models-toolbar-panel {
-          position: relative;
+          max-width: 100%;
         }
 
         .models-toolbar-panel summary {
@@ -465,23 +464,24 @@ export default async function AdminModelsPage({
           display: none;
         }
 
-        .models-filter-form,
+        .models-filter-panel,
         .models-summary-chips {
           background: var(--panel);
           border: 1px solid var(--border);
           border-radius: 8px;
           box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
           display: grid;
-          gap: 0.75rem;
+          gap: 0.85rem;
           margin-top: 0.65rem;
-          min-width: min(42rem, calc(100vw - 2rem));
+          max-width: calc(100vw - 2rem);
+          min-width: min(40rem, calc(100vw - 2rem));
           padding: 1rem;
-          position: absolute;
-          right: 0;
           z-index: 10;
         }
 
         .models-filter-form {
+          display: grid;
+          gap: 0.75rem;
           grid-template-columns: repeat(4, minmax(8rem, 1fr));
         }
 
@@ -496,7 +496,29 @@ export default async function AdminModelsPage({
         }
 
         .models-filter-actions {
+          align-self: end;
           grid-column: 1 / -1;
+          justify-content: flex-end;
+        }
+
+        .models-filter-actions .button,
+        .models-planned-actions .button {
+          font-size: 0.72rem;
+          min-height: 2rem;
+          padding: 0.35rem 0.65rem;
+        }
+
+        .models-planned-actions {
+          border-top: 1px solid var(--border);
+          font-size: 0.72rem;
+          padding-top: 0.75rem;
+        }
+
+        .models-planned-actions label {
+          align-items: center;
+          display: inline-flex;
+          gap: 0.35rem;
+          white-space: nowrap;
         }
 
         .models-summary-chips {
@@ -512,17 +534,6 @@ export default async function AdminModelsPage({
           line-height: 1;
           padding: 0.35rem 0.55rem;
           white-space: nowrap;
-        }
-
-        .models-bulk-actions {
-          font-size: 0.75rem;
-          padding: 0.75rem 1rem;
-        }
-
-        .models-bulk-actions .button {
-          font-size: 0.72rem;
-          min-height: 2rem;
-          padding: 0.35rem 0.65rem;
         }
 
         .models-gallery-grid {
@@ -615,18 +626,22 @@ export default async function AdminModelsPage({
         }
 
         .model-card-menu summary {
+          align-items: center;
           backdrop-filter: blur(16px);
           background: rgba(255, 255, 255, 0.76);
           border: 1px solid rgba(255, 255, 255, 0.58);
           border-radius: 999px;
           color: #111827;
           cursor: pointer;
-          font-size: 0.72rem;
+          display: inline-flex;
+          font-size: 1rem;
           font-weight: 700;
+          height: 1.85rem;
+          justify-content: center;
           line-height: 1;
           list-style: none;
-          padding: 0.45rem 0.6rem;
-          text-transform: uppercase;
+          padding: 0;
+          width: 1.85rem;
         }
 
         .model-card-menu-panel {
@@ -697,8 +712,6 @@ export default async function AdminModelsPage({
 
           .models-filter-form {
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            left: 0;
-            right: auto;
           }
 
           .models-gallery-grid {
@@ -723,12 +736,13 @@ export default async function AdminModelsPage({
             font-size: 0.78rem;
           }
 
+          .models-filter-panel,
           .models-filter-form {
             grid-template-columns: 1fr;
           }
 
-          .models-bulk-actions .muted {
-            flex-basis: 100%;
+          .models-filter-actions {
+            justify-content: flex-start;
           }
         }
 
