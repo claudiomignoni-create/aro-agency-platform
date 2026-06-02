@@ -7,7 +7,11 @@ import {
   requiredString,
   stringList
 } from "@/lib/form-data";
-import { createClientRecord, type ClientInput } from "@/lib/clients";
+import {
+  createClientWithContacts,
+  type ClientContactInput,
+  type ClientInput
+} from "@/lib/clients";
 import type { ClientStatus, ClientType } from "@/types/database";
 
 const allowedClientTypes: ClientType[] = [
@@ -73,8 +77,57 @@ function clientInputFromFormData(formData: FormData): ClientInput {
   };
 }
 
+function hasContactData(formData: FormData, index: number) {
+  return [
+    "contact_name",
+    "role",
+    "email",
+    "phone",
+    "whatsapp",
+    "wechat",
+    "notes"
+  ].some((field) => nullableString(formData, `contacts[${index}].${field}`));
+}
+
+function contactInputFromFormData(
+  formData: FormData,
+  index: number
+): ClientContactInput | null {
+  if (!hasContactData(formData, index)) {
+    return null;
+  }
+
+  return {
+    can_receive_emails:
+      formData.get(`contacts[${index}].can_receive_emails`) === "on",
+    contact_name: requiredString(formData, `contacts[${index}].contact_name`),
+    email: nullableString(formData, `contacts[${index}].email`),
+    is_primary: formData.get(`contacts[${index}].is_primary`) === "on",
+    notes: nullableString(formData, `contacts[${index}].notes`),
+    phone: nullableString(formData, `contacts[${index}].phone`),
+    role: nullableString(formData, `contacts[${index}].role`),
+    whatsapp: nullableString(formData, `contacts[${index}].whatsapp`),
+    wechat: nullableString(formData, `contacts[${index}].wechat`)
+  };
+}
+
+function contactInputsFromFormData(formData: FormData) {
+  const count = Number(nullableString(formData, "contacts_count") ?? 0);
+
+  if (!Number.isInteger(count) || count < 0 || count > 20) {
+    throw new Error("Quantidade de contatos inválida.");
+  }
+
+  return Array.from({ length: count })
+    .map((_, index) => contactInputFromFormData(formData, index))
+    .filter((contact): contact is ClientContactInput => Boolean(contact));
+}
+
 export async function createClientAction(formData: FormData) {
-  await createClientRecord(clientInputFromFormData(formData));
+  await createClientWithContacts(
+    clientInputFromFormData(formData),
+    contactInputsFromFormData(formData)
+  );
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
   redirect("/admin/clients");

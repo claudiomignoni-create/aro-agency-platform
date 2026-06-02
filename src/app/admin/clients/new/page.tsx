@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClientAction } from "../actions";
+import { ContactFields } from "./contact-fields";
 import type { ClientStatus, ClientType } from "@/types/database";
 
 const clientTypeOptions: Array<{ label: string; value: ClientType }> = [
@@ -153,6 +154,8 @@ export default function NewClientPage() {
           </div>
         </section>
 
+        <ContactFields />
+
         <div className="client-form-actions">
           <Link className="button secondary" href="/admin/clients">
             Cancelar
@@ -205,8 +208,22 @@ export default function NewClientPage() {
           gap: 1rem;
         }
 
+        .client-section-heading {
+          align-items: flex-start;
+          display: flex;
+          gap: 1rem;
+          justify-content: space-between;
+        }
+
         .client-form-section h3 {
           font-size: 1rem;
+        }
+
+        .client-form-section p {
+          font-size: 0.82rem;
+          line-height: 1.45;
+          margin: 0.35rem 0 0;
+          max-width: 42rem;
         }
 
         .client-form-grid {
@@ -233,6 +250,42 @@ export default function NewClientPage() {
           grid-column: 1 / -1;
         }
 
+        .contact-list {
+          display: grid;
+          gap: 0.85rem;
+        }
+
+        .contact-card {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.85rem;
+          padding: 0.85rem;
+        }
+
+        .contact-card-header {
+          align-items: center;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+        }
+
+        .contact-card-header strong {
+          font-size: 0.86rem;
+        }
+
+        .checkbox-field {
+          align-items: center;
+          display: inline-flex;
+          gap: 0.45rem;
+          min-height: 2.5rem;
+        }
+
+        .checkbox-field input {
+          margin: 0;
+          width: auto;
+        }
+
         .client-form-actions {
           align-items: center;
           display: flex;
@@ -241,6 +294,10 @@ export default function NewClientPage() {
         }
 
         @media (max-width: 720px) {
+          .client-section-heading {
+            flex-direction: column;
+          }
+
           .client-form-grid {
             grid-template-columns: 1fr;
           }

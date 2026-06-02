@@ -1,6 +1,10 @@
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { Client, ClientStatus, ClientType } from "@/types/database";
+import type {
+  Client,
+  ClientStatus,
+  ClientType
+} from "@/types/database";
 
 const clientSelect = `
   id,
@@ -64,6 +68,18 @@ export type ClientInput = {
   website: string | null;
 };
 
+export type ClientContactInput = {
+  can_receive_emails: boolean;
+  contact_name: string;
+  email: string | null;
+  is_primary: boolean;
+  notes: string | null;
+  phone: string | null;
+  role: string | null;
+  whatsapp: string | null;
+  wechat: string | null;
+};
+
 export async function createClientRecord(input: ClientInput) {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -85,4 +101,47 @@ export async function createClientRecord(input: ClientInput) {
   }
 
   return data as Pick<Client, "id">;
+}
+
+export async function createClientWithContacts(
+  input: ClientInput,
+  contacts: ClientContactInput[]
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: client, error: clientError } = await supabase
+    .from("clients")
+    .insert({
+      ...input,
+      company_type: input.client_type,
+      contact_name: input.company_name,
+      email: input.general_email ?? "",
+      notes: input.internal_notes,
+      phone: input.general_phone
+    })
+    .select("id")
+    .single();
+
+  if (clientError) {
+    throw clientError;
+  }
+
+  const createdClient = client as Pick<Client, "id">;
+
+  if (contacts.length) {
+    const { error: contactsError } = await supabase
+      .from("client_contacts")
+      .insert(
+        contacts.map((contact) => ({
+          ...contact,
+          client_id: createdClient.id
+        }))
+      );
+
+    if (contactsError) {
+      throw contactsError;
+    }
+  }
+
+  return createdClient;
 }
