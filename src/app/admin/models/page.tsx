@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { listModels } from "@/lib/models";
 import type { Model, ModelStatus } from "@/types/database";
-import { updateModelStatusAction } from "./actions";
 
 type AdminModelsPageProps = {
   searchParams?: Promise<{
@@ -131,18 +130,6 @@ function formatMeasurements(model: Model) {
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) {
-    return "Sem registro";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  }).format(new Date(value));
 }
 
 export default async function AdminModelsPage({
@@ -283,7 +270,7 @@ export default async function AdminModelsPage({
       </section>
 
       <section className="models-gallery-grid" aria-label="Galeria de modelos">
-        {filteredModels.map(({ indicators, model }) => (
+        {filteredModels.map(({ model }) => (
           <article className="model-gallery-card" key={model.id}>
             <input
               aria-label={`Selecionar ${getDisplayName(model)}`}
@@ -310,91 +297,39 @@ export default async function AdminModelsPage({
                 +
               </summary>
               <div className="model-card-menu-panel">
+                <strong>Detalhes rápidos</strong>
                 <dl>
                   <div>
-                    <dt>Status</dt>
-                    <dd>{model.status}</dd>
-                  </div>
-                  <div>
-                    <dt>Publicado</dt>
-                    <dd>{model.is_published ? "Sim" : "Não"}</dd>
-                  </div>
-                  <div>
-                    <dt>Cadastro</dt>
-                    <dd>{indicators.incomplete ? "Incompleto" : "Completo"}</dd>
+                    <dt>Medidas</dt>
+                    <dd>{formatMeasurements(model) || "Medidas incompletas"}</dd>
                   </div>
                   <div>
                     <dt>E-mail</dt>
                     <dd>{model.email ?? "Sem e-mail"}</dd>
                   </div>
                   <div>
-                    <dt>Medidas</dt>
-                    <dd>{formatMeasurements(model) || "Medidas incompletas"}</dd>
+                    <dt>WhatsApp/telefone</dt>
+                    <dd>{model.whatsapp ?? model.phone ?? "Sem telefone"}</dd>
                   </div>
                   <div>
-                    <dt>Atualização</dt>
-                    <dd>{formatDate(model.updated_at)}</dd>
+                    <dt>Base</dt>
+                    <dd>{getLocation(model)}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{model.status}</dd>
                   </div>
                 </dl>
-                <div className="model-card-flags">
-                  {indicators.profileIncomplete ? <span>Perfil incompleto</span> : null}
-                  {indicators.noEmail ? <span>Sem e-mail</span> : null}
-                  {indicators.measurementsIncomplete ? (
-                    <span>Medidas incompletas</span>
-                  ) : null}
-                  {indicators.mediaStale ? (
-                    <span>
-                      {model.last_media_update_at
-                        ? "Mídia desatualizada"
-                        : "Sem atualização de mídia"}
-                    </span>
-                  ) : null}
-                  {indicators.recentlyUpdated ? <span>Atualizado recentemente</span> : null}
-                </div>
                 <div className="model-card-menu-actions">
                   <Link
                     className="button secondary"
                     href={`/admin/models/${model.id}/edit`}
                   >
-                    Editar
+                    Editar Cadastro360
                   </Link>
-                  <Link
-                    className="button secondary"
-                    href={`/admin/models/${model.id}`}
-                  >
-                    Abrir perfil
-                  </Link>
-                </div>
-                <div className="model-card-status-actions">
-                  <form
-                    action={updateModelStatusAction.bind(
-                      null,
-                      model.id,
-                      "approved"
-                    )}
-                  >
-                    <button className="button secondary" type="submit">
-                      Aprovar
-                    </button>
-                  </form>
-                  <form
-                    action={updateModelStatusAction.bind(null, model.id, "draft")}
-                  >
-                    <button className="button secondary" type="submit">
-                      Draft
-                    </button>
-                  </form>
-                  <form
-                    action={updateModelStatusAction.bind(
-                      null,
-                      model.id,
-                      "archived"
-                    )}
-                  >
-                    <button className="button secondary" type="submit">
-                      Arquivar
-                    </button>
-                  </form>
+                  <button className="button secondary" disabled type="button">
+                    Agenda - Em breve
+                  </button>
                 </div>
               </div>
             </details>
@@ -442,8 +377,6 @@ export default async function AdminModelsPage({
         .models-filter-actions,
         .models-planned-actions,
         .model-card-menu-actions,
-        .model-card-status-actions,
-        .model-card-flags,
         .models-summary-chips {
           align-items: center;
           display: flex;
@@ -526,8 +459,7 @@ export default async function AdminModelsPage({
           min-width: min(34rem, calc(100vw - 2rem));
         }
 
-        .models-summary-chips span,
-        .model-card-flags span {
+        .models-summary-chips span {
           border: 1px solid var(--border);
           border-radius: 999px;
           font-size: 0.72rem;
@@ -619,9 +551,9 @@ export default async function AdminModelsPage({
         }
 
         .model-card-menu {
+          inset: 0;
+          pointer-events: none;
           position: absolute;
-          right: 0.55rem;
-          top: 0.55rem;
           z-index: 4;
         }
 
@@ -641,25 +573,37 @@ export default async function AdminModelsPage({
           line-height: 1;
           list-style: none;
           padding: 0;
+          pointer-events: auto;
+          position: absolute;
+          right: 0.55rem;
+          top: 0.55rem;
           width: 1.85rem;
         }
 
+        .model-card-menu[open] summary {
+          background: var(--panel);
+          border-color: var(--border);
+        }
+
         .model-card-menu-panel {
-          backdrop-filter: blur(18px);
-          background: color-mix(in srgb, var(--panel) 92%, transparent);
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          box-shadow: 0 18px 48px rgba(15, 23, 42, 0.2);
+          background: var(--panel);
+          border-top: 1px solid var(--border);
+          bottom: 0;
           color: var(--foreground);
           display: grid;
-          gap: 0.65rem;
-          margin-top: 0.5rem;
-          max-height: calc(100vh - 10rem);
+          gap: 0.7rem;
+          left: 0;
+          max-height: 68%;
           overflow: auto;
-          padding: 0.8rem;
+          padding: 0.85rem;
+          pointer-events: auto;
           position: absolute;
           right: 0;
-          width: min(20rem, calc(100vw - 2rem));
+        }
+
+        .model-card-menu-panel > strong {
+          font-size: 0.82rem;
+          line-height: 1.2;
         }
 
         .model-card-menu-panel dl {
@@ -670,7 +614,7 @@ export default async function AdminModelsPage({
 
         .model-card-menu-panel dl div {
           display: grid;
-          gap: 0.1rem;
+          gap: 0.12rem;
         }
 
         .model-card-menu-panel dt {
@@ -687,8 +631,7 @@ export default async function AdminModelsPage({
           overflow-wrap: anywhere;
         }
 
-        .model-card-menu-actions .button,
-        .model-card-status-actions .button {
+        .model-card-menu-actions .button {
           font-size: 0.72rem;
           min-height: 2rem;
           padding: 0.35rem 0.6rem;
