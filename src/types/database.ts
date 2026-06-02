@@ -1,5 +1,38 @@
 export type UserRole = "admin" | "model" | "client";
 
+export type ClientType =
+  | "international_agency"
+  | "brand"
+  | "production"
+  | "photographer"
+  | "casting_director"
+  | "partner"
+  | "other";
+
+export type ClientStatus =
+  | "lead"
+  | "active"
+  | "partner"
+  | "inactive"
+  | "do_not_contact";
+
+export type ClientChannelType =
+  | "instagram"
+  | "personal_instagram"
+  | "tiktok"
+  | "wechat"
+  | "rednote"
+  | "linkedin"
+  | "facebook"
+  | "telegram"
+  | "line"
+  | "kakao_talk"
+  | "whatsapp"
+  | "website"
+  | "email"
+  | "phone"
+  | "other";
+
 export type ModelStatus = "draft" | "pending_review" | "approved" | "archived";
 
 export type MediaStatus =
@@ -296,8 +329,52 @@ export type Client = {
   email: string;
   phone: string | null;
   company_type: string | null;
-  status: string;
+  client_type: ClientType;
+  status: ClientStatus;
+  country: string | null;
+  city: string | null;
+  general_email: string | null;
+  general_phone: string | null;
+  general_whatsapp: string | null;
+  general_wechat: string | null;
+  website: string | null;
+  tags: string[];
+  market_notes: string | null;
+  preferred_model_profile: string | null;
+  internal_notes: string | null;
+  last_contact_at: string | null;
+  next_follow_up_at: string | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientContact = {
+  id: string;
+  client_id: string;
+  contact_name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  wechat: string | null;
+  is_primary: boolean;
+  can_receive_emails: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientChannel = {
+  id: string;
+  client_id: string;
+  contact_id: string | null;
+  channel_type: ClientChannelType;
+  value: string | null;
+  url: string | null;
+  label: string | null;
+  notes: string | null;
+  is_primary: boolean;
   created_at: string;
   updated_at: string;
 };
