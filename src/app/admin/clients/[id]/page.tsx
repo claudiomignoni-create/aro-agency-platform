@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getClientProfile } from "@/lib/clients";
-import type { Client, ClientContact, ClientStatus, ClientType } from "@/types/database";
+import type {
+  Client,
+  ClientChannel,
+  ClientChannelType,
+  ClientContact,
+  ClientStatus,
+  ClientType
+} from "@/types/database";
 
 type AdminClientDetailPageProps = {
   params: Promise<{
@@ -25,6 +32,24 @@ const statusLabels: Record<ClientStatus, string> = {
   inactive: "Inactive",
   lead: "Lead",
   partner: "Partner"
+};
+
+const channelTypeLabels: Record<ClientChannelType, string> = {
+  email: "Email",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  kakao_talk: "KakaoTalk",
+  line: "Line",
+  linkedin: "LinkedIn",
+  other: "Other",
+  personal_instagram: "Personal Instagram",
+  phone: "Phone",
+  rednote: "RedNote / Xiaohongshu",
+  telegram: "Telegram",
+  tiktok: "TikTok",
+  website: "Website",
+  wechat: "WeChat",
+  whatsapp: "WhatsApp"
 };
 
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
@@ -101,6 +126,23 @@ function ContactCard({ contact }: { contact: ClientContact }) {
   );
 }
 
+function ChannelCard({ channel }: { channel: ClientChannel }) {
+  return (
+    <article className="contact-detail-card">
+      <div className="contact-detail-heading">
+        <strong>{channelTypeLabels[channel.channel_type]}</strong>
+        {channel.is_primary ? <span>Principal</span> : null}
+      </div>
+      <div className="detail-grid compact">
+        <DetailItem label="Valor" value={fieldValue(channel.value)} />
+        <DetailItem label="URL" value={fieldValue(channel.url)} />
+        <DetailItem label="Label interno" value={fieldValue(channel.label)} />
+        <DetailItem label="Notas" value={fieldValue(channel.notes)} />
+      </div>
+    </article>
+  );
+}
+
 export default async function AdminClientDetailPage({
   params
 }: AdminClientDetailPageProps) {
@@ -111,7 +153,7 @@ export default async function AdminClientDetailPage({
     notFound();
   }
 
-  const { client, contacts } = profile;
+  const { channels, client, contacts } = profile;
 
   return (
     <div className="client-detail-shell">
@@ -170,6 +212,22 @@ export default async function AdminClientDetailPage({
             value={formatDate(client.next_follow_up_at)}
           />
         </div>
+      </section>
+
+      <section className="client-detail-section">
+        <div>
+          <span className="eyebrow">Canais da empresa</span>
+          <h3>Canais e redes sociais</h3>
+        </div>
+        {channels.length ? (
+          <div className="contacts-detail-list">
+            {channels.map((channel) => (
+              <ChannelCard channel={channel} key={channel.id} />
+            ))}
+          </div>
+        ) : (
+          <p className="empty-copy">Nenhum canal da empresa cadastrado ainda.</p>
+        )}
       </section>
 
       <section className="client-detail-section">

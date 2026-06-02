@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateClientAction } from "../../actions";
+import { ChannelFields } from "../../channel-fields";
 import { ContactFields } from "../../new/contact-fields";
 import { getClientProfile } from "@/lib/clients";
 import type { ClientStatus, ClientType } from "@/types/database";
@@ -41,7 +42,7 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
     notFound();
   }
 
-  const { client, contacts } = profile;
+  const { channels, client, contacts } = profile;
 
   return (
     <div className="client-form-shell">
@@ -159,6 +160,8 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
             </label>
           </div>
         </section>
+
+        <ChannelFields initialChannels={channels} />
 
         <section className="client-form-section">
           <div>

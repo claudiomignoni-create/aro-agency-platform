@@ -2,6 +2,8 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Client,
+  ClientChannel,
+  ClientChannelType,
   ClientContact,
   ClientStatus,
   ClientType
@@ -51,6 +53,7 @@ export async function listClients() {
 }
 
 export type ClientProfile = {
+  channels: ClientChannel[];
   client: Client;
   contacts: ClientContact[];
 };
@@ -87,6 +90,16 @@ export type ClientContactInput = {
   wechat: string | null;
 };
 
+export type ClientChannelInput = {
+  channel_type: ClientChannelType;
+  id?: string;
+  is_primary: boolean;
+  label: string | null;
+  notes: string | null;
+  url: string | null;
+  value: string | null;
+};
+
 export async function createClientRecord(input: ClientInput) {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -112,7 +125,8 @@ export async function createClientRecord(input: ClientInput) {
 
 export async function createClientWithContacts(
   input: ClientInput,
-  contacts: ClientContactInput[]
+  contacts: ClientContactInput[],
+  channels: ClientChannelInput[] = []
 ) {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -150,6 +164,22 @@ export async function createClientWithContacts(
     }
   }
 
+  if (channels.length) {
+    const { error: channelsError } = await supabase
+      .from("client_channels")
+      .insert(
+        channels.map((channel) => ({
+          ...channelPayload(channel),
+          client_id: createdClient.id,
+          contact_id: null
+        }))
+      );
+
+    if (channelsError) {
+      throw channelsError;
+    }
+  }
+
   return createdClient;
 }
 
@@ -181,7 +211,20 @@ export async function getClientProfile(id: string) {
     throw contactsError;
   }
 
+  const { data: channels, error: channelsError } = await supabase
+    .from("client_channels")
+    .select("*")
+    .eq("client_id", id)
+    .is("contact_id", null)
+    .order("is_primary", { ascending: false })
+    .order("channel_type", { ascending: true });
+
+  if (channelsError) {
+    throw channelsError;
+  }
+
   return {
+    channels: (channels ?? []) as ClientChannel[],
     client: client as Client,
     contacts: (contacts ?? []) as ClientContact[]
   } satisfies ClientProfile;
@@ -212,11 +255,24 @@ function contactPayload(contact: ClientContactInput) {
   };
 }
 
+function channelPayload(channel: ClientChannelInput) {
+  return {
+    channel_type: channel.channel_type,
+    is_primary: channel.is_primary,
+    label: channel.label,
+    notes: channel.notes,
+    url: channel.url,
+    value: channel.value
+  };
+}
+
 export async function updateClientWithContacts(
   id: string,
   input: ClientInput,
   contacts: ClientContactInput[],
-  originalContactIds: string[]
+  originalContactIds: string[],
+  channels: ClientChannelInput[] = [],
+  originalChannelIds: string[] = []
 ) {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -271,6 +327,53 @@ export async function updateClientWithContacts(
 
       if (insertError) {
         throw insertError;
+      }
+    }
+  }
+
+  const submittedExistingChannelIds = channels
+    .map((channel) => channel.id)
+    .filter((channelId): channelId is string => Boolean(channelId));
+  const removedChannelIds = originalChannelIds.filter(
+    (channelId) => !submittedExistingChannelIds.includes(channelId)
+  );
+
+  if (removedChannelIds.length) {
+    const { error: removeChannelsError } = await supabase
+      .from("client_channels")
+      .delete()
+      .eq("client_id", id)
+      .is("contact_id", null)
+      .in("id", removedChannelIds);
+
+    if (removeChannelsError) {
+      throw removeChannelsError;
+    }
+  }
+
+  for (const channel of channels) {
+    if (channel.id) {
+      const { error: updateChannelError } = await supabase
+        .from("client_channels")
+        .update(channelPayload(channel))
+        .eq("client_id", id)
+        .is("contact_id", null)
+        .eq("id", channel.id);
+
+      if (updateChannelError) {
+        throw updateChannelError;
+      }
+    } else {
+      const { error: insertChannelError } = await supabase
+        .from("client_channels")
+        .insert({
+          ...channelPayload(channel),
+          client_id: id,
+          contact_id: null
+        });
+
+      if (insertChannelError) {
+        throw insertChannelError;
       }
     }
   }

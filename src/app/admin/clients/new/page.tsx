@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClientAction } from "../actions";
+import { ChannelFields } from "../channel-fields";
 import { ContactFields } from "./contact-fields";
 import type { ClientStatus, ClientType } from "@/types/database";
 
@@ -120,6 +121,8 @@ export default function NewClientPage() {
             </label>
           </div>
         </section>
+
+        <ChannelFields />
 
         <section className="client-form-section">
           <div>

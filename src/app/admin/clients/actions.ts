@@ -10,10 +10,15 @@ import {
 import {
   createClientWithContacts,
   updateClientWithContacts,
+  type ClientChannelInput,
   type ClientContactInput,
   type ClientInput
 } from "@/lib/clients";
-import type { ClientStatus, ClientType } from "@/types/database";
+import type {
+  ClientChannelType,
+  ClientStatus,
+  ClientType
+} from "@/types/database";
 
 const allowedClientTypes: ClientType[] = [
   "international_agency",
@@ -31,6 +36,24 @@ const allowedClientStatuses: ClientStatus[] = [
   "partner",
   "inactive",
   "do_not_contact"
+];
+
+const allowedChannelTypes: ClientChannelType[] = [
+  "instagram",
+  "personal_instagram",
+  "tiktok",
+  "wechat",
+  "rednote",
+  "linkedin",
+  "facebook",
+  "telegram",
+  "line",
+  "kakao_talk",
+  "whatsapp",
+  "website",
+  "email",
+  "phone",
+  "other"
 ];
 
 function clientTypeFromFormData(formData: FormData) {
@@ -52,6 +75,19 @@ function clientStatusFromFormData(formData: FormData) {
   }
 
   return status;
+}
+
+function channelTypeFromFormData(formData: FormData, index: number) {
+  const channelType = (nullableString(
+    formData,
+    `channels[${index}].channel_type`
+  ) ?? "other") as ClientChannelType;
+
+  if (!allowedChannelTypes.includes(channelType)) {
+    throw new Error("Tipo de canal inválido.");
+  }
+
+  return channelType;
 }
 
 function clientInputFromFormData(formData: FormData): ClientInput {
@@ -129,10 +165,59 @@ function originalContactIdsFromFormData(formData: FormData) {
   return stringList(formData, "original_contact_ids");
 }
 
+function hasChannelData(formData: FormData, index: number) {
+  return ["value", "url", "label", "notes"].some((field) =>
+    nullableString(formData, `channels[${index}].${field}`)
+  );
+}
+
+function channelInputFromFormData(
+  formData: FormData,
+  index: number
+): ClientChannelInput | null {
+  if (!hasChannelData(formData, index)) {
+    return null;
+  }
+
+  const value = nullableString(formData, `channels[${index}].value`);
+  const url = nullableString(formData, `channels[${index}].url`);
+
+  if (!value && !url) {
+    throw new Error("Canal da empresa precisa ter valor ou URL.");
+  }
+
+  return {
+    channel_type: channelTypeFromFormData(formData, index),
+    id: nullableString(formData, `channels[${index}].id`) ?? undefined,
+    is_primary: formData.get(`channels[${index}].is_primary`) === "on",
+    label: nullableString(formData, `channels[${index}].label`),
+    notes: nullableString(formData, `channels[${index}].notes`),
+    url,
+    value
+  };
+}
+
+function channelInputsFromFormData(formData: FormData) {
+  const count = Number(nullableString(formData, "channels_count") ?? 0);
+
+  if (!Number.isInteger(count) || count < 0 || count > 20) {
+    throw new Error("Quantidade de canais inválida.");
+  }
+
+  return Array.from({ length: count })
+    .map((_, index) => channelInputFromFormData(formData, index))
+    .filter((channel): channel is ClientChannelInput => Boolean(channel));
+}
+
+function originalChannelIdsFromFormData(formData: FormData) {
+  return stringList(formData, "original_channel_ids");
+}
+
 export async function createClientAction(formData: FormData) {
   await createClientWithContacts(
     clientInputFromFormData(formData),
-    contactInputsFromFormData(formData)
+    contactInputsFromFormData(formData),
+    channelInputsFromFormData(formData)
   );
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
@@ -144,7 +229,9 @@ export async function updateClientAction(id: string, formData: FormData) {
     id,
     clientInputFromFormData(formData),
     contactInputsFromFormData(formData),
-    originalContactIdsFromFormData(formData)
+    originalContactIdsFromFormData(formData),
+    channelInputsFromFormData(formData),
+    originalChannelIdsFromFormData(formData)
   );
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
