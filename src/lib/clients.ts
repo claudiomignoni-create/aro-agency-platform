@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Client,
+  ClientContact,
   ClientStatus,
   ClientType
 } from "@/types/database";
@@ -48,6 +49,11 @@ export async function listClients() {
 
   return (data ?? []) as Client[];
 }
+
+export type ClientProfile = {
+  client: Client;
+  contacts: ClientContact[];
+};
 
 export type ClientInput = {
   city: string | null;
@@ -144,4 +150,38 @@ export async function createClientWithContacts(
   }
 
   return createdClient;
+}
+
+export async function getClientProfile(id: string) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: client, error: clientError } = await supabase
+    .from("clients")
+    .select(clientSelect)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (clientError) {
+    throw clientError;
+  }
+
+  if (!client) {
+    return null;
+  }
+
+  const { data: contacts, error: contactsError } = await supabase
+    .from("client_contacts")
+    .select("*")
+    .eq("client_id", id)
+    .order("is_primary", { ascending: false })
+    .order("contact_name", { ascending: true });
+
+  if (contactsError) {
+    throw contactsError;
+  }
+
+  return {
+    client: client as Client,
+    contacts: (contacts ?? []) as ClientContact[]
+  } satisfies ClientProfile;
 }

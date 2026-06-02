@@ -239,7 +239,9 @@ export default async function AdminClientsPage({
                     key={client.id}
                   >
                     <td>
-                      <strong>{client.company_name}</strong>
+                      <Link className="client-detail-link" href={`/admin/clients/${client.id}`}>
+                        <strong>{client.company_name}</strong>
+                      </Link>
                     </td>
                     <td>{getClientTypeLabel(client.client_type)}</td>
                     <td>
@@ -409,6 +411,16 @@ export default async function AdminClientsPage({
           color: var(--foreground);
           display: inline-block;
           max-width: 15rem;
+        }
+
+        .client-detail-link {
+          color: inherit;
+          text-decoration: none;
+        }
+
+        .client-detail-link:hover strong {
+          text-decoration: underline;
+          text-underline-offset: 0.18rem;
         }
 
         .client-row.caution {
