@@ -9,6 +9,7 @@ import {
 } from "@/lib/form-data";
 import {
   createClientWithContacts,
+  updateClientWithContacts,
   type ClientContactInput,
   type ClientInput
 } from "@/lib/clients";
@@ -102,6 +103,7 @@ function contactInputFromFormData(
       formData.get(`contacts[${index}].can_receive_emails`) === "on",
     contact_name: requiredString(formData, `contacts[${index}].contact_name`),
     email: nullableString(formData, `contacts[${index}].email`),
+    id: nullableString(formData, `contacts[${index}].id`) ?? undefined,
     is_primary: formData.get(`contacts[${index}].is_primary`) === "on",
     notes: nullableString(formData, `contacts[${index}].notes`),
     phone: nullableString(formData, `contacts[${index}].phone`),
@@ -123,6 +125,10 @@ function contactInputsFromFormData(formData: FormData) {
     .filter((contact): contact is ClientContactInput => Boolean(contact));
 }
 
+function originalContactIdsFromFormData(formData: FormData) {
+  return stringList(formData, "original_contact_ids");
+}
+
 export async function createClientAction(formData: FormData) {
   await createClientWithContacts(
     clientInputFromFormData(formData),
@@ -131,4 +137,18 @@ export async function createClientAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
   redirect("/admin/clients");
+}
+
+export async function updateClientAction(id: string, formData: FormData) {
+  await updateClientWithContacts(
+    id,
+    clientInputFromFormData(formData),
+    contactInputsFromFormData(formData),
+    originalContactIdsFromFormData(formData)
+  );
+  revalidatePath("/admin");
+  revalidatePath("/admin/clients");
+  revalidatePath(`/admin/clients/${id}`);
+  revalidatePath(`/admin/clients/${id}/edit`);
+  redirect(`/admin/clients/${id}`);
 }

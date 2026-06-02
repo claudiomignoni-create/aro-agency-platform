@@ -78,6 +78,7 @@ export type ClientContactInput = {
   can_receive_emails: boolean;
   contact_name: string;
   email: string | null;
+  id?: string;
   is_primary: boolean;
   notes: string | null;
   phone: string | null;
@@ -184,4 +185,95 @@ export async function getClientProfile(id: string) {
     client: client as Client,
     contacts: (contacts ?? []) as ClientContact[]
   } satisfies ClientProfile;
+}
+
+function clientPayload(input: ClientInput) {
+  return {
+    ...input,
+    company_type: input.client_type,
+    contact_name: input.company_name,
+    email: input.general_email ?? "",
+    notes: input.internal_notes,
+    phone: input.general_phone
+  };
+}
+
+function contactPayload(contact: ClientContactInput) {
+  return {
+    can_receive_emails: contact.can_receive_emails,
+    contact_name: contact.contact_name,
+    email: contact.email,
+    is_primary: contact.is_primary,
+    notes: contact.notes,
+    phone: contact.phone,
+    role: contact.role,
+    whatsapp: contact.whatsapp,
+    wechat: contact.wechat
+  };
+}
+
+export async function updateClientWithContacts(
+  id: string,
+  input: ClientInput,
+  contacts: ClientContactInput[],
+  originalContactIds: string[]
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: client, error: clientError } = await supabase
+    .from("clients")
+    .update(clientPayload(input))
+    .eq("id", id)
+    .select("id")
+    .single();
+
+  if (clientError) {
+    throw clientError;
+  }
+
+  const submittedExistingIds = contacts
+    .map((contact) => contact.id)
+    .filter((contactId): contactId is string => Boolean(contactId));
+  const removedContactIds = originalContactIds.filter(
+    (contactId) => !submittedExistingIds.includes(contactId)
+  );
+
+  if (removedContactIds.length) {
+    const { error: removeError } = await supabase
+      .from("client_contacts")
+      .delete()
+      .eq("client_id", id)
+      .in("id", removedContactIds);
+
+    if (removeError) {
+      throw removeError;
+    }
+  }
+
+  for (const contact of contacts) {
+    if (contact.id) {
+      const { error: updateError } = await supabase
+        .from("client_contacts")
+        .update(contactPayload(contact))
+        .eq("client_id", id)
+        .eq("id", contact.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("client_contacts")
+        .insert({
+          ...contactPayload(contact),
+          client_id: id
+        });
+
+      if (insertError) {
+        throw insertError;
+      }
+    }
+  }
+
+  return client as Pick<Client, "id">;
 }

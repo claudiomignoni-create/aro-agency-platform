@@ -124,9 +124,14 @@ export default async function AdminClientDetailPage({
             {getLocation(client)}
           </p>
         </div>
-        <Link className="button secondary" href="/admin/clients">
-          Voltar
-        </Link>
+        <div className="client-detail-actions">
+          <Link className="button secondary" href="/admin/clients">
+            Voltar
+          </Link>
+          <Link className="button" href={`/admin/clients/${client.id}/edit`}>
+            Editar cliente
+          </Link>
+        </div>
       </section>
 
       {client.status === "do_not_contact" ? (
@@ -225,6 +230,14 @@ export default async function AdminClientDetailPage({
           display: flex;
           gap: 1rem;
           justify-content: space-between;
+        }
+
+        .client-detail-actions {
+          align-items: center;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          justify-content: flex-end;
         }
 
         .client-detail-header h2,
@@ -341,6 +354,10 @@ export default async function AdminClientDetailPage({
         @media (max-width: 640px) {
           .client-detail-header {
             flex-direction: column;
+          }
+
+          .client-detail-actions {
+            justify-content: flex-start;
           }
 
           .detail-grid,

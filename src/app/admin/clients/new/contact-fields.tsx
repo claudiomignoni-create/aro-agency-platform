@@ -1,22 +1,34 @@
 "use client";
 
 import { useState } from "react";
+import type { ClientContact } from "@/types/database";
 
 type ContactRow = {
-  id: number;
+  id: string;
+  contact?: ClientContact;
 };
 
-export function ContactFields() {
-  const [contacts, setContacts] = useState<ContactRow[]>([{ id: 1 }]);
-  const [primaryId, setPrimaryId] = useState<number | null>(1);
-  const [nextId, setNextId] = useState(2);
+type ContactFieldsProps = {
+  initialContacts?: ClientContact[];
+};
+
+export function ContactFields({ initialContacts = [] }: ContactFieldsProps) {
+  const initialRows = initialContacts.length
+    ? initialContacts.map((contact) => ({ contact, id: contact.id }))
+    : [{ id: "new-1" }];
+  const initialPrimary = initialContacts.find((contact) => contact.is_primary)?.id;
+  const [contacts, setContacts] = useState<ContactRow[]>(initialRows);
+  const [primaryId, setPrimaryId] = useState<string | null>(
+    initialPrimary ?? (initialContacts.length ? null : initialRows[0]?.id ?? null)
+  );
+  const [nextId, setNextId] = useState(initialRows.length + 1);
 
   const addContact = () => {
-    setContacts((current) => [...current, { id: nextId }]);
+    setContacts((current) => [...current, { id: `new-${nextId}` }]);
     setNextId((current) => current + 1);
   };
 
-  const removeContact = (id: number) => {
+  const removeContact = (id: string) => {
     setContacts((current) => current.filter((contact) => contact.id !== id));
     setPrimaryId((current) => (current === id ? null : current));
   };
@@ -38,6 +50,11 @@ export function ContactFields() {
       </div>
 
       <input name="contacts_count" type="hidden" value={contacts.length} />
+      <input
+        name="original_contact_ids"
+        type="hidden"
+        value={initialContacts.map((contact) => contact.id).join(",")}
+      />
 
       {contacts.length ? (
         <div className="contact-list">
@@ -54,22 +71,35 @@ export function ContactFields() {
                 </button>
               </div>
               <div className="client-form-grid">
+                {contact.contact ? (
+                  <input
+                    name={`contacts[${index}].id`}
+                    type="hidden"
+                    value={contact.contact.id}
+                  />
+                ) : null}
                 <label>
                   Nome da pessoa
                   <input
                     autoComplete="name"
+                    defaultValue={contact.contact?.contact_name ?? ""}
                     name={`contacts[${index}].contact_name`}
                     placeholder="Anna"
                   />
                 </label>
                 <label>
                   Cargo ou função
-                  <input name={`contacts[${index}].role`} placeholder="Booker" />
+                  <input
+                    defaultValue={contact.contact?.role ?? ""}
+                    name={`contacts[${index}].role`}
+                    placeholder="Booker"
+                  />
                 </label>
                 <label>
                   Email
                   <input
                     autoComplete="email"
+                    defaultValue={contact.contact?.email ?? ""}
                     name={`contacts[${index}].email`}
                     placeholder="anna@elitebangkok.com"
                     type="email"
@@ -79,17 +109,23 @@ export function ContactFields() {
                   Telefone
                   <input
                     autoComplete="tel"
+                    defaultValue={contact.contact?.phone ?? ""}
                     name={`contacts[${index}].phone`}
                     placeholder="+66..."
                   />
                 </label>
                 <label>
                   WhatsApp
-                  <input name={`contacts[${index}].whatsapp`} placeholder="+66..." />
+                  <input
+                    defaultValue={contact.contact?.whatsapp ?? ""}
+                    name={`contacts[${index}].whatsapp`}
+                    placeholder="+66..."
+                  />
                 </label>
                 <label>
                   WeChat
                   <input
+                    defaultValue={contact.contact?.wechat ?? ""}
                     name={`contacts[${index}].wechat`}
                     placeholder="WeChat da pessoa"
                   />
@@ -109,6 +145,7 @@ export function ContactFields() {
                 </label>
                 <label className="checkbox-field">
                   <input
+                    defaultChecked={contact.contact?.can_receive_emails ?? false}
                     name={`contacts[${index}].can_receive_emails`}
                     type="checkbox"
                   />
@@ -116,7 +153,11 @@ export function ContactFields() {
                 </label>
                 <label className="wide-field">
                   Observações sobre a pessoa
-                  <textarea name={`contacts[${index}].notes`} rows={3} />
+                  <textarea
+                    defaultValue={contact.contact?.notes ?? ""}
+                    name={`contacts[${index}].notes`}
+                    rows={3}
+                  />
                 </label>
               </div>
             </article>
