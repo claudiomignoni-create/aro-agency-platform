@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { createPortal, useFormStatus } from "react-dom";
 import type { MediaStatus, ModelMedia } from "@/types/database";
 import {
   createModelMediaAction,
@@ -11,7 +11,6 @@ import {
   updateModelMediaBatchStatusAction,
   updateModelMediaBatchVisibilityAction,
   updateModelMediaStatusAction,
-  updateModelMediaTitleAction,
   updateModelMediaVisibilityAction
 } from "./actions";
 
@@ -119,6 +118,27 @@ function mediaDate(value: string) {
     month: "2-digit",
     year: "2-digit"
   }).format(new Date(value));
+}
+
+function mediaStatusLabel(status: ModelMedia["status"]) {
+  const labels: Record<ModelMedia["status"], string> = {
+    approved: "Aprovada",
+    archived: "Arquivada",
+    pending_review: "Em revisao",
+    rejected: "Rejeitada"
+  };
+
+  return labels[status];
+}
+
+function mediaVisibilityLabel(visibility: ModelMedia["visibility"]) {
+  const labels: Record<ModelMedia["visibility"], string> = {
+    client_only: "Visivel para clientes",
+    private: "Privado interno",
+    public: "Publico"
+  };
+
+  return labels[visibility];
 }
 
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
@@ -285,7 +305,7 @@ function BatchActionBar({
             <SelectedInputs ids={selectedIds} />
             <input name="media_visibility" type="hidden" value="client_only" />
             <button className="button secondary" type="submit">
-              Visivel para cliente
+              Visivel para clientes
             </button>
           </form>
         ) : null}
@@ -293,7 +313,7 @@ function BatchActionBar({
           <SelectedInputs ids={selectedIds} />
           <input name="media_visibility" type="hidden" value="private" />
           <button className="button secondary" type="submit">
-            Tornar privado
+            Privado interno
           </button>
         </form>
       </div>
@@ -344,48 +364,36 @@ function MediaCard({
       <div className="media-card-body">
         <strong>{mediaTitle(item)}</strong>
         <div className="media-meta">
-          <span>{item.status}</span>
-          <span>{item.visibility}</span>
+          <span>{mediaStatusLabel(item.status)}</span>
+          <span>{mediaVisibilityLabel(item.visibility)}</span>
           <span>{mediaDate(item.created_at)}</span>
         </div>
       </div>
       {isEditing ? (
         <div className="media-card-editor">
-          <form
-            action={updateModelMediaTitleAction.bind(null, modelId, item.id)}
-            className="media-inline-form"
-          >
-            <input
-              aria-label="Titulo da midia"
-              defaultValue={item.title ?? ""}
-              maxLength={120}
-              name="title"
-              placeholder="Titulo"
-            />
-            <button className="button secondary" type="submit">
-              Salvar
-            </button>
-          </form>
           {item.media_type === "document" ? (
             <p className="media-private-note">Documento privado</p>
           ) : (
-            <form
-              action={updateModelMediaVisibilityAction.bind(null, modelId, item.id)}
-              className="media-inline-form"
-            >
-              <select
-                aria-label="Visibilidade"
-                defaultValue={item.visibility}
-                name="media_visibility"
-              >
-                <option value="private">private</option>
-                <option value="client_only">client_only</option>
-                <option value="public">public</option>
-              </select>
-              <button className="button secondary" type="submit">
-                Salvar
-              </button>
-            </form>
+            <div className="media-visibility-group" aria-label="Visibilidade">
+              <VisibilityButton
+                item={item}
+                label="Privado interno"
+                modelId={modelId}
+                value="private"
+              />
+              <VisibilityButton
+                item={item}
+                label="Visivel para clientes"
+                modelId={modelId}
+                value="client_only"
+              />
+              <VisibilityButton
+                item={item}
+                label="Publico"
+                modelId={modelId}
+                value="public"
+              />
+            </div>
           )}
           <div className="media-card-actions">
             <form action={downloadModelMediaAction.bind(null, modelId, item.id)}>
@@ -419,13 +427,43 @@ function MediaCard({
             </form>
             <form action={deleteModelMediaAction.bind(null, modelId, item.id)}>
               <button className="button danger" type="submit">
-                Excluir permanentemente
+                Excluir midia
               </button>
             </form>
           </div>
+          <p className="media-delete-note">
+            Esta acao removera este arquivo do perfil do modelo.
+          </p>
         </div>
       ) : null}
     </article>
+  );
+}
+
+function VisibilityButton({
+  item,
+  label,
+  modelId,
+  value
+}: {
+  item: ModelMedia;
+  label: string;
+  modelId: string;
+  value: ModelMedia["visibility"];
+}) {
+  const isActive = item.visibility === value;
+
+  return (
+    <form action={updateModelMediaVisibilityAction.bind(null, modelId, item.id)}>
+      <input name="media_visibility" type="hidden" value={value} />
+      <button
+        className={`media-visibility-button${isActive ? " is-active" : ""}`}
+        disabled={isActive}
+        type="submit"
+      >
+        {label}
+      </button>
+    </form>
   );
 }
 
@@ -444,7 +482,17 @@ function Lightbox({
   previewUrls: Record<string, string>;
   selectedId: string;
 }) {
+  const [isMounted, setIsMounted] = useState(false);
   const item = items.find((mediaItem) => mediaItem.id === selectedId);
+
+  useEffect(() => {
+    setIsMounted(true);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   if (!item) {
     return null;
@@ -452,7 +500,11 @@ function Lightbox({
 
   const previewUrl = previewUrls[item.id];
 
-  return (
+  if (!isMounted) {
+    return null;
+  }
+
+  return createPortal(
     <div className="media-lightbox" role="dialog" aria-modal="true">
       <button className="media-lightbox-close" onClick={onClose} type="button">
         X
@@ -467,7 +519,8 @@ function Lightbox({
       <button className="media-lightbox-nav next" onClick={onNext} type="button">
         Proxima
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -687,6 +740,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-section-header p,
         .media-future-note,
+        .media-delete-note,
         .media-private-note,
         .media-batch-bar span {
           color: var(--muted);
@@ -908,19 +962,37 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           gap: 0.5rem;
         }
 
-        .media-inline-form {
-          display: flex;
+        .media-visibility-group {
+          display: grid;
           gap: 0.35rem;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        .media-inline-form input,
-        .media-inline-form select {
-          min-height: 34px;
-          min-width: 0;
+        .media-visibility-button {
+          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          color: var(--muted);
+          cursor: pointer;
+          font: inherit;
+          font-size: 0.72rem;
+          min-height: 32px;
+          padding: 0.35rem 0.5rem;
+          width: 100%;
+        }
+
+        .media-visibility-button.is-active {
+          background: var(--foreground);
+          border-color: var(--foreground);
+          color: var(--background);
+          cursor: default;
+        }
+
+        .media-delete-note {
+          line-height: 1.35;
         }
 
         .media-card-actions .button,
-        .media-inline-form .button,
         .media-batch-actions .button {
           font-size: 0.76rem;
           min-height: 34px;
@@ -929,28 +1001,36 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-lightbox {
           align-items: center;
-          background: rgba(12, 14, 18, 0.86);
-          bottom: 0;
-          display: grid;
-          grid-template-columns: minmax(90px, 1fr) minmax(240px, 820px) minmax(90px, 1fr);
+          background: rgba(12, 14, 18, 0.88);
+          display: flex;
+          gap: 1rem;
+          height: 100dvh;
           inset: 0;
-          justify-items: center;
+          justify-content: center;
+          overflow: hidden;
           padding: 2rem;
           position: fixed;
-          z-index: 60;
+          width: 100vw;
+          z-index: 1000;
         }
 
         .media-lightbox figure {
-          display: grid;
+          align-items: center;
+          display: flex;
+          flex-direction: column;
           gap: 0.75rem;
+          justify-content: center;
           margin: 0;
-          max-height: 92vh;
-          place-items: center;
+          max-height: calc(100dvh - 4rem);
+          max-width: min(82vw, 900px);
+          min-width: 0;
         }
 
         .media-lightbox img {
           border-radius: 8px;
-          max-height: 86vh;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+          display: block;
+          max-height: calc(100dvh - 7rem);
           max-width: 100%;
           object-fit: contain;
         }
@@ -977,6 +1057,10 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           top: 1.2rem;
         }
 
+        .media-lightbox-nav {
+          flex: 0 0 auto;
+        }
+
         @media (max-width: 720px) {
           .media-section-header {
             display: grid;
@@ -992,13 +1076,26 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           }
 
           .media-lightbox {
-            grid-template-columns: 1fr;
             gap: 1rem;
+            padding: 1rem;
           }
 
-          .media-lightbox-nav.previous,
-          .media-lightbox-nav.next {
-            position: static;
+          .media-lightbox figure {
+            max-width: 100%;
+          }
+
+          .media-lightbox img {
+            max-height: calc(100dvh - 8rem);
+          }
+
+          .media-lightbox-nav {
+            font-size: 0.78rem;
+            min-height: 36px;
+            padding: 0.4rem 0.6rem;
+          }
+
+          .media-visibility-group {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
