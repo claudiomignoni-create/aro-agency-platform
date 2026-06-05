@@ -789,6 +789,41 @@ export async function createModelMediaDownloadUrl(
   return data.signedUrl;
 }
 
+export async function createModelMediaPreviewUrls(modelId: string) {
+  await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { data: media, error } = await admin
+    .from("model_media")
+    .select("id, model_id, media_type, storage_bucket, storage_path")
+    .eq("model_id", modelId)
+    .in("media_type", ["portfolio", "polaroid"]);
+
+  if (error) {
+    throw error;
+  }
+
+  const previews = await Promise.all(
+    (media ?? []).map(async (item) => {
+      const { data, error: signedUrlError } = await admin.storage
+        .from(item.storage_bucket)
+        .createSignedUrl(item.storage_path, 300);
+
+      if (signedUrlError) {
+        return null;
+      }
+
+      return [item.id, data.signedUrl] as const;
+    })
+  );
+
+  return Object.fromEntries(
+    previews.filter((preview): preview is readonly [string, string] =>
+      Boolean(preview)
+    )
+  );
+}
+
 export async function deleteModelMedia(modelId: string, mediaId: string) {
   await requireRole(["admin"]);
   const { createAdminClient } = await import("@/lib/supabase/admin");
@@ -847,6 +882,61 @@ export async function updateModelMediaStatus(
 
   if (error) {
     throw error;
+  }
+}
+
+export async function updateModelMediaTitle(
+  modelId: string,
+  mediaId: string,
+  title: string | null
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("model_media")
+    .update({ title })
+    .eq("id", mediaId)
+    .eq("model_id", modelId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function updateModelMediaVisibility(
+  modelId: string,
+  mediaId: string,
+  visibility: MediaVisibility
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: media, error } = await supabase
+    .from("model_media")
+    .select("id, media_type")
+    .eq("id", mediaId)
+    .eq("model_id", modelId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!media) {
+    throw new Error("Midia nao encontrada para este modelo.");
+  }
+
+  if (media.media_type === "document" && visibility !== "private") {
+    throw new Error("Documentos devem permanecer privados.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("model_media")
+    .update({ visibility })
+    .eq("id", mediaId)
+    .eq("model_id", modelId);
+
+  if (updateError) {
+    throw updateError;
   }
 }
 

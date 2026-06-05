@@ -13,6 +13,7 @@ import {
   createModel,
   createModelMedia,
   createModelMediaDownloadUrl,
+  createModelMediaPreviewUrls,
   createModelUpdateRequest,
   createModelWorkHistory,
   deleteModel,
@@ -25,6 +26,8 @@ import {
   updateModelDocuments,
   updateModelHealthLogistics,
   updateModelMediaStatus,
+  updateModelMediaTitle,
+  updateModelMediaVisibility,
   updateModelRepresentation,
   updateModelSkills,
   updateModelSocialLinks,
@@ -159,6 +162,27 @@ function mediaInputsFromFormData(formData: FormData): ModelMediaInput[] {
     title: nullableString(formData, "title") || file.name,
     visibility: mediaType === "document" ? "private" : visibility
   }));
+}
+
+function mediaIdsFromFormData(formData: FormData) {
+  return formData
+    .getAll("media_ids")
+    .flatMap((value) => String(value).split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function mediaVisibilityFromFormData(formData: FormData) {
+  const visibility = requiredString(
+    formData,
+    "media_visibility"
+  ) as MediaVisibility;
+
+  if (!allowedMediaVisibilities.includes(visibility)) {
+    throw new Error("Visibilidade de mídia inválida.");
+  }
+
+  return visibility;
 }
 
 function revalidateModelPaths(id: string) {
@@ -575,6 +599,77 @@ export async function updateModelMediaStatusAction(
   await updateModelMediaStatus(id, mediaId, status);
   revalidateModelPaths(id);
   redirectToTab(id, "media");
+}
+
+export async function updateModelMediaBatchStatusAction(
+  id: string,
+  status: MediaStatus,
+  formData: FormData
+) {
+  await requireRole(["admin"]);
+
+  if (!allowedMediaStatuses.includes(status)) {
+    throw new Error("Status de mídia inválido.");
+  }
+
+  for (const mediaId of mediaIdsFromFormData(formData)) {
+    await updateModelMediaStatus(id, mediaId, status);
+  }
+
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function updateModelMediaTitleAction(
+  id: string,
+  mediaId: string,
+  formData: FormData
+) {
+  await requireRole(["admin"]);
+  const title = nullableString(formData, "title");
+
+  if (title && title.length > 120) {
+    throw new Error("Título de mídia muito longo.");
+  }
+
+  await updateModelMediaTitle(id, mediaId, title);
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function updateModelMediaVisibilityAction(
+  id: string,
+  mediaId: string,
+  formData: FormData
+) {
+  await requireRole(["admin"]);
+  await updateModelMediaVisibility(
+    id,
+    mediaId,
+    mediaVisibilityFromFormData(formData)
+  );
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function updateModelMediaBatchVisibilityAction(
+  id: string,
+  formData: FormData
+) {
+  await requireRole(["admin"]);
+  const visibility = mediaVisibilityFromFormData(formData);
+
+  for (const mediaId of mediaIdsFromFormData(formData)) {
+    await updateModelMediaVisibility(id, mediaId, visibility);
+  }
+
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function getModelMediaPreviewUrlsAction(id: string) {
+  await requireRole(["admin"]);
+  return createModelMediaPreviewUrls(id);
 }
 
 export async function createModelMediaAction(id: string, formData: FormData) {
