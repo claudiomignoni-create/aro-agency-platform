@@ -1,7 +1,10 @@
 import { requireRole } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   MediaStatus,
+  MediaType,
+  MediaVisibility,
   Model,
   ModelClientProfile,
   ModelDocuments,
@@ -15,6 +18,13 @@ import type {
   ModelUpdateRequest,
   ModelWorkHistory
 } from "@/types/database";
+
+const mediaBuckets: Record<MediaType, string> = {
+  document: "model-documents",
+  polaroid: "model-polaroids",
+  portfolio: "model-portfolio",
+  video: "model-videos"
+};
 
 const modelSelect = `
   id,
@@ -368,6 +378,16 @@ export type ModelWorkHistoryInput = Omit<
   "id" | "model_id" | "created_at" | "updated_at"
 >;
 
+export type ModelMediaInput = {
+  file: File;
+  media_type: MediaType;
+  review_notes?: string | null;
+  sort_order?: number | null;
+  status: MediaStatus;
+  title?: string | null;
+  visibility: MediaVisibility;
+};
+
 export type ModelHealthLogisticsInput = Omit<
   ModelHealthLogistics,
   "id" | "model_id" | "created_at" | "updated_at"
@@ -659,7 +679,159 @@ export async function updateModelRepresentation(
   }
 }
 
+function sanitizeStorageFileName(fileName: string) {
+  const safeName = fileName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  return safeName || "arquivo";
+}
+
+export async function createModelMedia(
+  modelId: string,
+  input: ModelMediaInput
+) {
+  const profile = await requireRole(["admin"]);
+  const admin = createAdminClient();
+  const { data: model, error: modelError } = await admin
+    .from("models")
+    .select("id")
+    .eq("id", modelId)
+    .maybeSingle();
+
+  if (modelError) {
+    throw modelError;
+  }
+
+  if (!model) {
+    throw new Error("Modelo não encontrado.");
+  }
+
+  const bucket = mediaBuckets[input.media_type];
+  const safeFileName = sanitizeStorageFileName(input.file.name);
+  const storagePath = `models/${modelId}/${input.media_type}/${Date.now()}-${safeFileName}`;
+  const body = await input.file.arrayBuffer();
+  const { error: uploadError } = await admin.storage
+    .from(bucket)
+    .upload(storagePath, body, {
+      contentType: input.file.type || "application/octet-stream",
+      upsert: false
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data, error } = await admin
+    .from("model_media")
+    .insert({
+      media_type: input.media_type,
+      model_id: modelId,
+      review_notes: input.review_notes ?? null,
+      sort_order: input.sort_order ?? null,
+      status: input.status,
+      storage_bucket: bucket,
+      storage_path: storagePath,
+      title: input.title ?? null,
+      uploaded_by: profile.id,
+      visibility:
+        input.media_type === "document" ? "private" : input.visibility
+    })
+    .select(mediaSelect)
+    .single();
+
+  if (error) {
+    await admin.storage.from(bucket).remove([storagePath]);
+    throw error;
+  }
+
+  await admin
+    .from("models")
+    .update({ last_media_update_at: new Date().toISOString() })
+    .eq("id", modelId);
+
+  return data as ModelMedia;
+}
+
+export async function createModelMediaDownloadUrl(
+  modelId: string,
+  mediaId: string
+) {
+  await requireRole(["admin"]);
+  const admin = createAdminClient();
+  const { data: media, error } = await admin
+    .from("model_media")
+    .select("id, model_id, storage_bucket, storage_path")
+    .eq("id", mediaId)
+    .eq("model_id", modelId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!media) {
+    throw new Error("Mídia não encontrada para este modelo.");
+  }
+
+  const { data, error: signedUrlError } = await admin.storage
+    .from(media.storage_bucket)
+    .createSignedUrl(media.storage_path, 60);
+
+  if (signedUrlError) {
+    throw signedUrlError;
+  }
+
+  return data.signedUrl;
+}
+
+export async function deleteModelMedia(modelId: string, mediaId: string) {
+  await requireRole(["admin"]);
+  const admin = createAdminClient();
+  const { data: media, error } = await admin
+    .from("model_media")
+    .select("id, model_id, storage_bucket, storage_path")
+    .eq("id", mediaId)
+    .eq("model_id", modelId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!media) {
+    throw new Error("Mídia não encontrada para este modelo.");
+  }
+
+  const { error: storageError } = await admin.storage
+    .from(media.storage_bucket)
+    .remove([media.storage_path]);
+
+  if (storageError) {
+    throw storageError;
+  }
+
+  const { error: deleteError } = await admin
+    .from("model_media")
+    .delete()
+    .eq("id", mediaId)
+    .eq("model_id", modelId);
+
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  await admin
+    .from("models")
+    .update({ last_media_update_at: new Date().toISOString() })
+    .eq("id", modelId);
+}
+
 export async function updateModelMediaStatus(
+  modelId: string,
   mediaId: string,
   status: MediaStatus
 ) {
@@ -668,7 +840,8 @@ export async function updateModelMediaStatus(
   const { error } = await supabase
     .from("model_media")
     .update({ status })
-    .eq("id", mediaId);
+    .eq("id", mediaId)
+    .eq("model_id", modelId);
 
   if (error) {
     throw error;

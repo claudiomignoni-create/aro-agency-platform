@@ -11,9 +11,12 @@ import {
 import { requireRole } from "@/lib/auth";
 import {
   createModel,
+  createModelMedia,
+  createModelMediaDownloadUrl,
   createModelUpdateRequest,
   createModelWorkHistory,
   deleteModel,
+  deleteModelMedia,
   deleteModelWorkHistory,
   touchModelMeasurementsUpdated,
   touchModelMediaUpdated,
@@ -31,12 +34,18 @@ import {
   type ModelHealthLogisticsInput,
   type ModelInput,
   type ModelMeasurementsInput,
+  type ModelMediaInput,
   type ModelRepresentationInput,
   type ModelSkillsInput,
   type ModelSocialLinksInput,
   type ModelWorkHistoryInput
 } from "@/lib/models";
-import type { MediaStatus, ModelStatus } from "@/types/database";
+import type {
+  MediaStatus,
+  MediaType,
+  MediaVisibility,
+  ModelStatus
+} from "@/types/database";
 
 const allowedStatuses: ModelStatus[] = [
   "draft",
@@ -52,6 +61,31 @@ const allowedMediaStatuses: MediaStatus[] = [
   "archived"
 ];
 
+const allowedUploadMediaStatuses: MediaStatus[] = [
+  "pending_review",
+  "approved"
+];
+
+const allowedMediaTypes: MediaType[] = [
+  "portfolio",
+  "polaroid",
+  "video",
+  "document"
+];
+
+const allowedMediaVisibilities: MediaVisibility[] = [
+  "private",
+  "client_only",
+  "public"
+];
+
+const mediaCategoryTypes: Record<string, MediaType> = {
+  book: "portfolio",
+  documents: "document",
+  polaroids: "polaroid",
+  videos: "video"
+};
+
 function checked(formData: FormData, key: string) {
   return formData.get(key) === "on";
 }
@@ -64,6 +98,52 @@ function statusFromFormData(formData: FormData) {
   }
 
   return status;
+}
+
+function mediaInputFromFormData(formData: FormData): ModelMediaInput {
+  const file = formData.get("file");
+  const mediaCategory = requiredString(formData, "media_category");
+  const mediaType = requiredString(formData, "media_type") as MediaType;
+  const status = requiredString(formData, "media_status") as MediaStatus;
+  const visibility = requiredString(
+    formData,
+    "media_visibility"
+  ) as MediaVisibility;
+  const expectedMediaType = mediaCategoryTypes[mediaCategory];
+
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Selecione um arquivo para upload.");
+  }
+
+  if (!expectedMediaType) {
+    throw new Error("Categoria de mídia ainda não disponível para upload.");
+  }
+
+  if (!allowedMediaTypes.includes(mediaType)) {
+    throw new Error("Tipo de mídia inválido.");
+  }
+
+  if (expectedMediaType !== mediaType) {
+    throw new Error("Categoria e tipo de mídia não correspondem.");
+  }
+
+  if (!allowedUploadMediaStatuses.includes(status)) {
+    throw new Error("Status de mídia inválido para upload.");
+  }
+
+  if (!allowedMediaVisibilities.includes(visibility)) {
+    throw new Error("Visibilidade de mídia inválida.");
+  }
+
+  return {
+    file,
+    media_type: mediaType,
+    review_notes: nullableString(formData, "review_notes"),
+    sort_order: nullableNumber(formData, "sort_order"),
+    status,
+    title: nullableString(formData, "title"),
+    visibility: mediaType === "document" ? "private" : visibility
+  };
 }
 
 function revalidateModelPaths(id: string) {
@@ -477,7 +557,27 @@ export async function updateModelMediaStatusAction(
     throw new Error("Status de mídia inválido.");
   }
 
-  await updateModelMediaStatus(mediaId, status);
+  await updateModelMediaStatus(id, mediaId, status);
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function createModelMediaAction(id: string, formData: FormData) {
+  await requireRole(["admin"]);
+  await createModelMedia(id, mediaInputFromFormData(formData));
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function downloadModelMediaAction(id: string, mediaId: string) {
+  await requireRole(["admin"]);
+  const signedUrl = await createModelMediaDownloadUrl(id, mediaId);
+  redirect(signedUrl);
+}
+
+export async function deleteModelMediaAction(id: string, mediaId: string) {
+  await requireRole(["admin"]);
+  await deleteModelMedia(id, mediaId);
   revalidateModelPaths(id);
   redirectToTab(id, "media");
 }

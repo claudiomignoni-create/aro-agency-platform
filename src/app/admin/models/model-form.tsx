@@ -1,8 +1,11 @@
 import Link from "next/link";
-import type { Model, ModelProfile } from "@/types/database";
+import type { Model, ModelMedia, ModelProfile } from "@/types/database";
 import {
+  createModelMediaAction,
   createModelWorkHistoryAction,
+  deleteModelMediaAction,
   deleteModelWorkHistoryAction,
+  downloadModelMediaAction,
   markMeasurementsUpdatedAction,
   markMediaUpdatedAction,
   markProfileReviewedAction,
@@ -525,6 +528,95 @@ function DocumentsTab({ profile }: { profile: ModelProfile }) {
   );
 }
 
+function MediaUploadForm({ modelId }: { modelId: string }) {
+  return (
+    <details
+      className="stack"
+      style={{
+        border: "1px solid var(--line)",
+        borderRadius: "8px",
+        padding: "1rem"
+      }}
+    >
+      <summary className="button" style={{ width: "fit-content" }}>
+        Adicionar mídia
+      </summary>
+      <form
+        action={createModelMediaAction.bind(null, modelId)}
+        className="form wide-form"
+        encType="multipart/form-data"
+        style={{ marginTop: "1rem" }}
+      >
+        <div className="grid">
+          <label>
+            Arquivo
+            <input name="file" required type="file" />
+          </label>
+          <label>
+            Categoria
+            <select defaultValue="book" name="media_category">
+              <option value="book">Book</option>
+              <option value="polaroids">Polaroids</option>
+              <option value="videos">Vídeos</option>
+              <option value="documents">Documentos</option>
+              <option disabled value="composite">
+                Composite - etapa futura
+              </option>
+              <option disabled value="work-videos">
+                Work videos - etapa futura
+              </option>
+              <option disabled value="video-casting">
+                Video casting - etapa futura
+              </option>
+              <option disabled value="mother-agency">
+                Materiais de agência mãe - etapa futura
+              </option>
+              <option disabled value="client-materials">
+                Materiais para cliente - etapa futura
+              </option>
+            </select>
+          </label>
+          <label>
+            Tipo
+            <select defaultValue="portfolio" name="media_type">
+              <option value="portfolio">portfolio</option>
+              <option value="polaroid">polaroid</option>
+              <option value="video">video</option>
+              <option value="document">document</option>
+            </select>
+          </label>
+          <Field label="Título" name="title" />
+          <label>
+            Visibilidade
+            <select defaultValue="private" name="media_visibility">
+              <option value="private">private</option>
+              <option value="client_only">client_only</option>
+              <option value="public">public</option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select defaultValue="pending_review" name="media_status">
+              <option value="pending_review">pending_review</option>
+              <option value="approved">approved</option>
+            </select>
+          </label>
+          <Field label="Ordem" name="sort_order" type="number" />
+        </div>
+        <TextareaField label="Observação" name="review_notes" />
+        <p className="muted">
+          Documentos são sempre salvos como private. Categorias futuras ainda não têm upload.
+        </p>
+        <SaveButton>Salvar mídia</SaveButton>
+      </form>
+    </details>
+  );
+}
+
+function mediaTitle(item: ModelMedia) {
+  return item.title?.trim() || item.storage_path.split("/").pop() || "-";
+}
+
 function MediaTab({ profile }: { profile: ModelProfile }) {
   const { media, model } = profile;
 
@@ -540,6 +632,7 @@ function MediaTab({ profile }: { profile: ModelProfile }) {
           Abrir Admin Media
         </Link>
       </div>
+      <MediaUploadForm modelId={model.id} />
       <div className="table-wrap">
         <table className="table">
           <thead>
@@ -556,12 +649,17 @@ function MediaTab({ profile }: { profile: ModelProfile }) {
             {media.map((item) => (
               <tr key={item.id}>
                 <td>{item.media_type}</td>
-                <td>{item.title ?? "-"}</td>
+                <td>{mediaTitle(item)}</td>
                 <td><span className="status">{item.status}</span></td>
                 <td>{item.visibility}</td>
                 <td>{item.storage_path}</td>
                 <td>
                   <div className="actions">
+                    <form action={downloadModelMediaAction.bind(null, model.id, item.id)}>
+                      <button className="button secondary" type="submit">
+                        Baixar
+                      </button>
+                    </form>
                     <form
                       action={updateModelMediaStatusAction.bind(
                         null,
@@ -581,6 +679,11 @@ function MediaTab({ profile }: { profile: ModelProfile }) {
                       )}
                     >
                       <button className="button secondary" type="submit">Rejeitar</button>
+                    </form>
+                    <form action={deleteModelMediaAction.bind(null, model.id, item.id)}>
+                      <button className="button danger" type="submit">
+                        Excluir
+                      </button>
                     </form>
                   </div>
                 </td>
