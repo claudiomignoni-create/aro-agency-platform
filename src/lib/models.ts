@@ -1,5 +1,4 @@
 import { requireRole } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   MediaStatus,
@@ -695,6 +694,7 @@ export async function createModelMedia(
   input: ModelMediaInput
 ) {
   const profile = await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const { data: model, error: modelError } = await admin
     .from("models")
@@ -761,6 +761,7 @@ export async function createModelMediaDownloadUrl(
   mediaId: string
 ) {
   await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const { data: media, error } = await admin
     .from("model_media")
@@ -790,6 +791,7 @@ export async function createModelMediaDownloadUrl(
 
 export async function deleteModelMedia(modelId: string, mediaId: string) {
   await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const { data: media, error } = await admin
     .from("model_media")
