@@ -86,6 +86,13 @@ const mediaCategoryTypes: Record<string, MediaType> = {
   videos: "video"
 };
 
+const mediaCategoryAccepts: Record<string, RegExp> = {
+  book: /^image\//,
+  documents: /^(application\/pdf|image\/)/,
+  polaroids: /^image\//,
+  videos: /^video\//
+};
+
 function checked(formData: FormData, key: string) {
   return formData.get(key) === "on";
 }
@@ -100,19 +107,21 @@ function statusFromFormData(formData: FormData) {
   return status;
 }
 
-function mediaInputFromFormData(formData: FormData): ModelMediaInput {
-  const file = formData.get("file");
+function mediaInputsFromFormData(formData: FormData): ModelMediaInput[] {
+  const files = formData
+    .getAll("files")
+    .filter((file): file is File => file instanceof File && file.size > 0);
   const mediaCategory = requiredString(formData, "media_category");
   const mediaType = requiredString(formData, "media_type") as MediaType;
-  const status = requiredString(formData, "media_status") as MediaStatus;
-  const visibility = requiredString(
-    formData,
-    "media_visibility"
-  ) as MediaVisibility;
+  const status = (formData.get("media_status") ||
+    "pending_review") as MediaStatus;
+  const visibility = (formData.get("media_visibility") ||
+    "private") as MediaVisibility;
   const expectedMediaType = mediaCategoryTypes[mediaCategory];
+  const acceptPattern = mediaCategoryAccepts[mediaCategory];
 
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("Selecione um arquivo para upload.");
+  if (files.length === 0) {
+    throw new Error("Selecione ao menos um arquivo para upload.");
   }
 
   if (!expectedMediaType) {
@@ -135,15 +144,21 @@ function mediaInputFromFormData(formData: FormData): ModelMediaInput {
     throw new Error("Visibilidade de mídia inválida.");
   }
 
-  return {
+  for (const file of files) {
+    if (!acceptPattern.test(file.type || "application/octet-stream")) {
+      throw new Error("Um ou mais arquivos não correspondem à categoria escolhida.");
+    }
+  }
+
+  return files.map((file) => ({
     file,
     media_type: mediaType,
     review_notes: nullableString(formData, "review_notes"),
-    sort_order: nullableNumber(formData, "sort_order"),
+    sort_order: null,
     status,
-    title: nullableString(formData, "title"),
+    title: nullableString(formData, "title") || file.name,
     visibility: mediaType === "document" ? "private" : visibility
-  };
+  }));
 }
 
 function revalidateModelPaths(id: string) {
@@ -564,7 +579,9 @@ export async function updateModelMediaStatusAction(
 
 export async function createModelMediaAction(id: string, formData: FormData) {
   await requireRole(["admin"]);
-  await createModelMedia(id, mediaInputFromFormData(formData));
+  for (const input of mediaInputsFromFormData(formData)) {
+    await createModelMedia(id, input);
+  }
   revalidateModelPaths(id);
   redirectToTab(id, "media");
 }

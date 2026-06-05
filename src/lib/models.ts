@@ -712,7 +712,7 @@ export async function createModelMedia(
 
   const bucket = mediaBuckets[input.media_type];
   const safeFileName = sanitizeStorageFileName(input.file.name);
-  const storagePath = `models/${modelId}/${input.media_type}/${Date.now()}-${safeFileName}`;
+  const storagePath = `models/${modelId}/${input.media_type}/${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
   const body = await input.file.arrayBuffer();
   const { error: uploadError } = await admin.storage
     .from(bucket)
