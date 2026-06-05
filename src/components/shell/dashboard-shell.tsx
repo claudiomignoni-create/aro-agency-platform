@@ -76,6 +76,7 @@ export function DashboardShell({
 export const adminNavItems = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/models", label: "Modelos" },
+  { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
   { href: "/admin/requests", label: "Pedidos" }
 ];
