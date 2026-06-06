@@ -694,6 +694,17 @@ export async function deleteModelMediaAction(id: string, mediaId: string) {
   redirectToTab(id, "media");
 }
 
+export async function deleteModelMediaBatchAction(id: string, formData: FormData) {
+  await requireRole(["admin"]);
+
+  for (const mediaId of mediaIdsFromFormData(formData)) {
+    await deleteModelMedia(id, mediaId);
+  }
+
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
 export async function sendModelUpdateRequestAction(id: string) {
   await requireRole(["admin"]);
   await createModelUpdateRequest(id);

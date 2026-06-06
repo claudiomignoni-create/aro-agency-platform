@@ -5,13 +5,11 @@ import { createPortal, useFormStatus } from "react-dom";
 import type { MediaStatus, ModelMedia } from "@/types/database";
 import {
   createModelMediaAction,
-  deleteModelMediaAction,
+  deleteModelMediaBatchAction,
   downloadModelMediaAction,
   getModelMediaPreviewUrlsAction,
   updateModelMediaBatchStatusAction,
-  updateModelMediaBatchVisibilityAction,
-  updateModelMediaStatusAction,
-  updateModelMediaVisibilityAction
+  updateModelMediaBatchVisibilityAction
 } from "./actions";
 
 type MediaCategory = {
@@ -110,35 +108,6 @@ const mediaCategories: MediaCategory[] = [
 
 function mediaTitle(item: ModelMedia) {
   return item.title?.trim() || item.storage_path.split("/").pop() || "-";
-}
-
-function mediaDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit"
-  }).format(new Date(value));
-}
-
-function mediaStatusLabel(status: ModelMedia["status"]) {
-  const labels: Record<ModelMedia["status"], string> = {
-    approved: "Aprovada",
-    archived: "Arquivada",
-    pending_review: "Em revisao",
-    rejected: "Rejeitada"
-  };
-
-  return labels[status];
-}
-
-function mediaVisibilityLabel(visibility: ModelMedia["visibility"]) {
-  const labels: Record<ModelMedia["visibility"], string> = {
-    client_only: "Visivel para clientes",
-    private: "Privado interno",
-    public: "Publico"
-  };
-
-  return labels[visibility];
 }
 
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
@@ -247,78 +216,105 @@ function SelectedInputs({ ids }: { ids: string[] }) {
 
 function BatchActionBar({
   modelId,
-  selectedItems
+  selectedItems,
+  totalCount,
+  onToggleAll
 }: {
   modelId: string;
+  onToggleAll: () => void;
   selectedItems: ModelMedia[];
+  totalCount: number;
 }) {
   const selectedIds = selectedItems.map((item) => item.id);
   const selectedCount = selectedItems.length;
   const singleSelected = selectedItems[0];
+  const allSelected = selectedCount === totalCount && totalCount > 0;
   const canChangeClientVisibility = selectedItems.every(
     (item) => item.media_type !== "document"
   );
 
-  if (selectedCount === 0) {
-    return null;
-  }
-
   return (
     <div className="media-batch-bar">
       <strong>
-        {selectedCount} selecionado{selectedCount > 1 ? "s" : ""}
+        {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
       </strong>
       <div className="media-batch-actions">
-        {singleSelected && selectedCount === 1 ? (
-          <form action={downloadModelMediaAction.bind(null, modelId, singleSelected.id)}>
-            <button className="media-action-button neutral" type="submit">
-              Abrir/Baixar
-            </button>
-          </form>
+        <button className="media-action-button neutral" onClick={onToggleAll} type="button">
+          {allSelected ? "Limpar selecao" : "Selecionar todos"}
+        </button>
+        {selectedCount > 0 ? (
+          <>
+            {singleSelected && selectedCount === 1 ? (
+              <form action={downloadModelMediaAction.bind(null, modelId, singleSelected.id)}>
+                <button className="media-action-button neutral" type="submit">
+                  Abrir/Baixar
+                </button>
+              </form>
+            ) : null}
+            <form
+              action={updateModelMediaBatchStatusAction.bind(
+                null,
+                modelId,
+                "approved" satisfies MediaStatus
+              )}
+            >
+              <SelectedInputs ids={selectedIds} />
+              <button className="media-action-button approve" type="submit">
+                Aprovar
+              </button>
+            </form>
+            <form
+              action={updateModelMediaBatchStatusAction.bind(
+                null,
+                modelId,
+                "rejected" satisfies MediaStatus
+              )}
+            >
+              <SelectedInputs ids={selectedIds} />
+              <button className="media-action-button reject" type="submit">
+                Rejeitar
+              </button>
+            </form>
+            {canChangeClientVisibility ? (
+              <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
+                <SelectedInputs ids={selectedIds} />
+                <input name="media_visibility" type="hidden" value="client_only" />
+                <button className="media-action-button neutral" type="submit">
+                  Visivel para clientes
+                </button>
+              </form>
+            ) : null}
+            {canChangeClientVisibility ? (
+              <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
+                <SelectedInputs ids={selectedIds} />
+                <input name="media_visibility" type="hidden" value="public" />
+                <button className="media-action-button neutral" type="submit">
+                  Publico
+                </button>
+              </form>
+            ) : null}
+            <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
+              <SelectedInputs ids={selectedIds} />
+              <input name="media_visibility" type="hidden" value="private" />
+              <button className="media-action-button neutral" type="submit">
+                Privado interno
+              </button>
+            </form>
+            <form action={deleteModelMediaBatchAction.bind(null, modelId)}>
+              <SelectedInputs ids={selectedIds} />
+              <button className="media-action-button danger" type="submit">
+                Excluir midia
+              </button>
+            </form>
+          </>
         ) : null}
-        <form
-          action={updateModelMediaBatchStatusAction.bind(
-            null,
-            modelId,
-            "approved" satisfies MediaStatus
-          )}
-        >
-          <SelectedInputs ids={selectedIds} />
-          <button className="media-action-button approve" type="submit">
-            Aprovar
-          </button>
-        </form>
-        <form
-          action={updateModelMediaBatchStatusAction.bind(
-            null,
-            modelId,
-            "rejected" satisfies MediaStatus
-          )}
-        >
-          <SelectedInputs ids={selectedIds} />
-          <button className="media-action-button reject" type="submit">
-            Rejeitar
-          </button>
-        </form>
-        {canChangeClientVisibility ? (
-          <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
-            <SelectedInputs ids={selectedIds} />
-            <input name="media_visibility" type="hidden" value="client_only" />
-            <button className="media-action-button neutral" type="submit">
-              Visivel para clientes
-            </button>
-          </form>
-        ) : null}
-        <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
-          <SelectedInputs ids={selectedIds} />
-          <input name="media_visibility" type="hidden" value="private" />
-          <button className="media-action-button neutral" type="submit">
-            Privado interno
-          </button>
-        </form>
       </div>
-      {!canChangeClientVisibility ? (
-        <span>Documentos permanecem privados.</span>
+      {selectedCount > 0 ? (
+        <span>
+          {canChangeClientVisibility
+            ? "Esta acao removera os arquivos selecionados do perfil do modelo."
+            : "Documentos permanecem privados."}
+        </span>
       ) : null}
     </div>
   );
@@ -329,7 +325,6 @@ function MediaCard({
   isEditing,
   isSelected,
   item,
-  modelId,
   onOpen,
   onToggle,
   previewUrl
@@ -338,7 +333,6 @@ function MediaCard({
   isEditing: boolean;
   isSelected: boolean;
   item: ModelMedia;
-  modelId: string;
   onOpen: () => void;
   onToggle: () => void;
   previewUrl?: string;
@@ -358,112 +352,15 @@ function MediaCard({
           <span>{mediaPlaceholder(category, item)}</span>
         )}
         {isEditing ? (
-          <span className="media-select-indicator">{isSelected ? "Selecionado" : "Selecionar"}</span>
+          <span className="media-select-indicator" aria-hidden="true">
+            {isSelected ? "✓" : ""}
+          </span>
         ) : null}
       </button>
       <div className="media-card-body">
         <strong>{mediaTitle(item)}</strong>
-        <div className="media-meta">
-          <span>{mediaStatusLabel(item.status)}</span>
-          <span>{mediaVisibilityLabel(item.visibility)}</span>
-          <span>{mediaDate(item.created_at)}</span>
-        </div>
       </div>
-      {isEditing ? (
-        <div className="media-card-editor">
-          {item.media_type === "document" ? (
-            <p className="media-private-note">Documento privado</p>
-          ) : (
-            <div className="media-visibility-group" aria-label="Visibilidade">
-              <VisibilityButton
-                item={item}
-                label="Privado interno"
-                modelId={modelId}
-                value="private"
-              />
-              <VisibilityButton
-                item={item}
-                label="Visivel para clientes"
-                modelId={modelId}
-                value="client_only"
-              />
-              <VisibilityButton
-                item={item}
-                label="Publico"
-                modelId={modelId}
-                value="public"
-              />
-            </div>
-          )}
-          <div className="media-card-actions">
-            <form action={downloadModelMediaAction.bind(null, modelId, item.id)}>
-              <button className="media-action-button neutral" type="submit">
-                Abrir/Baixar
-              </button>
-            </form>
-            <form
-              action={updateModelMediaStatusAction.bind(
-                null,
-                modelId,
-                item.id,
-                "approved"
-              )}
-            >
-              <button className="media-action-button approve" type="submit">
-                Aprovar
-              </button>
-            </form>
-            <form
-              action={updateModelMediaStatusAction.bind(
-                null,
-                modelId,
-                item.id,
-                "rejected"
-              )}
-            >
-              <button className="media-action-button reject" type="submit">
-                Rejeitar
-              </button>
-            </form>
-            <form action={deleteModelMediaAction.bind(null, modelId, item.id)}>
-              <button className="media-action-button danger" type="submit">
-                Excluir midia
-              </button>
-            </form>
-          </div>
-          <p className="media-delete-note">
-            Esta acao removera este arquivo do perfil do modelo.
-          </p>
-        </div>
-      ) : null}
     </article>
-  );
-}
-
-function VisibilityButton({
-  item,
-  label,
-  modelId,
-  value
-}: {
-  item: ModelMedia;
-  label: string;
-  modelId: string;
-  value: ModelMedia["visibility"];
-}) {
-  const isActive = item.visibility === value;
-
-  return (
-    <form action={updateModelMediaVisibilityAction.bind(null, modelId, item.id)}>
-      <input name="media_visibility" type="hidden" value={value} />
-      <button
-        className={`media-visibility-button${isActive ? " is-active" : ""}`}
-        disabled={isActive}
-        type="submit"
-      >
-        {label}
-      </button>
-    </form>
   );
 }
 
@@ -533,6 +430,7 @@ function MediaCategorySection({
   selectedIds,
   setEditingCategory,
   setLightbox,
+  toggleAllSelection,
   toggleSelection
 }: {
   category: MediaCategory;
@@ -543,6 +441,7 @@ function MediaCategorySection({
   selectedIds: string[];
   setEditingCategory: (categoryId: string | null) => void;
   setLightbox: (state: { categoryId: string; mediaId: string } | null) => void;
+  toggleAllSelection: (categoryId: string, mediaIds: string[]) => void;
   toggleSelection: (categoryId: string, mediaId: string) => void;
 }) {
   const sortedItems = sortMediaItems(items);
@@ -573,7 +472,17 @@ function MediaCategorySection({
         </div>
       </div>
       {isEditing ? (
-        <BatchActionBar modelId={modelId} selectedItems={selectedItems} />
+        <BatchActionBar
+          modelId={modelId}
+          onToggleAll={() =>
+            toggleAllSelection(
+              category.id,
+              sortedItems.map((item) => item.id)
+            )
+          }
+          selectedItems={selectedItems}
+          totalCount={sortedItems.length}
+        />
       ) : null}
       {sortedItems.length > 0 ? (
         <div className="media-gallery-grid">
@@ -584,7 +493,6 @@ function MediaCategorySection({
               isSelected={selectedIds.includes(item.id)}
               item={item}
               key={item.id}
-              modelId={modelId}
               onOpen={() => setLightbox({ categoryId: category.id, mediaId: item.id })}
               onToggle={() => toggleSelection(category.id, item.id)}
               previewUrl={previewUrls[item.id]}
@@ -683,6 +591,19 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
     });
   }
 
+  function toggleAllSelection(categoryId: string, mediaIds: string[]) {
+    setSelectedByCategory((current) => {
+      const selected = current[categoryId] ?? [];
+      const allSelected =
+        mediaIds.length > 0 && mediaIds.every((id) => selected.includes(id));
+
+      return {
+        ...current,
+        [categoryId]: allSelected ? [] : mediaIds
+      };
+    });
+  }
+
   return (
     <>
       <div className="media-hub">
@@ -697,6 +618,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
             selectedIds={selectedByCategory[category.id] ?? []}
             setEditingCategory={setEditingCategory}
             setLightbox={setLightbox}
+            toggleAllSelection={toggleAllSelection}
             toggleSelection={toggleSelection}
           />
         ))}
@@ -740,8 +662,6 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-section-header p,
         .media-future-note,
-        .media-delete-note,
-        .media-private-note,
         .media-batch-bar span {
           color: var(--muted);
           font-size: 0.82rem;
@@ -870,17 +790,36 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-select-indicator {
-          background: rgba(255, 255, 255, 0.88);
-          border: 1px solid var(--line);
+          align-items: center;
+          background: rgba(12, 26, 44, 0.82);
+          border: 1px solid rgba(255, 255, 255, 0.42);
           border-radius: 999px;
-          bottom: 0.5rem;
-          color: var(--foreground);
-          font-size: 0.72rem;
-          left: 50%;
-          padding: 0.25rem 0.5rem;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
+          color: white;
+          display: flex;
+          font-size: 0.78rem;
+          height: 24px;
+          justify-content: center;
           position: absolute;
-          transform: translateX(-50%);
-          white-space: nowrap;
+          right: 0.55rem;
+          top: 0.55rem;
+          width: 24px;
+        }
+
+        .media-card.is-selected .media-select-indicator {
+          background: rgba(84, 211, 255, 0.92);
+          border-color: rgba(255, 255, 255, 0.72);
+          color: rgb(8, 20, 35);
+          font-weight: 800;
+        }
+
+        .media-card:not(.is-selected) .media-select-indicator::after {
+          border: 1px solid rgba(255, 255, 255, 0.7);
+          border-radius: 999px;
+          content: "";
+          height: 8px;
+          position: absolute;
+          width: 8px;
         }
 
         .media-card-body {
@@ -894,21 +833,6 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-        }
-
-        .media-meta {
-          color: var(--muted);
-          display: flex;
-          flex-wrap: wrap;
-          font-size: 0.7rem;
-          gap: 0.3rem;
-          margin-top: 0.2rem;
-        }
-
-        .media-meta span {
-          border: 1px solid var(--line);
-          border-radius: 999px;
-          padding: 0.1rem 0.36rem;
         }
 
         .media-empty {
@@ -964,78 +888,14 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           color: rgba(255, 255, 255, 0.58);
         }
 
-        .media-batch-actions,
-        .media-card-actions {
+        .media-batch-actions {
           display: flex;
           flex-wrap: wrap;
           gap: 0.45rem;
         }
 
-        .media-card-actions form,
         .media-batch-actions form {
           min-width: 0;
-        }
-
-        .media-card-editor {
-          backdrop-filter: blur(18px);
-          background:
-            linear-gradient(145deg, rgba(8, 20, 35, 0.92), rgba(17, 37, 58, 0.78)),
-            rgba(13, 27, 45, 0.86);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          border-radius: 8px;
-          box-shadow: 0 16px 38px rgba(15, 23, 42, 0.16);
-          color: rgba(255, 255, 255, 0.94);
-          display: grid;
-          gap: 0.7rem;
-          padding: 0.68rem;
-        }
-
-        .media-visibility-group {
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          border-radius: 999px;
-          display: grid;
-          gap: 0.18rem;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          padding: 0.2rem;
-        }
-
-        .media-visibility-group form {
-          min-width: 0;
-        }
-
-        .media-visibility-button {
-          background: transparent;
-          border: 1px solid transparent;
-          border-radius: 999px;
-          color: rgba(255, 255, 255, 0.66);
-          cursor: pointer;
-          font: inherit;
-          font-size: 0.68rem;
-          font-weight: 600;
-          line-height: 1.1;
-          min-height: 30px;
-          padding: 0.38rem 0.46rem;
-          transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
-          width: 100%;
-        }
-
-        .media-visibility-button.is-active {
-          background: rgba(84, 211, 255, 0.18);
-          border-color: rgba(84, 211, 255, 0.45);
-          box-shadow: inset 0 0 16px rgba(84, 211, 255, 0.1);
-          color: rgba(235, 251, 255, 0.98);
-          cursor: default;
-        }
-
-        .media-delete-note {
-          color: rgba(255, 255, 255, 0.52);
-          font-size: 0.7rem;
-          line-height: 1.35;
-        }
-
-        .media-private-note {
-          color: rgba(255, 255, 255, 0.7);
         }
 
         .media-action-button {
@@ -1178,9 +1038,6 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
             padding: 0.4rem 0.6rem;
           }
 
-          .media-visibility-group {
-            grid-template-columns: 1fr;
-          }
         }
       `}</style>
     </>
