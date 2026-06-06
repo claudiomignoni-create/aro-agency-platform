@@ -940,6 +940,77 @@ export async function updateModelMediaVisibility(
   }
 }
 
+export async function updateModelMainImageFromMedia(
+  modelId: string,
+  mediaId: string
+) {
+  await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { data: media, error } = await admin
+    .from("model_media")
+    .select("id, model_id, media_type, storage_bucket, storage_path")
+    .eq("id", mediaId)
+    .eq("model_id", modelId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!media) {
+    throw new Error("Midia nao encontrada para este modelo.");
+  }
+
+  if (
+    media.media_type !== "portfolio" ||
+    media.storage_bucket !== mediaBuckets.portfolio
+  ) {
+    throw new Error("A foto principal deve ser uma imagem do Book.");
+  }
+
+  const { error: updateError } = await admin
+    .from("models")
+    .update({ main_image_path: media.storage_path })
+    .eq("id", modelId);
+
+  if (updateError) {
+    throw updateError;
+  }
+}
+
+export async function createModelMainImageUrls(models: Model[]) {
+  await requireRole(["admin"]);
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const entries = await Promise.all(
+    models.map(async (model) => {
+      if (
+        !model.main_image_path ||
+        !model.main_image_path.startsWith(`models/${model.id}/portfolio/`)
+      ) {
+        return null;
+      }
+
+      const { data, error } = await admin.storage
+        .from(mediaBuckets.portfolio)
+        .createSignedUrl(model.main_image_path, 300);
+
+      if (error) {
+        return null;
+      }
+
+      return [model.id, data.signedUrl] as const;
+    })
+  );
+
+  return Object.fromEntries(
+    entries.filter((entry): entry is readonly [string, string] =>
+      Boolean(entry)
+    )
+  );
+}
+
 export async function createModelUpdateRequest(modelId: string) {
   const profile = await requireRole(["admin"]);
   const model = await getModel(modelId);

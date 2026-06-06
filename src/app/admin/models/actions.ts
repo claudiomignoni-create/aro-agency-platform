@@ -25,6 +25,7 @@ import {
   updateModel,
   updateModelDocuments,
   updateModelHealthLogistics,
+  updateModelMainImageFromMedia,
   updateModelMediaStatus,
   updateModelMediaTitle,
   updateModelMediaVisibility,
@@ -701,6 +702,13 @@ export async function deleteModelMediaBatchAction(id: string, formData: FormData
     await deleteModelMedia(id, mediaId);
   }
 
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+export async function updateModelMainImageAction(id: string, mediaId: string) {
+  await requireRole(["admin"]);
+  await updateModelMainImageFromMedia(id, mediaId);
   revalidateModelPaths(id);
   redirectToTab(id, "media");
 }

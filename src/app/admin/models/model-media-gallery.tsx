@@ -8,6 +8,7 @@ import {
   deleteModelMediaBatchAction,
   downloadModelMediaAction,
   getModelMediaPreviewUrlsAction,
+  updateModelMainImageAction,
   updateModelMediaBatchStatusAction,
   updateModelMediaBatchVisibilityAction
 } from "./actions";
@@ -229,6 +230,8 @@ function BatchActionBar({
   const selectedCount = selectedItems.length;
   const singleSelected = selectedItems[0];
   const allSelected = selectedCount === totalCount && totalCount > 0;
+  const canSetMainImage =
+    selectedCount === 1 && singleSelected?.media_type === "portfolio";
   const canChangeClientVisibility = selectedItems.every(
     (item) => item.media_type !== "document"
   );
@@ -248,6 +251,13 @@ function BatchActionBar({
               <form action={downloadModelMediaAction.bind(null, modelId, singleSelected.id)}>
                 <button className="media-action-button neutral" type="submit">
                   Abrir/Baixar
+                </button>
+              </form>
+            ) : null}
+            {singleSelected && canSetMainImage ? (
+              <form action={updateModelMainImageAction.bind(null, modelId, singleSelected.id)}>
+                <button className="media-action-button neutral" type="submit">
+                  Definir como foto principal
                 </button>
               </form>
             ) : null}

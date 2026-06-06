@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listModels } from "@/lib/models";
+import { createModelMainImageUrls, listModels } from "@/lib/models";
 import type { Model, ModelStatus } from "@/types/database";
 
 type AdminModelsPageProps = {
@@ -161,6 +161,9 @@ export default async function AdminModelsPage({
     pending: models.filter((model) => model.status === "pending_review").length,
     total: models.length
   };
+  const mainImageUrls = await createModelMainImageUrls(
+    filteredModels.map(({ model }) => model)
+  );
 
   return (
     <div className="models-gallery-shell">
@@ -269,9 +272,17 @@ export default async function AdminModelsPage({
               className="model-card-link"
               href={`/admin/models/${model.id}/edit`}
             >
-              <div className="model-card-placeholder">
-                <span>{getInitials(model)}</span>
-              </div>
+              {mainImageUrls[model.id] ? (
+                <img
+                  alt={getDisplayName(model)}
+                  className="model-card-image"
+                  src={mainImageUrls[model.id]}
+                />
+              ) : (
+                <div className="model-card-placeholder">
+                  <span>{getInitials(model)}</span>
+                </div>
+              )}
               <div className="model-card-caption">
                 <strong>{getDisplayName(model)}</strong>
                 <span>{getLocation(model)}</span>
@@ -442,6 +453,15 @@ export default async function AdminModelsPage({
           display: flex;
           height: 100%;
           justify-content: center;
+        }
+
+        .model-card-image {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          display: block;
+          height: 100%;
+          object-fit: cover;
+          width: 100%;
         }
 
         .model-card-placeholder span {
