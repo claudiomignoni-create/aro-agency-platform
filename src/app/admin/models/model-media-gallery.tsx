@@ -108,12 +108,12 @@ const mediaCategories: MediaCategory[] = [
 ];
 
 function mediaTitle(item: ModelMedia) {
-  return item.title?.trim() || item.storage_path.split("/").pop() || "-";
+  return item.title?.trim() || item.storage_path?.split("/").pop() || "-";
 }
 
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
   if (item?.media_type === "document") {
-    return item.storage_path.toLowerCase().endsWith(".pdf")
+    return item.storage_path?.toLowerCase().endsWith(".pdf")
       ? "PDF"
       : "Documento";
   }
@@ -548,7 +548,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
     getModelMediaPreviewUrlsAction(modelId)
       .then((urls) => {
         if (isActive) {
-          setPreviewUrls(urls);
+          setPreviewUrls(urls ?? {});
         }
       })
       .catch(() => {

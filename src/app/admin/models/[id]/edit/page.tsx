@@ -44,6 +44,10 @@ function valueOrDash(value: string | number | null | undefined, suffix = "") {
   return `${value}${suffix}`;
 }
 
+function modelCategories(model: Model) {
+  return Array.isArray(model.categories) ? model.categories : [];
+}
+
 type EditModelPageProps = {
   params: Promise<{
     id: string;
@@ -72,6 +76,7 @@ export default async function EditModelPage({
   const modelName = getDisplayName(model);
   const mainImageUrls = await createModelMainImageUrls([model]);
   const mainImageUrl = mainImageUrls[model.id];
+  const categories = modelCategories(model);
   const heroFacts = [
     { label: "Status", value: model.status },
     { label: "Base atual", value: locationLabel(model) },
@@ -86,7 +91,7 @@ export default async function EditModelPage({
     },
     {
       label: "Categorias",
-      value: model.categories.length ? model.categories.join(", ") : "-"
+      value: categories.length ? categories.join(", ") : "-"
     }
   ];
   const quickLinks = [
