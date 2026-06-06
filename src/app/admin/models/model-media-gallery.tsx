@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createPortal, useFormStatus } from "react-dom";
+import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import type { MediaStatus, ModelMedia } from "@/types/database";
 import {
-  createModelMediaAction,
   deleteModelMediaBatchAction,
   downloadModelMediaAction,
   getModelMediaPreviewUrlsAction,
+  uploadModelMediaFileAction,
   updateModelMainImageAction,
   updateModelMediaBatchStatusAction,
   updateModelMediaBatchVisibilityAction
@@ -142,16 +144,6 @@ function sortMediaItems(items: ModelMedia[]) {
   });
 }
 
-function UploadSubmitButton({ hasFiles }: { hasFiles: boolean }) {
-  const { pending } = useFormStatus();
-
-  return (
-    <button className="button secondary" disabled={!hasFiles || pending} type="submit">
-      {pending ? "Enviando..." : "Enviar selecionados"}
-    </button>
-  );
-}
-
 function UploadArea({
   category,
   modelId
@@ -159,8 +151,15 @@ function UploadArea({
   category: MediaCategory;
   modelId: string;
 }) {
+  const router = useRouter();
   const [fileCount, setFileCount] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState({
+    completed: 0,
+    current: 0,
+    total: 0,
+    uploading: false
+  });
 
   if (!category.mediaType || !category.accept || !category.uploadLabel) {
     return (
@@ -168,12 +167,90 @@ function UploadArea({
     );
   }
 
+  const mediaType = category.mediaType;
+  const progressPercent =
+    uploadProgress.total > 0
+      ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
+      : 0;
+
+  async function handleUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (uploadProgress.uploading) {
+      return;
+    }
+
+    const form = event.currentTarget;
+    const fileInput = form.elements.namedItem("files");
+    const files =
+      fileInput instanceof HTMLInputElement
+        ? Array.from(fileInput.files ?? [])
+        : [];
+
+    if (files.length === 0) {
+      setUploadError("Selecione ao menos um arquivo para upload.");
+      return;
+    }
+
+    setUploadError(null);
+    setUploadProgress({
+      completed: 0,
+      current: 1,
+      total: files.length,
+      uploading: true
+    });
+
+    for (const [index, file] of files.entries()) {
+      setUploadProgress({
+        completed: index,
+        current: index + 1,
+        total: files.length,
+        uploading: true
+      });
+
+      const formData = new FormData();
+      formData.set("media_category", category.id);
+      formData.set("media_type", mediaType);
+      formData.set("media_status", "pending_review");
+      formData.set("media_visibility", "private");
+      formData.append("files", file);
+
+      const result = await uploadModelMediaFileAction(modelId, formData);
+
+      if (result.error) {
+        setUploadError(`${file.name}: ${result.error}`);
+        setUploadProgress({
+          completed: index,
+          current: index + 1,
+          total: files.length,
+          uploading: false
+        });
+        return;
+      }
+
+      setUploadProgress({
+        completed: index + 1,
+        current: index + 1,
+        total: files.length,
+        uploading: true
+      });
+    }
+
+    form.reset();
+    setFileCount(0);
+    setUploadProgress((current) => ({
+      ...current,
+      uploading: false
+    }));
+    router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
+    router.refresh();
+  }
+
   return (
     <form
-      action={createModelMediaAction.bind(null, modelId)}
       className="media-upload"
       encType="multipart/form-data"
-      onSubmit={() => setIsSubmitting(true)}
+      onSubmit={handleUpload}
     >
       <input name="media_category" type="hidden" value={category.id} />
       <input name="media_type" type="hidden" value={category.mediaType} />
@@ -183,9 +260,19 @@ function UploadArea({
         <input
           accept={category.accept}
           className="media-file-input"
+          disabled={uploadProgress.uploading}
           multiple
           name="files"
-          onChange={(event) => setFileCount(event.currentTarget.files?.length ?? 0)}
+          onChange={(event) => {
+            setFileCount(event.currentTarget.files?.length ?? 0);
+            setUploadError(null);
+            setUploadProgress({
+              completed: 0,
+              current: 0,
+              total: 0,
+              uploading: false
+            });
+          }}
           required
           type="file"
         />
@@ -198,9 +285,25 @@ function UploadArea({
             ? `${fileCount} arquivo${fileCount > 1 ? "s" : ""} selecionado${fileCount > 1 ? "s" : ""}`
             : "Selecione arquivos"}
         </span>
-        {isSubmitting ? <span>Enviando arquivos...</span> : null}
+        {uploadProgress.uploading ? (
+          <span>
+            Enviando {uploadProgress.current} de {uploadProgress.total} arquivos
+          </span>
+        ) : null}
       </div>
-      <UploadSubmitButton hasFiles={fileCount > 0} />
+      {uploadProgress.total > 0 ? (
+        <div className="media-upload-progress" aria-hidden="true">
+          <span style={{ width: `${progressPercent}%` }} />
+        </div>
+      ) : null}
+      {uploadError ? <p className="media-upload-error">{uploadError}</p> : null}
+      <button
+        className="button secondary"
+        disabled={fileCount === 0 || uploadProgress.uploading}
+        type="submit"
+      >
+        {uploadProgress.uploading ? "Enviando..." : "Enviar selecionados"}
+      </button>
     </form>
   );
 }
@@ -754,6 +857,30 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         .media-upload-status span {
           color: var(--muted);
           font-size: 0.75rem;
+        }
+
+        .media-upload-progress {
+          background: color-mix(in srgb, var(--line) 74%, transparent);
+          border-radius: 999px;
+          flex: 1 1 120px;
+          height: 4px;
+          min-width: 120px;
+          overflow: hidden;
+        }
+
+        .media-upload-progress span {
+          background: linear-gradient(90deg, rgba(79, 156, 255, 0.72), rgba(91, 213, 255, 0.78));
+          border-radius: inherit;
+          display: block;
+          height: 100%;
+          transition: width 180ms ease;
+        }
+
+        .media-upload-error {
+          color: #b42318;
+          flex-basis: 100%;
+          font-size: 0.78rem;
+          margin: 0;
         }
 
         .media-gallery-grid {
