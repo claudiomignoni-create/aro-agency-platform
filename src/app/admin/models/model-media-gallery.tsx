@@ -271,7 +271,7 @@ function BatchActionBar({
       <div className="media-batch-actions">
         {singleSelected && selectedCount === 1 ? (
           <form action={downloadModelMediaAction.bind(null, modelId, singleSelected.id)}>
-            <button className="button secondary" type="submit">
+            <button className="media-action-button neutral" type="submit">
               Abrir/Baixar
             </button>
           </form>
@@ -284,7 +284,7 @@ function BatchActionBar({
           )}
         >
           <SelectedInputs ids={selectedIds} />
-          <button className="button secondary" type="submit">
+          <button className="media-action-button approve" type="submit">
             Aprovar
           </button>
         </form>
@@ -296,7 +296,7 @@ function BatchActionBar({
           )}
         >
           <SelectedInputs ids={selectedIds} />
-          <button className="button secondary" type="submit">
+          <button className="media-action-button reject" type="submit">
             Rejeitar
           </button>
         </form>
@@ -304,7 +304,7 @@ function BatchActionBar({
           <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
             <SelectedInputs ids={selectedIds} />
             <input name="media_visibility" type="hidden" value="client_only" />
-            <button className="button secondary" type="submit">
+            <button className="media-action-button neutral" type="submit">
               Visivel para clientes
             </button>
           </form>
@@ -312,7 +312,7 @@ function BatchActionBar({
         <form action={updateModelMediaBatchVisibilityAction.bind(null, modelId)}>
           <SelectedInputs ids={selectedIds} />
           <input name="media_visibility" type="hidden" value="private" />
-          <button className="button secondary" type="submit">
+          <button className="media-action-button neutral" type="submit">
             Privado interno
           </button>
         </form>
@@ -397,7 +397,7 @@ function MediaCard({
           )}
           <div className="media-card-actions">
             <form action={downloadModelMediaAction.bind(null, modelId, item.id)}>
-              <button className="button secondary" type="submit">
+              <button className="media-action-button neutral" type="submit">
                 Abrir/Baixar
               </button>
             </form>
@@ -409,7 +409,7 @@ function MediaCard({
                 "approved"
               )}
             >
-              <button className="button secondary" type="submit">
+              <button className="media-action-button approve" type="submit">
                 Aprovar
               </button>
             </form>
@@ -421,12 +421,12 @@ function MediaCard({
                 "rejected"
               )}
             >
-              <button className="button secondary" type="submit">
+              <button className="media-action-button reject" type="submit">
                 Rejeitar
               </button>
             </form>
             <form action={deleteModelMediaAction.bind(null, modelId, item.id)}>
-              <button className="button danger" type="submit">
+              <button className="media-action-button danger" type="submit">
                 Excluir midia
               </button>
             </form>
@@ -939,64 +939,148 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-batch-bar {
           align-items: center;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid var(--line);
+          backdrop-filter: blur(18px);
+          background:
+            linear-gradient(135deg, rgba(12, 26, 44, 0.92), rgba(20, 38, 61, 0.78)),
+            rgba(16, 32, 52, 0.82);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           border-radius: 8px;
+          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+          color: rgba(255, 255, 255, 0.94);
           display: flex;
           flex-wrap: wrap;
           gap: 0.75rem;
           justify-content: space-between;
           margin-bottom: 1rem;
-          padding: 0.65rem;
+          padding: 0.7rem 0.8rem;
+        }
+
+        .media-batch-bar strong {
+          font-size: 0.82rem;
+          font-weight: 650;
+        }
+
+        .media-batch-bar span {
+          color: rgba(255, 255, 255, 0.58);
         }
 
         .media-batch-actions,
         .media-card-actions {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.4rem;
+          gap: 0.45rem;
+        }
+
+        .media-card-actions form,
+        .media-batch-actions form {
+          min-width: 0;
         }
 
         .media-card-editor {
+          backdrop-filter: blur(18px);
+          background:
+            linear-gradient(145deg, rgba(8, 20, 35, 0.92), rgba(17, 37, 58, 0.78)),
+            rgba(13, 27, 45, 0.86);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 8px;
+          box-shadow: 0 16px 38px rgba(15, 23, 42, 0.16);
+          color: rgba(255, 255, 255, 0.94);
           display: grid;
-          gap: 0.5rem;
+          gap: 0.7rem;
+          padding: 0.68rem;
         }
 
         .media-visibility-group {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 999px;
           display: grid;
-          gap: 0.35rem;
+          gap: 0.18rem;
           grid-template-columns: repeat(3, minmax(0, 1fr));
+          padding: 0.2rem;
+        }
+
+        .media-visibility-group form {
+          min-width: 0;
         }
 
         .media-visibility-button {
-          background: rgba(255, 255, 255, 0.62);
-          border: 1px solid var(--line);
+          background: transparent;
+          border: 1px solid transparent;
           border-radius: 999px;
-          color: var(--muted);
+          color: rgba(255, 255, 255, 0.66);
           cursor: pointer;
           font: inherit;
-          font-size: 0.72rem;
-          min-height: 32px;
-          padding: 0.35rem 0.5rem;
+          font-size: 0.68rem;
+          font-weight: 600;
+          line-height: 1.1;
+          min-height: 30px;
+          padding: 0.38rem 0.46rem;
+          transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
           width: 100%;
         }
 
         .media-visibility-button.is-active {
-          background: var(--foreground);
-          border-color: var(--foreground);
-          color: var(--background);
+          background: rgba(84, 211, 255, 0.18);
+          border-color: rgba(84, 211, 255, 0.45);
+          box-shadow: inset 0 0 16px rgba(84, 211, 255, 0.1);
+          color: rgba(235, 251, 255, 0.98);
           cursor: default;
         }
 
         .media-delete-note {
+          color: rgba(255, 255, 255, 0.52);
+          font-size: 0.7rem;
           line-height: 1.35;
         }
 
-        .media-card-actions .button,
-        .media-batch-actions .button {
-          font-size: 0.76rem;
+        .media-private-note {
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .media-action-button {
+          align-items: center;
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          border-radius: 999px;
+          cursor: pointer;
+          display: inline-flex;
+          font: inherit;
+          font-size: 0.72rem;
+          font-weight: 650;
+          justify-content: center;
+          letter-spacing: 0;
           min-height: 34px;
-          padding: 0.4rem 0.55rem;
+          padding: 0.42rem 0.7rem;
+          transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+          white-space: nowrap;
+        }
+
+        .media-action-button:hover {
+          transform: translateY(-1px);
+        }
+
+        .media-action-button.neutral {
+          background: rgba(255, 255, 255, 0.09);
+          color: rgba(255, 255, 255, 0.84);
+        }
+
+        .media-action-button.approve {
+          background: rgba(61, 214, 140, 0.14);
+          border-color: rgba(61, 214, 140, 0.28);
+          color: rgba(205, 255, 231, 0.96);
+        }
+
+        .media-action-button.reject {
+          background: rgba(255, 255, 255, 0.07);
+          border-color: rgba(255, 255, 255, 0.12);
+          color: rgba(255, 255, 255, 0.68);
+        }
+
+        .media-action-button.danger {
+          background: rgba(255, 99, 132, 0.12);
+          border-color: rgba(255, 99, 132, 0.28);
+          color: rgba(255, 220, 226, 0.96);
         }
 
         .media-lightbox {
