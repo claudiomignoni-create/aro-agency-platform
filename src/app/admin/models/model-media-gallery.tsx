@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
+import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { MediaStatus, ModelMedia } from "@/types/database";
 import {
   deleteModelMediaBatchAction,
@@ -30,15 +31,55 @@ type ModelMediaGalleryProps = {
   modelId: string;
 };
 
-type UploadResponse = {
+type UploadErrorCode =
+  | "DATABASE_INSERT_FAILED"
+  | "FILE_TOO_LARGE"
+  | "INVALID_CATEGORY"
+  | "STORAGE_UPLOAD_FAILED"
+  | "TIMEOUT"
+  | "UNAUTHORIZED"
+  | "UNKNOWN_ERROR"
+  | "UNSUPPORTED_FILE_TYPE";
+
+type UploadErrorResponse = {
+  code: UploadErrorCode;
+  details?: string;
+  fileName?: string;
+  message: string;
+  success: false;
+};
+
+type PrepareUploadResponse = {
+  bucket: string;
+  fileName: string;
+  path: string;
+  success: true;
+  token: string;
+};
+
+type CompleteUploadResponse = {
+  mediaId: string;
+  success: true;
+};
+
+type UploadResponse =
+  | CompleteUploadResponse
+  | PrepareUploadResponse
+  | UploadErrorResponse;
+
+type UploadQueueItem = {
+  code?: UploadErrorCode;
+  details?: string;
   error?: string;
+  file: File;
+  id: string;
   mediaId?: string;
-  success: boolean;
+  status: "failed" | "pending" | "uploaded" | "uploading";
 };
 
 const mediaCategories: MediaCategory[] = [
   {
-    accept: "image/*",
+    accept: "image/jpeg,image/png,image/webp",
     description: "Fotos profissionais do book do modelo.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "book",
@@ -48,7 +89,7 @@ const mediaCategories: MediaCategory[] = [
     uploadLabel: "Adicionar ao Book"
   },
   {
-    accept: "image/*",
+    accept: "image/jpeg,image/png,image/webp",
     description: "Digitals e polaroids para avaliacao rapida.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "polaroids",
@@ -89,7 +130,7 @@ const mediaCategories: MediaCategory[] = [
     title: "Video casting"
   },
   {
-    accept: "application/pdf,image/*",
+    accept: "application/pdf,image/jpeg,image/png,image/webp",
     description: "Documentos administrativos e privados.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "documents",
@@ -149,28 +190,74 @@ function sortMediaItems(items: ModelMedia[]) {
   });
 }
 
-async function uploadMediaFile(
+function createUploadItem(file: File, index: number): UploadQueueItem {
+  return {
+    file,
+    id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+    status: "pending"
+  };
+}
+
+function uploadPayload(
+  action: "complete" | "prepare",
+  category: MediaCategory,
+  file: File,
+  mediaType: ModelMedia["media_type"],
+  storage?: { bucket: string; path: string }
+) {
+  return {
+    action,
+    bucket: storage?.bucket,
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type || "application/octet-stream",
+    media_category: category.id,
+    media_status: "pending_review",
+    media_type: mediaType,
+    media_visibility: "private",
+    path: storage?.path,
+    title: file.name
+  };
+}
+
+async function uploadRequest(
   modelId: string,
-  formData: FormData
+  body: Record<string, unknown>
 ): Promise<UploadResponse> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch(`/admin/models/${modelId}/media/upload`, {
-      body: formData,
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json"
+      },
       method: "POST",
       signal: controller.signal
     });
+
+    if (response.redirected || response.url.includes("/login")) {
+      return {
+        code: "UNAUTHORIZED",
+        message: "Sua sessão expirou. Faça login novamente.",
+        success: false
+      };
+    }
+
     const result = (await response.json().catch(() => null)) as
       | UploadResponse
       | null;
 
     if (!response.ok || !result?.success) {
       return {
-        error:
-          result?.error ||
-          "Não foi possível enviar este arquivo. Tente novamente.",
+        code: result && !result.success ? result.code : "UNKNOWN_ERROR",
+        details: result && !result.success ? result.details : undefined,
+        fileName: result && !result.success ? result.fileName : undefined,
+        message:
+          result && !result.success
+            ? result.message
+            : "Não foi possível enviar este arquivo. Tente novamente.",
         success: false
       };
     }
@@ -178,14 +265,59 @@ async function uploadMediaFile(
     return result;
   } catch (error) {
     return {
-      error:
+      code:
         error instanceof DOMException && error.name === "AbortError"
-          ? "Tempo limite atingido ao enviar este arquivo."
+          ? "TIMEOUT"
+          : "UNKNOWN_ERROR",
+      message:
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Tempo limite atingido ao preparar este arquivo."
           : "Não foi possível enviar este arquivo. Verifique a conexão e tente novamente.",
       success: false
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function uploadDirectToStorage(
+  file: File,
+  preparedUpload: PrepareUploadResponse
+): Promise<UploadErrorResponse | null> {
+  try {
+    const supabase = createBrowserSupabaseClient();
+    const { error } = await supabase.storage
+      .from(preparedUpload.bucket)
+      .uploadToSignedUrl(preparedUpload.path, preparedUpload.token, file, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false
+      });
+
+    if (error) {
+      return {
+        code: "STORAGE_UPLOAD_FAILED",
+        details: error.message,
+        fileName: file.name,
+        message: "Falha ao salvar no storage. Tente novamente.",
+        success: false
+      };
+    }
+
+    return null;
+  } catch (error) {
+    return {
+      code:
+        error instanceof DOMException && error.name === "AbortError"
+          ? "TIMEOUT"
+          : "STORAGE_UPLOAD_FAILED",
+      details: error instanceof Error ? error.message : undefined,
+      fileName: file.name,
+      message:
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Tempo limite atingido ao enviar este arquivo."
+          : "Falha ao salvar no storage. Tente novamente.",
+      success: false
+    };
   }
 }
 
@@ -198,15 +330,10 @@ function UploadArea({
 }) {
   const router = useRouter();
   const isUploadingRef = useRef(false);
-  const [fileCount, setFileCount] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [currentFileName, setCurrentFileName] = useState<string | null>(null);
+  const [uploadItems, setUploadItems] = useState<UploadQueueItem[]>([]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState({
-    completed: 0,
-    current: 0,
-    total: 0,
-    uploading: false
-  });
+  const [uploading, setUploading] = useState(false);
 
   if (!category.mediaType || !category.accept || !category.uploadLabel) {
     return (
@@ -215,91 +342,194 @@ function UploadArea({
   }
 
   const mediaType = category.mediaType;
+  const uploadedCount = uploadItems.filter((item) => item.status === "uploaded")
+    .length;
+  const failedItems = uploadItems.filter((item) => item.status === "failed");
+  const failedCount = failedItems.length;
+  const pendingCount = uploadItems.filter((item) => item.status === "pending")
+    .length;
+  const completedCount = uploadedCount + failedCount;
+  const totalCount = uploadItems.length;
+  const activeIndex = uploadItems.findIndex((item) => item.status === "uploading");
+  const currentUploadNumber =
+    activeIndex >= 0 ? activeIndex + 1 : Math.min(completedCount + 1, totalCount);
   const progressPercent =
-    uploadProgress.total > 0
-      ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
-      : 0;
+    totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const canSubmit =
+    totalCount > 0 &&
+    !uploading &&
+    uploadItems.some((item) => item.status === "pending" || item.status === "failed");
 
-  async function handleUpload(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function updateUploadItem(
+    itemId: string,
+    updates: Partial<Omit<UploadQueueItem, "file" | "id">>
+  ) {
+    setUploadItems((current) =>
+      current.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              ...updates
+            }
+          : item
+      )
+    );
+  }
 
+  async function uploadQueueItem(item: UploadQueueItem) {
+    setCurrentFileName(item.file.name);
+    updateUploadItem(item.id, {
+      code: undefined,
+      details: undefined,
+      error: undefined,
+      status: "uploading"
+    });
+
+    const preparedUpload = await uploadRequest(
+      modelId,
+      uploadPayload("prepare", category, item.file, mediaType)
+    );
+
+    if (!preparedUpload.success) {
+      updateUploadItem(item.id, {
+        code: preparedUpload.code,
+        details: preparedUpload.details,
+        error: preparedUpload.message,
+        status: "failed"
+      });
+      return preparedUpload;
+    }
+
+    if (!("token" in preparedUpload)) {
+      const error: UploadErrorResponse = {
+        code: "UNKNOWN_ERROR",
+        fileName: item.file.name,
+        message: "Não foi possível preparar o upload deste arquivo.",
+        success: false
+      };
+      updateUploadItem(item.id, {
+        code: error.code,
+        error: error.message,
+        status: "failed"
+      });
+      return error;
+    }
+
+    const storageError = await uploadDirectToStorage(item.file, preparedUpload);
+
+    if (storageError) {
+      updateUploadItem(item.id, {
+        code: storageError.code,
+        details: storageError.details,
+        error: storageError.message,
+        status: "failed"
+      });
+      return storageError;
+    }
+
+    const completedUpload = await uploadRequest(
+      modelId,
+      uploadPayload("complete", category, item.file, mediaType, {
+        bucket: preparedUpload.bucket,
+        path: preparedUpload.path
+      })
+    );
+
+    if (!completedUpload.success) {
+      updateUploadItem(item.id, {
+        code: completedUpload.code,
+        details: completedUpload.details,
+        error: completedUpload.message,
+        status: "failed"
+      });
+      return completedUpload;
+    }
+
+    if (!("mediaId" in completedUpload)) {
+      const error: UploadErrorResponse = {
+        code: "DATABASE_INSERT_FAILED",
+        fileName: item.file.name,
+        message: "Falha ao registrar a mídia. O arquivo não foi adicionado.",
+        success: false
+      };
+      updateUploadItem(item.id, {
+        code: error.code,
+        error: error.message,
+        status: "failed"
+      });
+      return error;
+    }
+
+    updateUploadItem(item.id, {
+      mediaId: completedUpload.mediaId,
+      status: "uploaded"
+    });
+
+    return completedUpload;
+  }
+
+  async function uploadItemsById(itemIds: string[]) {
     if (isUploadingRef.current) {
       return;
     }
 
-    const form = event.currentTarget;
-    const fileInput = form.elements.namedItem("files");
-    const files =
-      fileInput instanceof HTMLInputElement
-        ? Array.from(fileInput.files ?? [])
-        : [];
+    const itemsToUpload = uploadItems.filter(
+      (item) =>
+        itemIds.includes(item.id) &&
+        (item.status === "pending" || item.status === "failed")
+    );
 
-    if (files.length === 0) {
-      setUploadError("Selecione ao menos um arquivo para upload.");
+    if (itemsToUpload.length === 0) {
       return;
     }
 
     isUploadingRef.current = true;
-    setUploadError(null);
+    setUploading(true);
     setUploadSuccess(null);
-    setUploadProgress({
-      completed: 0,
-      current: 1,
-      total: files.length,
-      uploading: true
-    });
+
+    let uploadedInRun = 0;
+    let failedInRun = 0;
+    let stoppedForAuth = false;
 
     try {
-      for (const [index, file] of files.entries()) {
-        setUploadProgress({
-          completed: index,
-          current: index + 1,
-          total: files.length,
-          uploading: true
-        });
+      for (const item of itemsToUpload) {
+        const result = await uploadQueueItem(item);
 
-        const formData = new FormData();
-        formData.set("media_category", category.id);
-        formData.set("media_type", mediaType);
-        formData.set("media_status", "pending_review");
-        formData.set("media_visibility", "private");
-        formData.append("files", file);
+        if (result.success) {
+          uploadedInRun += 1;
+        } else {
+          failedInRun += 1;
 
-        const result = await uploadMediaFile(modelId, formData);
-
-        if (!result.success) {
-          setUploadError(`${file.name}: ${result.error}`);
-          setUploadProgress({
-            completed: index,
-            current: index + 1,
-            total: files.length,
-            uploading: false
-          });
-          return;
+          if (result.code === "UNAUTHORIZED") {
+            stoppedForAuth = true;
+            break;
+          }
         }
-
-        setUploadProgress({
-          completed: index + 1,
-          current: index + 1,
-          total: files.length,
-          uploading: true
-        });
       }
 
-      form.reset();
-      setFileCount(0);
       setUploadSuccess(
-        `${files.length} arquivo${files.length > 1 ? "s" : ""} enviado${files.length > 1 ? "s" : ""} com sucesso.`
+        stoppedForAuth
+          ? "Sua sessão expirou. Faça login novamente."
+          : failedInRun > 0
+            ? `${uploadedInRun} enviado${uploadedInRun !== 1 ? "s" : ""}, ${failedInRun} com erro.`
+            : `${uploadedInRun} arquivo${uploadedInRun !== 1 ? "s" : ""} enviado${uploadedInRun !== 1 ? "s" : ""} com sucesso.`
       );
-      setUploadProgress((current) => ({
-        ...current,
-        uploading: false
-      }));
       router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
       router.refresh();
     } finally {
+      setCurrentFileName(null);
+      setUploading(false);
       isUploadingRef.current = false;
     }
+  }
+
+  async function handleUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await uploadItemsById(
+      uploadItems
+        .filter((item) => item.status === "pending" || item.status === "failed")
+        .map((item) => item.id)
+    );
   }
 
   return (
@@ -316,19 +546,13 @@ function UploadArea({
         <input
           accept={category.accept}
           className="media-file-input"
-          disabled={uploadProgress.uploading}
+          disabled={uploading}
           multiple
           name="files"
           onChange={(event) => {
-            setFileCount(event.currentTarget.files?.length ?? 0);
-            setUploadError(null);
+            const files = Array.from(event.currentTarget.files ?? []);
+            setUploadItems(files.map(createUploadItem));
             setUploadSuccess(null);
-            setUploadProgress({
-              completed: 0,
-              current: 0,
-              total: 0,
-              uploading: false
-            });
           }}
           required
           type="file"
@@ -338,31 +562,67 @@ function UploadArea({
       </label>
       <div className="media-upload-status">
         <span>
-          {fileCount > 0
-            ? `${fileCount} arquivo${fileCount > 1 ? "s" : ""} selecionado${fileCount > 1 ? "s" : ""}`
+          {totalCount > 0
+            ? `${totalCount} arquivo${totalCount > 1 ? "s" : ""} selecionado${totalCount > 1 ? "s" : ""}`
             : "Selecione arquivos"}
         </span>
-        {uploadProgress.uploading ? (
+        {uploading ? (
           <span>
-            Enviando {uploadProgress.current} de {uploadProgress.total} arquivos
+            Enviando {currentUploadNumber} de {totalCount} arquivos
+          </span>
+        ) : null}
+        {currentFileName ? <span>{currentFileName}</span> : null}
+        {totalCount > 0 ? (
+          <span>
+            {uploadedCount} enviados / {failedCount} com erro / {pendingCount} pendentes
           </span>
         ) : null}
       </div>
-      {uploadProgress.total > 0 ? (
+      {totalCount > 0 ? (
         <div className="media-upload-progress" aria-hidden="true">
           <span style={{ width: `${progressPercent}%` }} />
         </div>
       ) : null}
-      {uploadError ? <p className="media-upload-error">{uploadError}</p> : null}
       {uploadSuccess ? (
         <p className="media-upload-success">{uploadSuccess}</p>
       ) : null}
+      {failedItems.length > 0 ? (
+        <div className="media-upload-errors">
+          {failedItems.map((item) => (
+            <div className="media-upload-error-item" key={item.id}>
+              <div>
+                <strong>{item.file.name}</strong>
+                <span>{item.error ?? "Não foi possível enviar este arquivo."}</span>
+                {item.details ? <small>{item.details}</small> : null}
+              </div>
+              <button
+                className="media-retry-button"
+                disabled={uploading}
+                onClick={() => uploadItemsById([item.id])}
+                type="button"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {failedItems.length > 1 ? (
+        <button
+          className="media-retry-button"
+          disabled={uploading}
+          onClick={() => uploadItemsById(failedItems.map((item) => item.id))}
+          type="button"
+        >
+          Tentar novamente todos com erro
+        </button>
+      ) : null}
       <button
         className="button secondary"
-        disabled={fileCount === 0 || uploadProgress.uploading}
+        disabled={!canSubmit}
         type="submit"
       >
-        {uploadProgress.uploading ? "Enviando..." : "Enviar selecionados"}
+        {uploading ? "Enviando..." : "Enviar pendentes"}
       </button>
     </form>
   );
@@ -946,6 +1206,66 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-upload-success {
           color: #047857;
+        }
+
+        .media-upload-errors {
+          display: grid;
+          flex-basis: 100%;
+          gap: 0.45rem;
+        }
+
+        .media-upload-error-item {
+          align-items: center;
+          background: color-mix(in srgb, #fee2e2 55%, transparent);
+          border: 1px solid color-mix(in srgb, #ef4444 30%, var(--line));
+          border-radius: 8px;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+          padding: 0.55rem 0.65rem;
+        }
+
+        .media-upload-error-item div {
+          display: grid;
+          gap: 0.12rem;
+          min-width: 0;
+        }
+
+        .media-upload-error-item strong,
+        .media-upload-error-item span,
+        .media-upload-error-item small {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .media-upload-error-item strong {
+          font-size: 0.78rem;
+        }
+
+        .media-upload-error-item span,
+        .media-upload-error-item small {
+          color: #991b1b;
+          font-size: 0.72rem;
+        }
+
+        .media-retry-button {
+          background: color-mix(in srgb, var(--surface) 92%, white);
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          color: var(--foreground);
+          cursor: pointer;
+          flex: 0 0 auto;
+          font: inherit;
+          font-size: 0.72rem;
+          min-height: 30px;
+          padding: 0.35rem 0.6rem;
+        }
+
+        .media-retry-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.58;
         }
 
         .media-gallery-grid {
