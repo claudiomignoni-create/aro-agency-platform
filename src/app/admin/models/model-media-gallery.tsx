@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -9,7 +9,6 @@ import {
   deleteModelMediaBatchAction,
   downloadModelMediaAction,
   getModelMediaPreviewUrlsAction,
-  uploadModelMediaFileAction,
   updateModelMainImageAction,
   updateModelMediaBatchStatusAction,
   updateModelMediaBatchVisibilityAction
@@ -29,6 +28,12 @@ type MediaCategory = {
 type ModelMediaGalleryProps = {
   media: ModelMedia[];
   modelId: string;
+};
+
+type UploadResponse = {
+  error?: string;
+  mediaId?: string;
+  success: boolean;
 };
 
 const mediaCategories: MediaCategory[] = [
@@ -144,6 +149,46 @@ function sortMediaItems(items: ModelMedia[]) {
   });
 }
 
+async function uploadMediaFile(
+  modelId: string,
+  formData: FormData
+): Promise<UploadResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+
+  try {
+    const response = await fetch(`/admin/models/${modelId}/media/upload`, {
+      body: formData,
+      method: "POST",
+      signal: controller.signal
+    });
+    const result = (await response.json().catch(() => null)) as
+      | UploadResponse
+      | null;
+
+    if (!response.ok || !result?.success) {
+      return {
+        error:
+          result?.error ||
+          "Não foi possível enviar este arquivo. Tente novamente.",
+        success: false
+      };
+    }
+
+    return result;
+  } catch (error) {
+    return {
+      error:
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Tempo limite atingido ao enviar este arquivo."
+          : "Não foi possível enviar este arquivo. Verifique a conexão e tente novamente.",
+      success: false
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function UploadArea({
   category,
   modelId
@@ -152,8 +197,10 @@ function UploadArea({
   modelId: string;
 }) {
   const router = useRouter();
+  const isUploadingRef = useRef(false);
   const [fileCount, setFileCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState({
     completed: 0,
     current: 0,
@@ -176,7 +223,7 @@ function UploadArea({
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (uploadProgress.uploading) {
+    if (isUploadingRef.current) {
       return;
     }
 
@@ -192,7 +239,9 @@ function UploadArea({
       return;
     }
 
+    isUploadingRef.current = true;
     setUploadError(null);
+    setUploadSuccess(null);
     setUploadProgress({
       completed: 0,
       current: 1,
@@ -200,50 +249,57 @@ function UploadArea({
       uploading: true
     });
 
-    for (const [index, file] of files.entries()) {
-      setUploadProgress({
-        completed: index,
-        current: index + 1,
-        total: files.length,
-        uploading: true
-      });
-
-      const formData = new FormData();
-      formData.set("media_category", category.id);
-      formData.set("media_type", mediaType);
-      formData.set("media_status", "pending_review");
-      formData.set("media_visibility", "private");
-      formData.append("files", file);
-
-      const result = await uploadModelMediaFileAction(modelId, formData);
-
-      if (result.error) {
-        setUploadError(`${file.name}: ${result.error}`);
+    try {
+      for (const [index, file] of files.entries()) {
         setUploadProgress({
           completed: index,
           current: index + 1,
           total: files.length,
-          uploading: false
+          uploading: true
         });
-        return;
+
+        const formData = new FormData();
+        formData.set("media_category", category.id);
+        formData.set("media_type", mediaType);
+        formData.set("media_status", "pending_review");
+        formData.set("media_visibility", "private");
+        formData.append("files", file);
+
+        const result = await uploadMediaFile(modelId, formData);
+
+        if (!result.success) {
+          setUploadError(`${file.name}: ${result.error}`);
+          setUploadProgress({
+            completed: index,
+            current: index + 1,
+            total: files.length,
+            uploading: false
+          });
+          return;
+        }
+
+        setUploadProgress({
+          completed: index + 1,
+          current: index + 1,
+          total: files.length,
+          uploading: true
+        });
       }
 
-      setUploadProgress({
-        completed: index + 1,
-        current: index + 1,
-        total: files.length,
-        uploading: true
-      });
+      form.reset();
+      setFileCount(0);
+      setUploadSuccess(
+        `${files.length} arquivo${files.length > 1 ? "s" : ""} enviado${files.length > 1 ? "s" : ""} com sucesso.`
+      );
+      setUploadProgress((current) => ({
+        ...current,
+        uploading: false
+      }));
+      router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
+      router.refresh();
+    } finally {
+      isUploadingRef.current = false;
     }
-
-    form.reset();
-    setFileCount(0);
-    setUploadProgress((current) => ({
-      ...current,
-      uploading: false
-    }));
-    router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
-    router.refresh();
   }
 
   return (
@@ -266,6 +322,7 @@ function UploadArea({
           onChange={(event) => {
             setFileCount(event.currentTarget.files?.length ?? 0);
             setUploadError(null);
+            setUploadSuccess(null);
             setUploadProgress({
               completed: 0,
               current: 0,
@@ -297,6 +354,9 @@ function UploadArea({
         </div>
       ) : null}
       {uploadError ? <p className="media-upload-error">{uploadError}</p> : null}
+      {uploadSuccess ? (
+        <p className="media-upload-success">{uploadSuccess}</p>
+      ) : null}
       <button
         className="button secondary"
         disabled={fileCount === 0 || uploadProgress.uploading}
@@ -876,11 +936,16 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           transition: width 180ms ease;
         }
 
-        .media-upload-error {
+        .media-upload-error,
+        .media-upload-success {
           color: #b42318;
           flex-basis: 100%;
           font-size: 0.78rem;
           margin: 0;
+        }
+
+        .media-upload-success {
+          color: #047857;
         }
 
         .media-gallery-grid {

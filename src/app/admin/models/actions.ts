@@ -682,33 +682,6 @@ export async function createModelMediaAction(id: string, formData: FormData) {
   redirectToTab(id, "media");
 }
 
-export async function uploadModelMediaFileAction(
-  id: string,
-  formData: FormData
-) {
-  await requireRole(["admin"]);
-
-  try {
-    const inputs = mediaInputsFromFormData(formData);
-
-    if (inputs.length !== 1) {
-      throw new Error("Envie um arquivo por vez.");
-    }
-
-    await createModelMedia(id, inputs[0]);
-    revalidateModelPaths(id);
-
-    return { error: null };
-  } catch (error) {
-    return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "Não foi possível enviar este arquivo."
-    };
-  }
-}
-
 export async function downloadModelMediaAction(id: string, mediaId: string) {
   await requireRole(["admin"]);
   const signedUrl = await createModelMediaDownloadUrl(id, mediaId);
