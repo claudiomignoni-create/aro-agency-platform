@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -32,6 +32,7 @@ type ModelMediaGalleryProps = {
 };
 
 type UploadErrorCode =
+  | "CANCELLED"
   | "DATABASE_INSERT_FAILED"
   | "FILE_TOO_LARGE"
   | "INVALID_CATEGORY"
@@ -75,6 +76,10 @@ type UploadQueueItem = {
   id: string;
   mediaId?: string;
   status: "failed" | "pending" | "uploaded" | "uploading";
+};
+
+type ActiveUploadControllers = {
+  current: Set<AbortController>;
 };
 
 const mediaCategories: MediaCategory[] = [
@@ -220,12 +225,26 @@ function uploadPayload(
   };
 }
 
+function uploadConcurrency(mediaType: ModelMedia["media_type"]) {
+  if (mediaType === "video") {
+    return 1;
+  }
+
+  if (mediaType === "document") {
+    return 2;
+  }
+
+  return 3;
+}
+
 async function uploadRequest(
   modelId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  activeControllers: ActiveUploadControllers
 ): Promise<UploadResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
+  activeControllers.current.add(controller);
 
   try {
     const response = await fetch(`/admin/models/${modelId}/media/upload`, {
@@ -277,6 +296,7 @@ async function uploadRequest(
     };
   } finally {
     clearTimeout(timeout);
+    activeControllers.current.delete(controller);
   }
 }
 
@@ -329,8 +349,12 @@ function UploadArea({
   modelId: string;
 }) {
   const router = useRouter();
+  const [isRefreshPending, startTransition] = useTransition();
+  const activeControllersRef = useRef<Set<AbortController>>(new Set());
+  const cancelRequestedRef = useRef(false);
   const isUploadingRef = useRef(false);
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadQueueItem[]>([]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -342,22 +366,27 @@ function UploadArea({
   }
 
   const mediaType = category.mediaType;
+  const concurrencyLimit = uploadConcurrency(mediaType);
   const uploadedCount = uploadItems.filter((item) => item.status === "uploaded")
     .length;
   const failedItems = uploadItems.filter((item) => item.status === "failed");
   const failedCount = failedItems.length;
   const pendingCount = uploadItems.filter((item) => item.status === "pending")
     .length;
+  const uploadingCount = uploadItems.filter((item) => item.status === "uploading")
+    .length;
   const completedCount = uploadedCount + failedCount;
   const totalCount = uploadItems.length;
-  const activeIndex = uploadItems.findIndex((item) => item.status === "uploading");
   const currentUploadNumber =
-    activeIndex >= 0 ? activeIndex + 1 : Math.min(completedCount + 1, totalCount);
+    totalCount > 0
+      ? Math.min(completedCount + Math.max(uploadingCount, 1), totalCount)
+      : 0;
   const progressPercent =
     totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const canSubmit =
     totalCount > 0 &&
     !uploading &&
+    !isRefreshPending &&
     uploadItems.some((item) => item.status === "pending" || item.status === "failed");
 
   function updateUploadItem(
@@ -387,17 +416,24 @@ function UploadArea({
 
     const preparedUpload = await uploadRequest(
       modelId,
-      uploadPayload("prepare", category, item.file, mediaType)
+      uploadPayload("prepare", category, item.file, mediaType),
+      activeControllersRef
     );
 
     if (!preparedUpload.success) {
       updateUploadItem(item.id, {
-        code: preparedUpload.code,
+        code: cancelRequestedRef.current ? "CANCELLED" : preparedUpload.code,
         details: preparedUpload.details,
-        error: preparedUpload.message,
+        error: cancelRequestedRef.current ? "Upload cancelado." : preparedUpload.message,
         status: "failed"
       });
-      return preparedUpload;
+      return cancelRequestedRef.current
+        ? ({
+            code: "CANCELLED",
+            message: "Upload cancelado.",
+            success: false
+          } satisfies UploadErrorResponse)
+        : preparedUpload;
     }
 
     if (!("token" in preparedUpload)) {
@@ -432,7 +468,8 @@ function UploadArea({
       uploadPayload("complete", category, item.file, mediaType, {
         bucket: preparedUpload.bucket,
         path: preparedUpload.path
-      })
+      }),
+      activeControllersRef
     );
 
     if (!completedUpload.success) {
@@ -484,43 +521,83 @@ function UploadArea({
     }
 
     isUploadingRef.current = true;
+    cancelRequestedRef.current = false;
     setUploading(true);
+    setIsCanceling(false);
     setUploadSuccess(null);
 
     let uploadedInRun = 0;
     let failedInRun = 0;
     let stoppedForAuth = false;
+    let nextIndex = 0;
 
     try {
-      for (const item of itemsToUpload) {
-        const result = await uploadQueueItem(item);
+      async function worker() {
+        while (!cancelRequestedRef.current) {
+          const item = itemsToUpload[nextIndex];
+          nextIndex += 1;
 
-        if (result.success) {
-          uploadedInRun += 1;
-        } else {
-          failedInRun += 1;
+          if (!item) {
+            return;
+          }
 
-          if (result.code === "UNAUTHORIZED") {
-            stoppedForAuth = true;
-            break;
+          const result = await uploadQueueItem(item);
+
+          if (result.success) {
+            uploadedInRun += 1;
+          } else {
+            failedInRun += 1;
+
+            if (result.code === "UNAUTHORIZED") {
+              stoppedForAuth = true;
+              cancelRequestedRef.current = true;
+              activeControllersRef.current.forEach((controller) =>
+                controller.abort()
+              );
+              return;
+            }
           }
         }
       }
 
+      await Promise.all(
+        Array.from({
+          length: Math.min(concurrencyLimit, itemsToUpload.length)
+        }).map(() => worker())
+      );
+
       setUploadSuccess(
         stoppedForAuth
           ? "Sua sessão expirou. Faça login novamente."
-          : failedInRun > 0
+          : cancelRequestedRef.current
+            ? `${uploadedInRun} enviado${uploadedInRun !== 1 ? "s" : ""}. Upload cancelado.`
+            : failedInRun > 0
             ? `${uploadedInRun} enviado${uploadedInRun !== 1 ? "s" : ""}, ${failedInRun} com erro.`
             : `${uploadedInRun} arquivo${uploadedInRun !== 1 ? "s" : ""} enviado${uploadedInRun !== 1 ? "s" : ""} com sucesso.`
       );
-      router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
-      router.refresh();
+      if (uploadedInRun > 0) {
+        startTransition(() => {
+          router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
+          router.refresh();
+        });
+      }
     } finally {
       setCurrentFileName(null);
+      setIsCanceling(false);
       setUploading(false);
       isUploadingRef.current = false;
     }
+  }
+
+  function cancelUpload() {
+    if (!isUploadingRef.current) {
+      return;
+    }
+
+    cancelRequestedRef.current = true;
+    setIsCanceling(true);
+    setUploadSuccess("Cancelando upload. Arquivos já enviados serão mantidos.");
+    activeControllersRef.current.forEach((controller) => controller.abort());
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
@@ -546,7 +623,7 @@ function UploadArea({
         <input
           accept={category.accept}
           className="media-file-input"
-          disabled={uploading}
+          disabled={uploading || isRefreshPending}
           multiple
           name="files"
           onChange={(event) => {
@@ -569,12 +646,16 @@ function UploadArea({
         {uploading ? (
           <span>
             Enviando {currentUploadNumber} de {totalCount} arquivos
+            {uploadingCount > 1 ? ` (${uploadingCount} em andamento)` : ""}
           </span>
         ) : null}
+        {isCanceling ? <span>Cancelando upload...</span> : null}
+        {isRefreshPending ? <span>Atualizando galeria...</span> : null}
         {currentFileName ? <span>{currentFileName}</span> : null}
         {totalCount > 0 ? (
           <span>
             {uploadedCount} enviados / {failedCount} com erro / {pendingCount} pendentes
+            {totalCount > 1 ? ` / até ${concurrencyLimit} simultâneos` : ""}
           </span>
         ) : null}
       </div>
@@ -615,6 +696,16 @@ function UploadArea({
           type="button"
         >
           Tentar novamente todos com erro
+        </button>
+      ) : null}
+      {uploading ? (
+        <button
+          className="media-retry-button"
+          disabled={isCanceling}
+          onClick={cancelUpload}
+          type="button"
+        >
+          Cancelar upload
         </button>
       ) : null}
       <button
