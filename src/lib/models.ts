@@ -795,7 +795,7 @@ export async function createModelMediaPreviewUrls(modelId: string) {
   const admin = createAdminClient();
   const { data: media, error } = await admin
     .from("model_media")
-    .select("id, model_id, media_type, storage_bucket, storage_path")
+    .select("id, model_id, media_type, storage_bucket, storage_path, thumbnail_path")
     .eq("model_id", modelId)
     .in("media_type", ["portfolio", "polaroid"]);
 
@@ -805,9 +805,16 @@ export async function createModelMediaPreviewUrls(modelId: string) {
 
   const previews = await Promise.all(
     (media ?? []).map(async (item) => {
+      const previewPath = item.thumbnail_path || item.storage_path;
       const { data, error: signedUrlError } = await admin.storage
         .from(item.storage_bucket)
-        .createSignedUrl(item.storage_path, 300);
+        .createSignedUrl(previewPath, 300, {
+          transform: {
+            quality: 72,
+            resize: "contain",
+            width: 480
+          }
+        });
 
       if (signedUrlError) {
         return null;

@@ -673,6 +673,14 @@ export async function getModelMediaPreviewUrlsAction(id: string) {
   return createModelMediaPreviewUrls(id);
 }
 
+export async function getModelMediaOriginalUrlAction(
+  id: string,
+  mediaId: string
+) {
+  await requireRole(["admin"]);
+  return createModelMediaDownloadUrl(id, mediaId);
+}
+
 export async function createModelMediaAction(id: string, formData: FormData) {
   await requireRole(["admin"]);
   for (const input of mediaInputsFromFormData(formData)) {

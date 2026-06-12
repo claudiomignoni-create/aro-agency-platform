@@ -9,6 +9,7 @@ import type { MediaStatus, ModelMedia } from "@/types/database";
 import {
   deleteModelMediaBatchAction,
   downloadModelMediaAction,
+  getModelMediaOriginalUrlAction,
   getModelMediaPreviewUrlsAction,
   updateModelMainImageAction,
   updateModelMediaBatchStatusAction,
@@ -159,6 +160,9 @@ const mediaCategories: MediaCategory[] = [
     title: "Materiais para cliente"
   }
 ];
+
+const initialVisibleMediaCount = 30;
+const visibleMediaIncrement = 30;
 
 function mediaTitle(item: ModelMedia) {
   return item.title?.trim() || item.storage_path?.split("/").pop() || "-";
@@ -871,7 +875,13 @@ function MediaCard({
         type="button"
       >
         {hasPreview ? (
-          <img alt={mediaTitle(item)} src={previewUrl} />
+          <img
+            alt={mediaTitle(item)}
+            decoding="async"
+            fetchPriority="low"
+            loading="lazy"
+            src={previewUrl}
+          />
         ) : (
           <span>{mediaPlaceholder(category, item)}</span>
         )}
@@ -890,6 +900,7 @@ function MediaCard({
 
 function Lightbox({
   items,
+  modelId,
   onClose,
   onNext,
   onPrevious,
@@ -897,6 +908,7 @@ function Lightbox({
   selectedId
 }: {
   items: ModelMedia[];
+  modelId: string;
   onClose: () => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -904,6 +916,7 @@ function Lightbox({
   selectedId: string;
 }) {
   const [isMounted, setIsMounted] = useState(false);
+  const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const item = items.find((mediaItem) => mediaItem.id === selectedId);
 
   useEffect(() => {
@@ -915,11 +928,39 @@ function Lightbox({
     };
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+    setOriginalUrl(null);
+
+    if (!selectedId) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    getModelMediaOriginalUrlAction(modelId, selectedId)
+      .then((url) => {
+        if (isActive) {
+          setOriginalUrl(url);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setOriginalUrl(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [modelId, selectedId]);
+
   if (!item) {
     return null;
   }
 
   const previewUrl = previewUrls[item.id];
+  const imageUrl = originalUrl || previewUrl;
 
   if (!isMounted) {
     return null;
@@ -934,7 +975,14 @@ function Lightbox({
         Anterior
       </button>
       <figure>
-        {previewUrl ? <img alt={mediaTitle(item)} src={previewUrl} /> : null}
+        {imageUrl ? (
+          <img
+            alt={mediaTitle(item)}
+            decoding="async"
+            fetchPriority="high"
+            src={imageUrl}
+          />
+        ) : null}
         <figcaption>{mediaTitle(item)}</figcaption>
       </figure>
       <button className="media-lightbox-nav next" onClick={onNext} type="button">
@@ -968,9 +1016,12 @@ function MediaCategorySection({
   toggleAllSelection: (categoryId: string, mediaIds: string[]) => void;
   toggleSelection: (categoryId: string, mediaId: string) => void;
 }) {
-  const sortedItems = sortMediaItems(items);
+  const [visibleCount, setVisibleCount] = useState(initialVisibleMediaCount);
+  const sortedItems = useMemo(() => sortMediaItems(items), [items]);
+  const visibleItems = sortedItems.slice(0, visibleCount);
   const isEditing = editingCategory === category.id;
   const selectedItems = sortedItems.filter((item) => selectedIds.includes(item.id));
+  const hiddenCount = Math.max(sortedItems.length - visibleItems.length, 0);
 
   return (
     <section className={`media-section${isEditing ? " is-editing" : ""}`}>
@@ -1009,20 +1060,33 @@ function MediaCategorySection({
         />
       ) : null}
       {sortedItems.length > 0 ? (
-        <div className="media-gallery-grid">
-          {sortedItems.map((item) => (
-            <MediaCard
-              category={category}
-              isEditing={isEditing}
-              isSelected={selectedIds.includes(item.id)}
-              item={item}
-              key={item.id}
-              onOpen={() => setLightbox({ categoryId: category.id, mediaId: item.id })}
-              onToggle={() => toggleSelection(category.id, item.id)}
-              previewUrl={previewUrls[item.id]}
-            />
-          ))}
-        </div>
+        <>
+          <div className="media-gallery-grid">
+            {visibleItems.map((item) => (
+              <MediaCard
+                category={category}
+                isEditing={isEditing}
+                isSelected={selectedIds.includes(item.id)}
+                item={item}
+                key={item.id}
+                onOpen={() => setLightbox({ categoryId: category.id, mediaId: item.id })}
+                onToggle={() => toggleSelection(category.id, item.id)}
+                previewUrl={previewUrls[item.id]}
+              />
+            ))}
+          </div>
+          {hiddenCount > 0 ? (
+            <button
+              className="media-load-more"
+              onClick={() =>
+                setVisibleCount((current) => current + visibleMediaIncrement)
+              }
+              type="button"
+            >
+              Carregar mais {Math.min(hiddenCount, visibleMediaIncrement)}
+            </button>
+          ) : null}
+        </>
       ) : (
         <div className="media-empty">
           <span>{mediaPlaceholder(category)}</span>
@@ -1150,6 +1214,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
       {lightbox ? (
         <Lightbox
           items={lightboxItems}
+          modelId={modelId}
           onClose={() => setLightbox(null)}
           onNext={() => moveLightbox(1)}
           onPrevious={() => moveLightbox(-1)}
@@ -1446,6 +1511,20 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .media-load-more {
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          color: var(--muted);
+          cursor: pointer;
+          display: block;
+          font: inherit;
+          font-size: 0.78rem;
+          margin: 1rem auto 0;
+          min-height: 34px;
+          padding: 0.4rem 0.85rem;
         }
 
         .media-empty {
