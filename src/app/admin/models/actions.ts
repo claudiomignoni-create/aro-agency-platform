@@ -28,6 +28,7 @@ import {
   updateModelMainImageFromMedia,
   updateModelMediaStatus,
   updateModelMediaTitle,
+  updateModelMediaContractDetails,
   updateModelMediaVisibility,
   updateModelRepresentation,
   updateModelSkills,
@@ -634,6 +635,36 @@ export async function updateModelMediaTitleAction(
   }
 
   await updateModelMediaTitle(id, mediaId, title);
+  revalidateModelPaths(id);
+  redirectToTab(id, "media");
+}
+
+function contractValidUntilFromFormData(formData: FormData) {
+  const validUntil = nullableString(formData, "valid_until");
+
+  if (validUntil && !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) {
+    throw new Error("Data de validade inválida.");
+  }
+
+  return validUntil;
+}
+
+export async function updateModelMediaContractDetailsAction(
+  id: string,
+  mediaId: string,
+  formData: FormData
+) {
+  await requireRole(["admin"]);
+  const notes = nullableString(formData, "notes");
+
+  if (notes && notes.length > 600) {
+    throw new Error("Observação muito longa.");
+  }
+
+  await updateModelMediaContractDetails(id, mediaId, {
+    notes,
+    valid_until: contractValidUntilFromFormData(formData)
+  });
   revalidateModelPaths(id);
   redirectToTab(id, "media");
 }

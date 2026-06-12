@@ -12,6 +12,7 @@ import {
   getModelMediaOriginalUrlAction,
   getModelMediaPreviewUrlsAction,
   updateModelMainImageAction,
+  updateModelMediaContractDetailsAction,
   updateModelMediaBatchStatusAction,
   updateModelMediaBatchVisibilityAction
 } from "./actions";
@@ -115,24 +116,44 @@ const mediaCategories: MediaCategory[] = [
     uploadLabel: "Adicionar Composite"
   },
   {
+    accept: "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png",
+    description: "Documentos administrativos privados em PDF ou imagem.",
+    emptyLabel: "Ainda sem materiais cadastrados",
+    id: "documents",
+    mediaType: "document",
+    placeholder: "Documento",
+    title: "Documents",
+    uploadLabel: "Adicionar Documento"
+  },
+  {
     accept: "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm",
-    description: "Videos gerais do modelo.",
+    description: "Videos de trabalhos, campanhas e editoriais.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "videos",
     mediaType: "video",
     placeholder: "Video",
     title: "Videos",
-    uploadLabel: "Adicionar Videos"
+    uploadLabel: "Adicionar Video"
+  },
+  {
+    accept: "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm",
+    description: "Intro, runway, self tape e videos simples de casting.",
+    emptyLabel: "Ainda sem materiais cadastrados",
+    id: "casting_videos",
+    mediaType: "video",
+    placeholder: "Video",
+    title: "Casting Videos",
+    uploadLabel: "Adicionar Casting Video"
   },
   {
     accept: "application/pdf,.pdf",
-    description: "PDFs e documentos administrativos privados.",
-    emptyLabel: "Ainda sem materiais cadastrados",
-    id: "documents",
+    description: "Contratos e documentos de representacao.",
+    emptyLabel: "Ainda sem contratos cadastrados",
+    id: "contracts",
     mediaType: "document",
-    placeholder: "PDF",
-    title: "PDFs / Documents",
-    uploadLabel: "Adicionar PDF"
+    placeholder: "Contrato",
+    title: "Contracts",
+    uploadLabel: "Adicionar Contrato"
   }
 ];
 
@@ -141,15 +162,26 @@ const visibleMediaIncrement = 30;
 const imageMediaTypes: ModelMedia["media_type"][] = ["portfolio", "polaroid"];
 
 function isImageMedia(item: ModelMedia) {
-  return imageMediaTypes.includes(item.media_type);
+  return (
+    imageMediaTypes.includes(item.media_type) ||
+    (item.media_type === "document" && isImagePath(item.storage_path))
+  );
 }
 
 function isVideoMedia(item: ModelMedia) {
   return item.media_type === "video";
 }
 
-function isDocumentMedia(item: ModelMedia) {
-  return item.media_type === "document";
+function isPdfMedia(item: ModelMedia) {
+  return item.media_type === "document" && /\.pdf$/i.test(item.storage_path);
+}
+
+function isImagePath(path: string) {
+  return /\.(jpe?g|png|webp)$/i.test(path);
+}
+
+function isContractMedia(item: ModelMedia) {
+  return storageCategorySegment(item) === "contracts";
 }
 
 function shouldShowMediaLabel(item: ModelMedia) {
@@ -180,39 +212,55 @@ function mediaCategoryIdFromItem(item: ModelMedia) {
     return "documents";
   }
 
+  if (segment === "contracts") {
+    return "contracts";
+  }
+
   if (segment === "video" || segment === "videos") {
     return "videos";
+  }
+
+  if (segment === "casting_videos") {
+    return "casting_videos";
   }
 
   return segment;
 }
 
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
-  if (item?.media_type === "document") {
-    return item.storage_path?.toLowerCase().endsWith(".pdf")
-      ? "PDF"
-      : "Documento";
+  if (item && isContractMedia(item)) {
+    return "Contrato";
   }
 
-  return category.placeholder;
-}
-
-function mediaCardLabel(category: MediaCategory, item: ModelMedia) {
-  if (isDocumentMedia(item)) {
-    return item.storage_path.toLowerCase().endsWith(".pdf")
-      ? "Documento PDF"
-      : "Documento";
+  if (item && isPdfMedia(item)) {
+    return "PDF";
   }
 
-  if (isVideoMedia(item)) {
+  if (item && isVideoMedia(item)) {
     return "Video";
   }
 
   return category.placeholder;
 }
 
+function mediaCardLabel(category: MediaCategory, item: ModelMedia) {
+  if (isContractMedia(item)) {
+    return "Contrato";
+  }
+
+  if (isPdfMedia(item)) {
+    return "PDF";
+  }
+
+  if (isVideoMedia(item)) {
+    return category.id === "casting_videos" ? "Casting video" : "Video";
+  }
+
+  return category.placeholder;
+}
+
 function canOpenInViewer(item: ModelMedia, previewUrls: Record<string, string>) {
-  return Boolean(previewUrls[item.id]) || isVideoMedia(item) || isDocumentMedia(item);
+  return Boolean(previewUrls[item.id]) || isVideoMedia(item) || isPdfMedia(item);
 }
 
 function sortMediaItems(items: ModelMedia[]) {
@@ -249,7 +297,8 @@ function uploadPayload(
   category: MediaCategory,
   file: File,
   mediaType: ModelMedia["media_type"],
-  storage?: { bucket: string; path: string }
+  storage?: { bucket: string; path: string },
+  metadata?: { notes?: string | null; validUntil?: string | null }
 ) {
   return {
     action,
@@ -261,8 +310,10 @@ function uploadPayload(
     media_status: "pending_review",
     media_type: mediaType,
     media_visibility: "private",
+    notes: metadata?.notes,
     path: storage?.path,
-    title: file.name
+    title: file.name,
+    valid_until: metadata?.validUntil
   };
 }
 
@@ -394,6 +445,8 @@ function UploadArea({
   const activeControllersRef = useRef<Set<AbortController>>(new Set());
   const cancelRequestedRef = useRef(false);
   const isUploadingRef = useRef(false);
+  const [contractNotes, setContractNotes] = useState("");
+  const [contractValidUntil, setContractValidUntil] = useState("");
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadQueueItem[]>([]);
@@ -409,6 +462,13 @@ function UploadArea({
   }
 
   const uploadMediaType: ModelMedia["media_type"] = mediaType;
+  const isContractUpload = category.id === "contracts";
+  const contractMetadata = isContractUpload
+    ? {
+        notes: contractNotes.trim() || null,
+        validUntil: contractValidUntil || null
+      }
+    : undefined;
   const uploadedCount = uploadItems.filter((item) => item.status === "uploaded")
     .length;
   const failedItems = uploadItems.filter((item) => item.status === "failed");
@@ -459,7 +519,14 @@ function UploadArea({
 
     const preparedUpload = await uploadRequest(
       modelId,
-      uploadPayload("prepare", category, item.file, uploadMediaType),
+      uploadPayload(
+        "prepare",
+        category,
+        item.file,
+        uploadMediaType,
+        undefined,
+        contractMetadata
+      ),
       activeControllersRef
     );
 
@@ -508,10 +575,17 @@ function UploadArea({
 
     const completedUpload = await uploadRequest(
       modelId,
-      uploadPayload("complete", category, item.file, uploadMediaType, {
-        bucket: preparedUpload.bucket,
-        path: preparedUpload.path
-      }),
+      uploadPayload(
+        "complete",
+        category,
+        item.file,
+        uploadMediaType,
+        {
+          bucket: preparedUpload.bucket,
+          path: preparedUpload.path
+        },
+        contractMetadata
+      ),
       activeControllersRef
     );
 
@@ -662,6 +736,30 @@ function UploadArea({
       <input name="media_type" type="hidden" value={category.mediaType ?? ""} />
       <input name="media_status" type="hidden" value="pending_review" />
       <input name="media_visibility" type="hidden" value="private" />
+      {isContractUpload ? (
+        <div className="media-contract-upload-fields">
+          <label>
+            <span>Validade</span>
+            <input
+              disabled={uploading || isRefreshPending}
+              onChange={(event) => setContractValidUntil(event.currentTarget.value)}
+              type="date"
+              value={contractValidUntil}
+            />
+          </label>
+          <label>
+            <span>Observacao</span>
+            <input
+              disabled={uploading || isRefreshPending}
+              maxLength={600}
+              onChange={(event) => setContractNotes(event.currentTarget.value)}
+              placeholder="Descricao curta"
+              type="text"
+              value={contractNotes}
+            />
+          </label>
+        </div>
+      ) : null}
       <label className="media-upload-tile">
         <input
           accept={category.accept}
@@ -759,6 +857,105 @@ function UploadArea({
         {uploading ? "Enviando..." : "Enviar pendentes"}
       </button>
     </form>
+  );
+}
+
+function VideoThumbnailUpload({
+  item,
+  modelId
+}: {
+  item: ModelMedia;
+  modelId: string;
+}) {
+  const router = useRouter();
+  const [isRefreshPending, startTransition] = useTransition();
+  const activeControllersRef = useRef<Set<AbortController>>(new Set());
+  const [message, setMessage] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleThumbnailChange(file: File | null) {
+    if (!file || uploading) {
+      return;
+    }
+
+    setUploading(true);
+    setMessage(null);
+
+    const basePayload = {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type || "application/octet-stream",
+      media_id: item.id
+    };
+
+    try {
+      const preparedUpload = await uploadRequest(
+        modelId,
+        {
+          ...basePayload,
+          action: "thumbnail_prepare"
+        },
+        activeControllersRef
+      );
+
+      if (!preparedUpload.success || !("token" in preparedUpload)) {
+        setMessage(
+          preparedUpload.success
+            ? "Nao foi possivel preparar a miniatura."
+            : preparedUpload.message
+        );
+        return;
+      }
+
+      const storageError = await uploadDirectToStorage(file, preparedUpload);
+
+      if (storageError) {
+        setMessage(storageError.message);
+        return;
+      }
+
+      const completedUpload = await uploadRequest(
+        modelId,
+        {
+          ...basePayload,
+          action: "thumbnail_complete",
+          bucket: preparedUpload.bucket,
+          path: preparedUpload.path
+        },
+        activeControllersRef
+      );
+
+      if (!completedUpload.success) {
+        setMessage(completedUpload.message);
+        return;
+      }
+
+      setMessage("Miniatura salva.");
+      startTransition(() => {
+        router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
+        router.refresh();
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <label className="media-thumbnail-upload">
+      <input
+        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+        disabled={uploading || isRefreshPending}
+        onChange={(event) => {
+          void handleThumbnailChange(event.currentTarget.files?.[0] ?? null);
+          event.currentTarget.value = "";
+        }}
+        type="file"
+      />
+      <span>{item.thumbnail_path ? "Alterar miniatura" : "Adicionar miniatura"}</span>
+      {uploading ? <small>Enviando...</small> : null}
+      {isRefreshPending ? <small>Atualizando...</small> : null}
+      {message ? <small>{message}</small> : null}
+    </label>
   );
 }
 
@@ -894,6 +1091,7 @@ function MediaCard({
   isEditing,
   isSelected,
   item,
+  modelId,
   onOpen,
   onToggle,
   previewUrl
@@ -902,13 +1100,14 @@ function MediaCard({
   isEditing: boolean;
   isSelected: boolean;
   item: ModelMedia;
+  modelId: string;
   onOpen: () => void;
   onToggle: () => void;
   previewUrl?: string;
 }) {
   const hasPreview = Boolean(previewUrl);
   const showLabel = shouldShowMediaLabel(item);
-  const canOpen = hasPreview || isDocumentMedia(item) || isVideoMedia(item);
+  const canOpen = hasPreview || isPdfMedia(item) || isVideoMedia(item);
 
   return (
     <article className={`media-card${isSelected ? " is-selected" : ""}`}>
@@ -939,6 +1138,49 @@ function MediaCard({
       {showLabel ? (
         <div className="media-card-body">
           <strong>{mediaCardLabel(category, item)}</strong>
+          {isContractMedia(item) ? (
+            <>
+              {item.valid_until ? (
+                <span>Validade: {item.valid_until}</span>
+              ) : null}
+              {item.notes ? <span>{item.notes}</span> : null}
+            </>
+          ) : null}
+          {isVideoMedia(item) ? (
+            <VideoThumbnailUpload item={item} modelId={modelId} />
+          ) : null}
+          {isContractMedia(item) && isEditing ? (
+            <form
+              action={updateModelMediaContractDetailsAction.bind(
+                null,
+                modelId,
+                item.id
+              )}
+              className="media-contract-details-form"
+            >
+              <label>
+                <span>Validade</span>
+                <input
+                  defaultValue={item.valid_until ?? ""}
+                  name="valid_until"
+                  type="date"
+                />
+              </label>
+              <label>
+                <span>Observacao</span>
+                <input
+                  defaultValue={item.notes ?? ""}
+                  maxLength={600}
+                  name="notes"
+                  placeholder="Descricao curta"
+                  type="text"
+                />
+              </label>
+              <button className="media-retry-button" type="submit">
+                Salvar dados
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
     </article>
@@ -1036,7 +1278,7 @@ function Lightbox({
             src={viewerUrl}
           />
         ) : null}
-        {isDocumentMedia(item) ? (
+        {isPdfMedia(item) ? (
           <div className="media-lightbox-panel">
             {viewerUrl ? (
               <>
@@ -1159,6 +1401,7 @@ function MediaCategorySection({
                 isSelected={selectedIds.includes(item.id)}
                 item={item}
                 key={item.id}
+                modelId={modelId}
                 onOpen={() => setLightbox({ categoryId: category.id, mediaId: item.id })}
                 onToggle={() => toggleSelection(category.id, item.id)}
                 previewUrl={previewUrls[item.id]}
@@ -1382,6 +1625,37 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           flex-wrap: wrap;
           gap: 0.5rem;
           justify-content: flex-end;
+        }
+
+        .media-contract-upload-fields {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+          justify-content: flex-end;
+        }
+
+        .media-contract-upload-fields label,
+        .media-contract-details-form label {
+          display: grid;
+          gap: 0.2rem;
+        }
+
+        .media-contract-upload-fields span,
+        .media-contract-details-form span {
+          color: var(--muted);
+          font-size: 0.68rem;
+        }
+
+        .media-contract-upload-fields input,
+        .media-contract-details-form input {
+          background: color-mix(in srgb, var(--surface) 92%, white);
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          color: var(--foreground);
+          font: inherit;
+          font-size: 0.75rem;
+          min-height: 34px;
+          padding: 0.35rem 0.5rem;
         }
 
         .media-upload-tile {
@@ -1611,16 +1885,65 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-card-body {
+          display: grid;
+          gap: 0.35rem;
           min-width: 0;
         }
 
-        .media-card-body strong {
+        .media-card-body strong,
+        .media-card-body span {
           display: block;
-          font-size: 0.9rem;
-          font-weight: 600;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .media-card-body strong {
+          font-size: 0.9rem;
+          font-weight: 600;
+        }
+
+        .media-card-body span {
+          color: var(--muted);
+          font-size: 0.74rem;
+        }
+
+        .media-thumbnail-upload {
+          align-items: center;
+          color: var(--muted);
+          cursor: pointer;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          font-size: 0.72rem;
+        }
+
+        .media-thumbnail-upload input {
+          height: 1px;
+          opacity: 0;
+          overflow: hidden;
+          position: absolute;
+          width: 1px;
+        }
+
+        .media-thumbnail-upload > span {
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          color: var(--foreground);
+          padding: 0.28rem 0.52rem;
+        }
+
+        .media-thumbnail-upload small {
+          color: var(--muted);
+          font-size: 0.7rem;
+        }
+
+        .media-contract-details-form {
+          border-top: 1px solid var(--line);
+          display: grid;
+          gap: 0.45rem;
+          margin-top: 0.2rem;
+          padding-top: 0.5rem;
         }
 
         .media-load-more {

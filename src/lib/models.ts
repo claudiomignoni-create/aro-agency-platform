@@ -233,6 +233,8 @@ const mediaSelect = `
   sort_order,
   uploaded_by,
   review_notes,
+  valid_until,
+  notes,
   created_at,
   updated_at
 `;
@@ -381,10 +383,17 @@ export type ModelMediaInput = {
   file: File;
   media_type: MediaType;
   review_notes?: string | null;
+  valid_until?: string | null;
+  notes?: string | null;
   sort_order?: number | null;
   status: MediaStatus;
   title?: string | null;
   visibility: MediaVisibility;
+};
+
+export type ModelMediaContractDetailsInput = {
+  notes: string | null;
+  valid_until: string | null;
 };
 
 export type ModelHealthLogisticsInput = Omit<
@@ -737,6 +746,8 @@ export async function createModelMedia(
       storage_path: storagePath,
       title: input.title ?? null,
       uploaded_by: profile.id,
+      valid_until: input.valid_until ?? null,
+      notes: input.notes ?? null,
       visibility:
         input.media_type === "document" ? "private" : input.visibility
     })
@@ -765,7 +776,7 @@ export async function createModelMediaDownloadUrl(
   const admin = createAdminClient();
   const { data: media, error } = await admin
     .from("model_media")
-    .select("id, model_id, storage_bucket, storage_path")
+    .select("id, model_id, storage_bucket, storage_path, thumbnail_path")
     .eq("id", mediaId)
     .eq("model_id", modelId)
     .maybeSingle();
@@ -789,6 +800,22 @@ export async function createModelMediaDownloadUrl(
   return data.signedUrl;
 }
 
+function storageFolderForModelMedia(item: {
+  model_id: string;
+  storage_path: string;
+}) {
+  const prefix = `models/${item.model_id}/`;
+  const path = item.storage_path.startsWith(prefix)
+    ? item.storage_path.slice(prefix.length)
+    : item.storage_path;
+
+  return path.split("/")[0] || "";
+}
+
+function isPreviewableImagePath(path: string) {
+  return /\.(jpe?g|png|webp)$/i.test(path);
+}
+
 export async function createModelMediaPreviewUrls(modelId: string) {
   await requireRole(["admin"]);
   const { createAdminClient } = await import("@/lib/supabase/admin");
@@ -797,24 +824,35 @@ export async function createModelMediaPreviewUrls(modelId: string) {
     .from("model_media")
     .select("id, model_id, media_type, storage_bucket, storage_path, thumbnail_path")
     .eq("model_id", modelId)
-    .in("media_type", ["portfolio", "polaroid"]);
+    .in("media_type", ["portfolio", "polaroid", "document", "video"]);
 
   if (error) {
     throw error;
   }
 
   const visiblePreviewMedia = (media ?? []).filter((item) => {
-    const prefix = `models/${item.model_id}/`;
-    const path = item.storage_path.startsWith(prefix)
-      ? item.storage_path.slice(prefix.length)
-      : item.storage_path;
-    const folder = path.split("/")[0];
+    const folder = storageFolderForModelMedia(item);
 
     if (item.media_type === "portfolio") {
       return folder === "portfolio" || folder === "book" || folder === "composite";
     }
 
-    return item.media_type === "polaroid" && (folder === "polaroid" || folder === "polaroids");
+    if (item.media_type === "polaroid") {
+      return folder === "polaroid" || folder === "polaroids";
+    }
+
+    if (item.media_type === "document") {
+      return (
+        (folder === "document" || folder === "documents") &&
+        isPreviewableImagePath(item.storage_path)
+      );
+    }
+
+    return (
+      item.media_type === "video" &&
+      Boolean(item.thumbnail_path) &&
+      (folder === "video" || folder === "videos" || folder === "casting_videos")
+    );
   });
 
   const previews = await Promise.all(
@@ -851,7 +889,7 @@ export async function deleteModelMedia(modelId: string, mediaId: string) {
   const admin = createAdminClient();
   const { data: media, error } = await admin
     .from("model_media")
-    .select("id, model_id, storage_bucket, storage_path")
+    .select("id, model_id, storage_bucket, storage_path, thumbnail_path")
     .eq("id", mediaId)
     .eq("model_id", modelId)
     .maybeSingle();
@@ -864,9 +902,12 @@ export async function deleteModelMedia(modelId: string, mediaId: string) {
     throw new Error("Mídia não encontrada para este modelo.");
   }
 
+  const pathsToRemove = [media.storage_path, media.thumbnail_path].filter(
+    (path): path is string => Boolean(path)
+  );
   const { error: storageError } = await admin.storage
     .from(media.storage_bucket)
-    .remove([media.storage_path]);
+    .remove(pathsToRemove);
 
   if (storageError) {
     throw storageError;
@@ -921,6 +962,49 @@ export async function updateModelMediaTitle(
 
   if (error) {
     throw error;
+  }
+}
+
+export async function updateModelMediaContractDetails(
+  modelId: string,
+  mediaId: string,
+  input: ModelMediaContractDetailsInput
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: media, error } = await supabase
+    .from("model_media")
+    .select("id, media_type, storage_path")
+    .eq("id", mediaId)
+    .eq("model_id", modelId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!media) {
+    throw new Error("Midia nao encontrada para este modelo.");
+  }
+
+  if (
+    media.media_type !== "document" ||
+    !media.storage_path.startsWith(`models/${modelId}/contracts/`)
+  ) {
+    throw new Error("Estes dados so podem ser salvos em contratos.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("model_media")
+    .update({
+      notes: input.notes,
+      valid_until: input.valid_until
+    })
+    .eq("id", mediaId)
+    .eq("model_id", modelId);
+
+  if (updateError) {
+    throw updateError;
   }
 }
 

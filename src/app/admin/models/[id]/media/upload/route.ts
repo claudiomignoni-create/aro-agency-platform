@@ -10,7 +10,11 @@ import type {
 
 export const runtime = "nodejs";
 
-type UploadAction = "complete" | "prepare";
+type UploadAction =
+  | "complete"
+  | "prepare"
+  | "thumbnail_complete"
+  | "thumbnail_prepare";
 type UploadErrorCode =
   | "DATABASE_INSERT_FAILED"
   | "FILE_TOO_LARGE"
@@ -60,10 +64,24 @@ const mediaCategoryRules: Record<string, MediaCategoryRule> = {
   },
   documents: {
     acceptedTypes: {
+      document: /^(application\/pdf|image\/(jpeg|jpg|png))$/
+    },
+    friendlyLabel: "PDF, JPG ou PNG",
+    storageFolder: "document"
+  },
+  contracts: {
+    acceptedTypes: {
       document: /^application\/pdf$/
     },
     friendlyLabel: "PDF",
-    storageFolder: "document"
+    storageFolder: "contracts"
+  },
+  casting_videos: {
+    acceptedTypes: {
+      video: /^video\/(mp4|quicktime|webm)$/
+    },
+    friendlyLabel: "MP4, MOV ou WebM",
+    storageFolder: "casting_videos"
   },
   polaroids: {
     acceptedTypes: {
@@ -284,11 +302,52 @@ function validateUploadRequest(body: Record<string, unknown>) {
     fileSize,
     fileType,
     mediaType,
+    mediaCategory,
+    notes: optionalString(body.notes),
     reviewNotes: optionalString(body.review_notes),
     status,
     storageFolder: categoryRule.storageFolder,
     title: optionalString(body.title) || fileName,
+    validUntil: optionalString(body.valid_until),
     visibility: mediaType === "document" ? "private" : visibility
+  };
+}
+
+function validateDateString(value: string | null, fileName?: string) {
+  if (!value) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new UploadRequestError({
+      code: "INVALID_CATEGORY",
+      fileName,
+      message: "Data de validade inválida."
+    });
+  }
+
+  return value;
+}
+
+function validateContractMetadata(input: ReturnType<typeof validateUploadRequest>) {
+  if (input.mediaCategory !== "contracts") {
+    return {
+      notes: null,
+      validUntil: null
+    };
+  }
+
+  if (input.notes && input.notes.length > 600) {
+    throw new UploadRequestError({
+      code: "INVALID_CATEGORY",
+      fileName: input.fileName,
+      message: "Observação do contrato muito longa."
+    });
+  }
+
+  return {
+    notes: input.notes,
+    validUntil: validateDateString(input.validUntil, input.fileName)
   };
 }
 
@@ -397,11 +456,13 @@ async function completeUpload(
   }
 
   const admin = createAdminClient();
+  const contractMetadata = validateContractMetadata(input);
   const { data, error } = await admin
     .from("model_media")
     .insert({
       media_type: input.mediaType,
       model_id: id,
+      notes: contractMetadata.notes,
       review_notes: input.reviewNotes,
       sort_order: null,
       status: input.status,
@@ -409,6 +470,7 @@ async function completeUpload(
       storage_path: storagePath,
       title: input.title,
       uploaded_by: uploadedBy,
+      valid_until: contractMetadata.validUntil,
       visibility: input.visibility
     })
     .select("id")
@@ -436,6 +498,170 @@ async function completeUpload(
   });
 }
 
+function storageFolderFromPath(modelId: string, storagePath: string) {
+  const prefix = `models/${modelId}/`;
+  const path = storagePath.startsWith(prefix)
+    ? storagePath.slice(prefix.length)
+    : storagePath;
+
+  return path.split("/")[0] || "";
+}
+
+function validateThumbnailRequest(body: Record<string, unknown>) {
+  const fileName = requiredString(body, "fileName");
+  const fileSize = Number(body.fileSize);
+  const fileType = normalizedFileType(requiredString(body, "fileType"), fileName);
+  const mediaId = requiredString(body, "media_id");
+
+  if (!Number.isFinite(fileSize) || fileSize <= 0) {
+    throw new UploadRequestError({
+      code: "UNKNOWN_ERROR",
+      fileName,
+      message: "Não foi possível ler o tamanho da miniatura."
+    });
+  }
+
+  if (fileSize > 10 * bytesInMb) {
+    throw new UploadRequestError({
+      code: "FILE_TOO_LARGE",
+      details: `Tamanho: ${formatMb(fileSize)}. Limite: ${formatMb(10 * bytesInMb)}.`,
+      fileName,
+      message: "Miniatura muito grande. Envie JPG ou PNG menor."
+    });
+  }
+
+  if (!/^image\/(jpeg|jpg|png)$/.test(fileType)) {
+    throw new UploadRequestError({
+      code: "UNSUPPORTED_FILE_TYPE",
+      details: `Tipo recebido: ${fileType || "desconhecido"}. Aceito: JPG ou PNG.`,
+      fileName,
+      message: "Tipo de miniatura não suportado. Envie JPG ou PNG."
+    });
+  }
+
+  return {
+    fileName,
+    fileType,
+    mediaId
+  };
+}
+
+async function ensureVideoMediaForThumbnail(id: string, mediaId: string) {
+  const admin = createAdminClient();
+  const { data: media, error } = await admin
+    .from("model_media")
+    .select("id, model_id, media_type, storage_bucket, storage_path, thumbnail_path")
+    .eq("id", mediaId)
+    .eq("model_id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new UploadRequestError({
+      code: "UNKNOWN_ERROR",
+      message: "Não foi possível validar o vídeo."
+    });
+  }
+
+  if (!media || media.media_type !== "video") {
+    throw new UploadRequestError({
+      code: "INVALID_CATEGORY",
+      message: "Miniaturas só podem ser adicionadas a vídeos."
+    });
+  }
+
+  const folder = storageFolderFromPath(id, media.storage_path);
+
+  if (folder !== "video" && folder !== "videos" && folder !== "casting_videos") {
+    throw new UploadRequestError({
+      code: "INVALID_CATEGORY",
+      message: "Vídeo inválido para miniatura."
+    });
+  }
+
+  return {
+    folder,
+    media
+  };
+}
+
+async function prepareThumbnailUpload(id: string, body: Record<string, unknown>) {
+  const input = validateThumbnailRequest(body);
+  const { folder, media } = await ensureVideoMediaForThumbnail(id, input.mediaId);
+  const admin = createAdminClient();
+  const safeFileName = sanitizeStorageFileName(input.fileName);
+  const storagePath = `models/${id}/${folder}/thumbnails/${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
+  const { data, error } = await admin.storage
+    .from(media.storage_bucket)
+    .createSignedUploadUrl(storagePath, { upsert: false });
+
+  if (error) {
+    throw new UploadRequestError({
+      code: "STORAGE_UPLOAD_FAILED",
+      fileName: input.fileName,
+      message: "Falha ao preparar a miniatura. Tente novamente."
+    });
+  }
+
+  return NextResponse.json({
+    bucket: media.storage_bucket,
+    fileName: input.fileName,
+    path: data.path,
+    success: true,
+    token: data.token
+  });
+}
+
+async function completeThumbnailUpload(id: string, body: Record<string, unknown>) {
+  const input = validateThumbnailRequest(body);
+  const { folder, media } = await ensureVideoMediaForThumbnail(id, input.mediaId);
+  const bucket = requiredString(body, "bucket");
+  const storagePath = requiredString(body, "path");
+  const expectedPrefix = `models/${id}/${folder}/thumbnails/`;
+
+  if (bucket !== media.storage_bucket || !storagePath.startsWith(expectedPrefix)) {
+    throw new UploadRequestError({
+      code: "STORAGE_UPLOAD_FAILED",
+      fileName: input.fileName,
+      message: "A miniatura enviada não corresponde ao vídeo."
+    });
+  }
+
+  if (!(await storageObjectExists(bucket, storagePath))) {
+    throw new UploadRequestError({
+      code: "STORAGE_UPLOAD_FAILED",
+      fileName: input.fileName,
+      message: "Falha ao salvar a miniatura. Tente novamente."
+    });
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("model_media")
+    .update({ thumbnail_path: storagePath })
+    .eq("id", media.id)
+    .eq("model_id", id);
+
+  if (error) {
+    await admin.storage.from(bucket).remove([storagePath]);
+    throw new UploadRequestError({
+      code: "DATABASE_INSERT_FAILED",
+      fileName: input.fileName,
+      message: "Falha ao associar a miniatura ao vídeo."
+    });
+  }
+
+  if (media.thumbnail_path && media.thumbnail_path !== storagePath) {
+    await admin.storage.from(bucket).remove([media.thumbnail_path]);
+  }
+
+  revalidateModelPaths(id);
+
+  return NextResponse.json({
+    mediaId: media.id,
+    success: true
+  });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -452,6 +678,14 @@ export async function POST(
 
     if (action === "complete") {
       return completeUpload(id, body, profile.id);
+    }
+
+    if (action === "thumbnail_prepare") {
+      return prepareThumbnailUpload(id, body);
+    }
+
+    if (action === "thumbnail_complete") {
+      return completeThumbnailUpload(id, body);
     }
 
     throw new UploadRequestError({

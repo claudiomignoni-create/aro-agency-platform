@@ -392,6 +392,8 @@ export type ModelMedia = {
   sort_order: number | null;
   uploaded_by: string | null;
   review_notes: string | null;
+  valid_until: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
