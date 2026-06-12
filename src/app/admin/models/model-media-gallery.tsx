@@ -168,6 +168,10 @@ function mediaTitle(item: ModelMedia) {
   return item.title?.trim() || item.storage_path?.split("/").pop() || "-";
 }
 
+function shouldShowMediaLabel(item: ModelMedia) {
+  return item.media_type !== "portfolio" && item.media_type !== "polaroid";
+}
+
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
   if (item?.media_type === "document") {
     return item.storage_path?.toLowerCase().endsWith(".pdf")
@@ -866,6 +870,7 @@ function MediaCard({
   previewUrl?: string;
 }) {
   const hasPreview = Boolean(previewUrl);
+  const showLabel = shouldShowMediaLabel(item);
 
   return (
     <article className={`media-card${isSelected ? " is-selected" : ""}`}>
@@ -876,7 +881,7 @@ function MediaCard({
       >
         {hasPreview ? (
           <img
-            alt={mediaTitle(item)}
+            alt="Model media image"
             decoding="async"
             fetchPriority="low"
             loading="lazy"
@@ -891,9 +896,11 @@ function MediaCard({
           </span>
         ) : null}
       </button>
-      <div className="media-card-body">
-        <strong>{mediaTitle(item)}</strong>
-      </div>
+      {showLabel ? (
+        <div className="media-card-body">
+          <strong>{mediaTitle(item)}</strong>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -977,13 +984,12 @@ function Lightbox({
       <figure>
         {imageUrl ? (
           <img
-            alt={mediaTitle(item)}
+            alt="Model media image"
             decoding="async"
             fetchPriority="high"
             src={imageUrl}
           />
         ) : null}
-        <figcaption>{mediaTitle(item)}</figcaption>
       </figure>
       <button className="media-lightbox-nav next" onClick={onNext} type="button">
         Proxima
@@ -1669,11 +1675,6 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           max-height: calc(100dvh - 7rem);
           max-width: 100%;
           object-fit: contain;
-        }
-
-        .media-lightbox figcaption {
-          color: white;
-          font-size: 0.9rem;
         }
 
         .media-lightbox-close,
