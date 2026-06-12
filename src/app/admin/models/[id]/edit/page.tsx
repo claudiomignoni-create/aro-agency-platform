@@ -3,7 +3,6 @@ import Link from "next/link";
 import { createModelMainImageUrls, getModelProfile } from "@/lib/models";
 import type { Model } from "@/types/database";
 import {
-  isModelProfileTab,
   ModelProfileEditor,
   type ModelProfileTab
 } from "../../model-form";
@@ -48,6 +47,25 @@ function modelCategories(model: Model) {
   return Array.isArray(model.categories) ? model.categories : [];
 }
 
+const modelProfileTabIds: ModelProfileTab[] = [
+  "basic",
+  "measurements",
+  "contact",
+  "social",
+  "documents",
+  "media",
+  "skills",
+  "work",
+  "health",
+  "representation",
+  "internal",
+  "history"
+];
+
+function isModelProfileTab(tab: string): tab is ModelProfileTab {
+  return modelProfileTabIds.includes(tab as ModelProfileTab);
+}
+
 type EditModelPageProps = {
   params: Promise<{
     id: string;
@@ -77,22 +95,26 @@ export default async function EditModelPage({
   const mainImageUrls = await createModelMainImageUrls([model]);
   const mainImageUrl = mainImageUrls[model.id];
   const categories = modelCategories(model);
-  const heroFacts = [
-    { label: "Status", value: model.status },
-    { label: "Base atual", value: locationLabel(model) },
-    { label: "Nacionalidade", value: valueOrDash(model.nationality) },
-    { label: "Altura", value: valueOrDash(model.height_cm, " cm") },
-    { label: "Busto", value: valueOrDash(model.bust_cm, " cm") },
-    { label: "Cintura", value: valueOrDash(model.waist_cm, " cm") },
-    { label: "Quadril", value: valueOrDash(model.hips_cm, " cm") },
-    {
-      label: "Sapato",
-      value: valueOrDash(model.shoe_size_br ?? model.shoe_size)
-    },
-    {
-      label: "Categorias",
-      value: categories.length ? categories.join(", ") : "-"
-    }
+  const heroFactRows = [
+    [
+      { label: "Status", value: model.status },
+      { label: "Base atual", value: locationLabel(model) },
+      { label: "Nacionalidade", value: valueOrDash(model.nationality) }
+    ],
+    [
+      { label: "Altura", value: valueOrDash(model.height_cm, " cm") },
+      { label: "Busto", value: valueOrDash(model.bust_cm, " cm") },
+      { label: "Cintura", value: valueOrDash(model.waist_cm, " cm") },
+      { label: "Quadril", value: valueOrDash(model.hips_cm, " cm") },
+      {
+        label: "Sapato",
+        value: valueOrDash(model.shoe_size_br ?? model.shoe_size)
+      },
+      {
+        label: "Categorias",
+        value: categories.length ? categories.join(", ") : "-"
+      }
+    ]
   ];
   const quickLinks = [
     { href: `/admin/models/${model.id}/edit?tab=media`, label: "Ver mídia" },
@@ -125,10 +147,17 @@ export default async function EditModelPage({
           </div>
 
           <div className="model-profile-facts">
-            {heroFacts.map((fact) => (
-              <div className="model-profile-fact" key={fact.label}>
-                <span>{fact.label}</span>
-                <strong>{fact.value}</strong>
+            {heroFactRows.map((row, index) => (
+              <div
+                className={`model-profile-fact-row row-${index + 1}`}
+                key={index}
+              >
+                {row.map((fact) => (
+                  <div className="model-profile-fact" key={fact.label}>
+                    <span>{fact.label}</span>
+                    <strong>{fact.value}</strong>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -255,7 +284,19 @@ export default async function EditModelPage({
         .model-profile-facts {
           display: grid;
           gap: 0.55rem;
-          grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+        }
+
+        .model-profile-fact-row {
+          display: grid;
+          gap: 0.55rem;
+        }
+
+        .model-profile-fact-row.row-1 {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .model-profile-fact-row.row-2 {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
         }
 
         .model-profile-fact {
@@ -310,6 +351,11 @@ export default async function EditModelPage({
 
           .model-profile-summary h2 {
             font-size: 2.2rem;
+          }
+
+          .model-profile-fact-row.row-1,
+          .model-profile-fact-row.row-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
       `}</style>

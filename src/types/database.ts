@@ -198,7 +198,11 @@ export type ModelSkills = {
   drives_car: boolean;
   drives_motorcycle: boolean;
   has_drivers_license: boolean;
+  skill_options: string[];
+  sport_options: string[];
+  hobby_options: string[];
   languages: string[];
+  language_levels: Record<string, string>;
   instruments: string[];
   runway_experience: boolean;
   ecommerce_experience: boolean;
@@ -241,6 +245,27 @@ export type ModelHealthLogistics = {
   accepts_swimwear: boolean;
   accepts_artistic_nudity: boolean;
   commercial_restrictions: string | null;
+  has_drivers_license: boolean;
+  drivers_license_category: string | null;
+  drivers_license_number: string | null;
+  drivers_license_country: string | null;
+  drivers_license_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ModelOptionType =
+  | "skill"
+  | "sport"
+  | "hobby"
+  | "language"
+  | "instrument";
+
+export type ModelOption = {
+  id: string;
+  option_type: ModelOptionType;
+  label: string;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 };
@@ -283,6 +308,7 @@ export type ModelProfile = {
   socialLinks: ModelSocialLinks | null;
   documents: ModelDocuments | null;
   skills: ModelSkills | null;
+  modelOptions: ModelOption[];
   workHistory: ModelWorkHistory[];
   healthLogistics: ModelHealthLogistics | null;
   representation: ModelRepresentation | null;

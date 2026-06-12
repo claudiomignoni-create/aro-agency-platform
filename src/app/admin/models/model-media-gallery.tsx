@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { MediaStatus, ModelMedia } from "@/types/database";
@@ -61,8 +60,10 @@ type PrepareUploadResponse = {
 };
 
 type CompleteUploadResponse = {
+  media?: ModelMedia;
   mediaId: string;
   success: true;
+  thumbnailPath?: string;
 };
 
 type UploadResponse =
@@ -435,13 +436,15 @@ async function uploadDirectToStorage(
 
 function UploadArea({
   category,
-  modelId
+  modelId,
+  onMediaCreated,
+  refreshPreviewUrls
 }: {
   category: MediaCategory;
   modelId: string;
+  onMediaCreated: (media: ModelMedia) => void;
+  refreshPreviewUrls: () => Promise<void>;
 }) {
-  const router = useRouter();
-  const [isRefreshPending, startTransition] = useTransition();
   const activeControllersRef = useRef<Set<AbortController>>(new Set());
   const cancelRequestedRef = useRef(false);
   const isUploadingRef = useRef(false);
@@ -489,7 +492,6 @@ function UploadArea({
   const canSubmit =
     totalCount > 0 &&
     !uploading &&
-    !isRefreshPending &&
     uploadItems.some((item) => item.status === "pending" || item.status === "failed");
 
   function updateUploadItem(
@@ -619,6 +621,10 @@ function UploadArea({
       status: "uploaded"
     });
 
+    if (completedUpload.media) {
+      onMediaCreated(completedUpload.media);
+    }
+
     return completedUpload;
   }
 
@@ -693,10 +699,7 @@ function UploadArea({
             : `${uploadedInRun} arquivo${uploadedInRun !== 1 ? "s" : ""} enviado${uploadedInRun !== 1 ? "s" : ""} com sucesso.`
       );
       if (uploadedInRun > 0) {
-        startTransition(() => {
-          router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
-          router.refresh();
-        });
+        await refreshPreviewUrls();
       }
     } finally {
       setCurrentFileName(null);
@@ -741,7 +744,7 @@ function UploadArea({
           <label>
             <span>Validade</span>
             <input
-              disabled={uploading || isRefreshPending}
+              disabled={uploading}
               onChange={(event) => setContractValidUntil(event.currentTarget.value)}
               type="date"
               value={contractValidUntil}
@@ -750,7 +753,7 @@ function UploadArea({
           <label>
             <span>Observacao</span>
             <input
-              disabled={uploading || isRefreshPending}
+              disabled={uploading}
               maxLength={600}
               onChange={(event) => setContractNotes(event.currentTarget.value)}
               placeholder="Descricao curta"
@@ -764,7 +767,7 @@ function UploadArea({
         <input
           accept={category.accept}
           className="media-file-input"
-          disabled={uploading || isRefreshPending}
+          disabled={uploading}
           multiple
           name="files"
           onChange={(event) => {
@@ -791,7 +794,6 @@ function UploadArea({
           </span>
         ) : null}
         {isCanceling ? <span>Cancelando upload...</span> : null}
-        {isRefreshPending ? <span>Atualizando galeria...</span> : null}
         {currentFileName ? <span>{currentFileName}</span> : null}
         {totalCount > 0 ? (
           <span>
@@ -862,13 +864,15 @@ function UploadArea({
 
 function VideoThumbnailUpload({
   item,
-  modelId
+  modelId,
+  onThumbnailSaved,
+  refreshPreviewUrls
 }: {
   item: ModelMedia;
   modelId: string;
+  onThumbnailSaved: (mediaId: string, thumbnailPath: string) => void;
+  refreshPreviewUrls: () => Promise<void>;
 }) {
-  const router = useRouter();
-  const [isRefreshPending, startTransition] = useTransition();
   const activeControllersRef = useRef<Set<AbortController>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -931,10 +935,13 @@ function VideoThumbnailUpload({
       }
 
       setMessage("Miniatura salva.");
-      startTransition(() => {
-        router.replace(`/admin/models/${modelId}/edit?tab=media&saved=1`);
-        router.refresh();
-      });
+      onThumbnailSaved(
+        item.id,
+        "thumbnailPath" in completedUpload && completedUpload.thumbnailPath
+          ? completedUpload.thumbnailPath
+          : preparedUpload.path
+      );
+      await refreshPreviewUrls();
     } finally {
       setUploading(false);
     }
@@ -944,7 +951,7 @@ function VideoThumbnailUpload({
     <label className="media-thumbnail-upload">
       <input
         accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-        disabled={uploading || isRefreshPending}
+        disabled={uploading}
         onChange={(event) => {
           void handleThumbnailChange(event.currentTarget.files?.[0] ?? null);
           event.currentTarget.value = "";
@@ -953,7 +960,6 @@ function VideoThumbnailUpload({
       />
       <span>{item.thumbnail_path ? "Alterar miniatura" : "Adicionar miniatura"}</span>
       {uploading ? <small>Enviando...</small> : null}
-      {isRefreshPending ? <small>Atualizando...</small> : null}
       {message ? <small>{message}</small> : null}
     </label>
   );
@@ -1093,8 +1099,10 @@ function MediaCard({
   item,
   modelId,
   onOpen,
+  onThumbnailSaved,
   onToggle,
-  previewUrl
+  previewUrl,
+  refreshPreviewUrls
 }: {
   category: MediaCategory;
   isEditing: boolean;
@@ -1102,8 +1110,10 @@ function MediaCard({
   item: ModelMedia;
   modelId: string;
   onOpen: () => void;
+  onThumbnailSaved: (mediaId: string, thumbnailPath: string) => void;
   onToggle: () => void;
   previewUrl?: string;
+  refreshPreviewUrls: () => Promise<void>;
 }) {
   const hasPreview = Boolean(previewUrl);
   const showLabel = shouldShowMediaLabel(item);
@@ -1147,7 +1157,12 @@ function MediaCard({
             </>
           ) : null}
           {isVideoMedia(item) ? (
-            <VideoThumbnailUpload item={item} modelId={modelId} />
+            <VideoThumbnailUpload
+              item={item}
+              modelId={modelId}
+              onThumbnailSaved={onThumbnailSaved}
+              refreshPreviewUrls={refreshPreviewUrls}
+            />
           ) : null}
           {isContractMedia(item) && isEditing ? (
             <form
@@ -1334,6 +1349,9 @@ function MediaCategorySection({
   selectedIds,
   setEditingCategory,
   setLightbox,
+  onMediaCreated,
+  onThumbnailSaved,
+  refreshPreviewUrls,
   toggleAllSelection,
   toggleSelection
 }: {
@@ -1345,6 +1363,9 @@ function MediaCategorySection({
   selectedIds: string[];
   setEditingCategory: (categoryId: string | null) => void;
   setLightbox: (state: { categoryId: string; mediaId: string } | null) => void;
+  onMediaCreated: (media: ModelMedia) => void;
+  onThumbnailSaved: (mediaId: string, thumbnailPath: string) => void;
+  refreshPreviewUrls: () => Promise<void>;
   toggleAllSelection: (categoryId: string, mediaIds: string[]) => void;
   toggleSelection: (categoryId: string, mediaId: string) => void;
 }) {
@@ -1366,7 +1387,12 @@ function MediaCategorySection({
           <p>{category.description}</p>
         </div>
         <div className="media-section-tools">
-          <UploadArea category={category} modelId={modelId} />
+          <UploadArea
+            category={category}
+            modelId={modelId}
+            onMediaCreated={onMediaCreated}
+            refreshPreviewUrls={refreshPreviewUrls}
+          />
           {sortedItems.length > 0 ? (
             <button
               className="button secondary"
@@ -1403,8 +1429,10 @@ function MediaCategorySection({
                 key={item.id}
                 modelId={modelId}
                 onOpen={() => setLightbox({ categoryId: category.id, mediaId: item.id })}
+                onThumbnailSaved={onThumbnailSaved}
                 onToggle={() => toggleSelection(category.id, item.id)}
                 previewUrl={previewUrls[item.id]}
+                refreshPreviewUrls={refreshPreviewUrls}
               />
             ))}
           </div>
@@ -1436,15 +1464,44 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
     categoryId: string;
     mediaId: string;
   } | null>(null);
+  const [mediaItems, setMediaItems] = useState<ModelMedia[]>(media);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [selectedByCategory, setSelectedByCategory] = useState<
     Record<string, string[]>
   >({});
 
+  useEffect(() => {
+    setMediaItems(media);
+  }, [media]);
+
+  const refreshPreviewUrls = useCallback(async () => {
+    try {
+      const urls = await getModelMediaPreviewUrlsAction(modelId);
+      setPreviewUrls(urls ?? {});
+    } catch {
+      setPreviewUrls({});
+    }
+  }, [modelId]);
+
+  function upsertMediaItem(item: ModelMedia) {
+    setMediaItems((current) => [
+      item,
+      ...current.filter((mediaItem) => mediaItem.id !== item.id)
+    ]);
+  }
+
+  function updateMediaThumbnail(mediaId: string, thumbnailPath: string) {
+    setMediaItems((current) =>
+      current.map((item) =>
+        item.id === mediaId ? { ...item, thumbnail_path: thumbnailPath } : item
+      )
+    );
+  }
+
   const itemsByCategory = useMemo(() => {
     const map = new Map<string, ModelMedia[]>();
 
-    for (const item of media) {
+    for (const item of mediaItems) {
       const categoryId = mediaCategoryIdFromItem(item);
       const items = map.get(categoryId) ?? [];
       items.push(item);
@@ -1452,27 +1509,11 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
     }
 
     return map;
-  }, [media]);
+  }, [mediaItems]);
 
   useEffect(() => {
-    let isActive = true;
-
-    getModelMediaPreviewUrlsAction(modelId)
-      .then((urls) => {
-        if (isActive) {
-          setPreviewUrls(urls ?? {});
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setPreviewUrls({});
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [modelId, media]);
+    void refreshPreviewUrls();
+  }, [refreshPreviewUrls, media]);
 
   const lightboxCategory = lightbox
     ? mediaCategories.find((category) => category.id === lightbox.categoryId)
@@ -1536,7 +1577,10 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
             items={itemsByCategory.get(category.id) ?? []}
             key={category.id}
             modelId={modelId}
+            onMediaCreated={upsertMediaItem}
+            onThumbnailSaved={updateMediaThumbnail}
             previewUrls={previewUrls}
+            refreshPreviewUrls={refreshPreviewUrls}
             selectedIds={selectedByCategory[category.id] ?? []}
             setEditingCategory={setEditingCategory}
             setLightbox={setLightbox}

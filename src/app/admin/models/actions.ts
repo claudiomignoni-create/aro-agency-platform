@@ -13,6 +13,7 @@ import {
   createModel,
   createModelMedia,
   createModelMediaDownloadUrl,
+  createModelOption,
   createModelMediaPreviewUrls,
   createModelUpdateRequest,
   createModelWorkHistory,
@@ -40,6 +41,7 @@ import {
   type ModelInput,
   type ModelMeasurementsInput,
   type ModelMediaInput,
+  type ModelOptionInput,
   type ModelRepresentationInput,
   type ModelSkillsInput,
   type ModelSocialLinksInput,
@@ -49,6 +51,7 @@ import type {
   MediaStatus,
   MediaType,
   MediaVisibility,
+  ModelOptionType,
   ModelStatus
 } from "@/types/database";
 
@@ -82,6 +85,14 @@ const allowedMediaVisibilities: MediaVisibility[] = [
   "private",
   "client_only",
   "public"
+];
+
+const allowedModelOptionTypes: ModelOptionType[] = [
+  "skill",
+  "sport",
+  "hobby",
+  "language",
+  "instrument"
 ];
 
 const mediaCategoryTypes: Record<string, MediaType> = {
@@ -172,6 +183,26 @@ function mediaIdsFromFormData(formData: FormData) {
     .flatMap((value) => String(value).split(","))
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function stringValues(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+}
+
+function modelOptionInputFromFormData(formData: FormData): ModelOptionInput {
+  const optionType = requiredString(formData, "option_type") as ModelOptionType;
+
+  if (!allowedModelOptionTypes.includes(optionType)) {
+    throw new Error("Tipo de opção inválido.");
+  }
+
+  return {
+    label: requiredString(formData, "label"),
+    option_type: optionType
+  };
 }
 
 function mediaVisibilityFromFormData(formData: FormData) {
@@ -370,6 +401,14 @@ function documentsInputFromFormData(formData: FormData): ModelDocumentsInput {
 }
 
 function skillsInputFromFormData(formData: FormData): ModelSkillsInput {
+  const languages = stringValues(formData, "languages");
+  const languageLevels = Object.fromEntries(
+    languages.map((language) => [
+      language,
+      nullableString(formData, `language_level:${language}`) ?? ""
+    ])
+  );
+
   return {
     acting: checked(formData, "acting"),
     approved_for_client_view: checked(formData, "approved_for_client_view"),
@@ -382,8 +421,10 @@ function skillsInputFromFormData(formData: FormData): ModelSkillsInput {
     gym: checked(formData, "gym"),
     has_drivers_license: checked(formData, "has_drivers_license"),
     horseback_riding: checked(formData, "horseback_riding"),
-    instruments: stringList(formData, "instruments"),
-    languages: stringList(formData, "languages"),
+    hobby_options: stringValues(formData, "hobby_options"),
+    instruments: stringValues(formData, "instruments"),
+    languages,
+    language_levels: languageLevels,
     martial_arts: checked(formData, "martial_arts"),
     pilates: checked(formData, "pilates"),
     running: checked(formData, "running"),
@@ -391,6 +432,8 @@ function skillsInputFromFormData(formData: FormData): ModelSkillsInput {
     singing: checked(formData, "singing"),
     skating: checked(formData, "skating"),
     skiing: checked(formData, "skiing"),
+    skill_options: stringValues(formData, "skill_options"),
+    sport_options: stringValues(formData, "sport_options"),
     surfing: checked(formData, "surfing"),
     swimming: checked(formData, "swimming"),
     tv_commercial_experience: checked(formData, "tv_commercial_experience"),
@@ -433,7 +476,12 @@ function healthLogisticsInputFromFormData(
       formData,
       "commercial_restrictions"
     ),
+    drivers_license_category: nullableString(formData, "drivers_license_category"),
+    drivers_license_country: nullableString(formData, "drivers_license_country"),
+    drivers_license_notes: nullableString(formData, "drivers_license_notes"),
+    drivers_license_number: nullableString(formData, "drivers_license_number"),
     food_restrictions: nullableString(formData, "food_restrictions"),
+    has_drivers_license: checked(formData, "has_drivers_license"),
     medications_notes: nullableString(formData, "medications_notes"),
     passport_valid: checked(formData, "passport_valid"),
     travel_availability: nullableString(formData, "travel_availability")
@@ -527,6 +575,13 @@ export async function updateModelDocumentsAction(
 export async function updateModelSkillsAction(id: string, formData: FormData) {
   await requireRole(["admin"]);
   await updateModelSkills(id, skillsInputFromFormData(formData));
+  revalidateModelPaths(id);
+  redirectToTab(id, "skills");
+}
+
+export async function createModelOptionAction(id: string, formData: FormData) {
+  await requireRole(["admin"]);
+  await createModelOption(modelOptionInputFromFormData(formData));
   revalidateModelPaths(id);
   redirectToTab(id, "skills");
 }

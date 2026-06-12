@@ -9,6 +9,8 @@ import type {
   ModelDocuments,
   ModelHealthLogistics,
   ModelMedia,
+  ModelOption,
+  ModelOptionType,
   ModelProfile,
   ModelRepresentation,
   ModelSkills,
@@ -154,6 +156,41 @@ const skillsSelect = `
   drives_car,
   drives_motorcycle,
   has_drivers_license,
+  skill_options,
+  sport_options,
+  hobby_options,
+  languages,
+  language_levels,
+  instruments,
+  runway_experience,
+  ecommerce_experience,
+  beauty_experience,
+  tv_commercial_experience,
+  approved_for_client_view,
+  created_at,
+  updated_at
+`;
+
+const legacySkillsSelect = `
+  id,
+  model_id,
+  acting,
+  dancing,
+  singing,
+  swimming,
+  surfing,
+  skating,
+  skiing,
+  yoga,
+  pilates,
+  running,
+  gym,
+  martial_arts,
+  cycling,
+  horseback_riding,
+  drives_car,
+  drives_motorcycle,
+  has_drivers_license,
   languages,
   instruments,
   runway_experience,
@@ -197,6 +234,39 @@ const healthLogisticsSelect = `
   accepts_swimwear,
   accepts_artistic_nudity,
   commercial_restrictions,
+  has_drivers_license,
+  drivers_license_category,
+  drivers_license_number,
+  drivers_license_country,
+  drivers_license_notes,
+  created_at,
+  updated_at
+`;
+
+const legacyHealthLogisticsSelect = `
+  id,
+  model_id,
+  food_restrictions,
+  allergies,
+  medications_notes,
+  travel_availability,
+  passport_valid,
+  can_travel_internationally,
+  accepts_out_of_city_jobs,
+  accepts_hair_change,
+  accepts_lingerie,
+  accepts_swimwear,
+  accepts_artistic_nudity,
+  commercial_restrictions,
+  created_at,
+  updated_at
+`;
+
+const modelOptionsSelect = `
+  id,
+  option_type,
+  label,
+  sort_order,
   created_at,
   updated_at
 `;
@@ -396,6 +466,11 @@ export type ModelMediaContractDetailsInput = {
   valid_until: string | null;
 };
 
+export type ModelOptionInput = {
+  label: string;
+  option_type: ModelOptionType;
+};
+
 export type ModelHealthLogisticsInput = Omit<
   ModelHealthLogistics,
   "id" | "model_id" | "created_at" | "updated_at"
@@ -452,6 +527,43 @@ export async function getModel(id: string) {
   return data as Model | null;
 }
 
+function isMissingSchemaError(error: { code?: string; message?: string } | null) {
+  return (
+    error?.code === "42703" ||
+    error?.code === "42P01" ||
+    Boolean(error?.message && /does not exist|schema cache/i.test(error.message))
+  );
+}
+
+function normalizeModelSkills(data: unknown) {
+  if (!data) {
+    return null;
+  }
+
+  return {
+    hobby_options: [],
+    language_levels: {},
+    skill_options: [],
+    sport_options: [],
+    ...(data as Partial<ModelSkills>)
+  } as ModelSkills;
+}
+
+function normalizeHealthLogistics(data: unknown) {
+  if (!data) {
+    return null;
+  }
+
+  return {
+    drivers_license_category: null,
+    drivers_license_country: null,
+    drivers_license_notes: null,
+    drivers_license_number: null,
+    has_drivers_license: false,
+    ...(data as Partial<ModelHealthLogistics>)
+  } as ModelHealthLogistics;
+}
+
 export async function getModelProfile(id: string) {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -478,7 +590,8 @@ export async function getModelProfile(id: string) {
     healthLogisticsResult,
     representationResult,
     mediaResult,
-    updateRequestsResult
+    updateRequestsResult,
+    modelOptionsResult
   ] = await Promise.all([
     supabase
       .from("model_social_links")
@@ -519,15 +632,19 @@ export async function getModelProfile(id: string) {
       .from("model_update_requests")
       .select(updateRequestsSelect)
       .eq("model_id", id)
-      .order("sent_at", { ascending: false })
+      .order("sent_at", { ascending: false }),
+    supabase
+      .from("model_options")
+      .select(modelOptionsSelect)
+      .order("option_type", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true })
   ]);
 
   const results = [
     socialLinksResult,
     documentsResult,
-    skillsResult,
     workHistoryResult,
-    healthLogisticsResult,
     representationResult,
     mediaResult,
     updateRequestsResult
@@ -539,18 +656,62 @@ export async function getModelProfile(id: string) {
     }
   }
 
+  let skillsData = normalizeModelSkills(skillsResult.data);
+  let healthLogisticsData = normalizeHealthLogistics(healthLogisticsResult.data);
+  let modelOptionsData = (modelOptionsResult.data ?? []) as ModelOption[];
+
+  if (isMissingSchemaError(skillsResult.error)) {
+    const legacySkillsResult = await supabase
+      .from("model_skills")
+      .select(legacySkillsSelect)
+      .eq("model_id", id)
+      .maybeSingle();
+
+    if (legacySkillsResult.error) {
+      throw legacySkillsResult.error;
+    }
+
+    skillsData = normalizeModelSkills(legacySkillsResult.data);
+  } else if (skillsResult.error) {
+    throw skillsResult.error;
+  }
+
+  if (isMissingSchemaError(healthLogisticsResult.error)) {
+    const legacyHealthLogisticsResult = await supabase
+      .from("model_health_logistics")
+      .select(legacyHealthLogisticsSelect)
+      .eq("model_id", id)
+      .maybeSingle();
+
+    if (legacyHealthLogisticsResult.error) {
+      throw legacyHealthLogisticsResult.error;
+    }
+
+    healthLogisticsData = normalizeHealthLogistics(
+      legacyHealthLogisticsResult.data
+    );
+  } else if (healthLogisticsResult.error) {
+    throw healthLogisticsResult.error;
+  }
+
+  if (isMissingSchemaError(modelOptionsResult.error)) {
+    modelOptionsData = [];
+  } else if (modelOptionsResult.error) {
+    throw modelOptionsResult.error;
+  }
+
   return {
     model: model as Model,
     socialLinks: socialLinksResult.data as ModelSocialLinks | null,
     documents: documentsResult.data as ModelDocuments | null,
-    skills: skillsResult.data as ModelSkills | null,
+    skills: skillsData,
     workHistory: (workHistoryResult.data ?? []) as ModelWorkHistory[],
-    healthLogistics:
-      healthLogisticsResult.data as ModelHealthLogistics | null,
+    healthLogistics: healthLogisticsData,
     representation:
       representationResult.data as ModelRepresentation | null,
     media: (mediaResult.data ?? []) as ModelMedia[],
-    updateRequests: (updateRequestsResult.data ?? []) as ModelUpdateRequest[]
+    updateRequests: (updateRequestsResult.data ?? []) as ModelUpdateRequest[],
+    modelOptions: modelOptionsData
   } satisfies ModelProfile;
 }
 
@@ -622,6 +783,34 @@ export async function updateModelSkills(
   const { error } = await supabase
     .from("model_skills")
     .upsert({ model_id: modelId, ...input }, { onConflict: "model_id" });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function createModelOption(input: ModelOptionInput) {
+  await requireRole(["admin"]);
+  const label = input.label.trim();
+
+  if (!label) {
+    throw new Error("Informe uma opção.");
+  }
+
+  if (label.length > 80) {
+    throw new Error("Opção muito longa.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("model_options")
+    .upsert(
+      {
+        label,
+        option_type: input.option_type
+      },
+      { onConflict: "option_type,label" }
+    );
 
   if (error) {
     throw error;

@@ -14,9 +14,9 @@ export default async function AdminLayout({
 
   return (
     <DashboardShell
-      eyebrow="Operação"
+      eyebrow="Cadastro360"
       navItems={adminNavItems}
-      title="Painel admin"
+      title="AROLAB"
     >
       {children}
     </DashboardShell>

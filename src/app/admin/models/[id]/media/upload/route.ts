@@ -117,6 +117,25 @@ const uploadLimits: Record<MediaType, number> = {
   video: 200 * bytesInMb
 };
 
+const mediaSelect = `
+  id,
+  model_id,
+  media_type,
+  storage_bucket,
+  storage_path,
+  title,
+  thumbnail_path,
+  status,
+  visibility,
+  sort_order,
+  uploaded_by,
+  review_notes,
+  valid_until,
+  notes,
+  created_at,
+  updated_at
+`;
+
 class UploadRequestError extends Error {
   code: UploadErrorCode;
   details?: string;
@@ -473,7 +492,7 @@ async function completeUpload(
       valid_until: contractMetadata.validUntil,
       visibility: input.visibility
     })
-    .select("id")
+    .select(mediaSelect)
     .single();
 
   if (error) {
@@ -493,6 +512,7 @@ async function completeUpload(
   revalidateModelPaths(id);
 
   return NextResponse.json({
+    media: data,
     mediaId: data.id,
     success: true
   });
@@ -658,6 +678,7 @@ async function completeThumbnailUpload(id: string, body: Record<string, unknown>
 
   return NextResponse.json({
     mediaId: media.id,
+    thumbnailPath: storagePath,
     success: true
   });
 }

@@ -1,7 +1,16 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Model, ModelProfile } from "@/types/database";
+import type {
+  Model,
+  ModelOption,
+  ModelOptionType,
+  ModelProfile
+} from "@/types/database";
 import { ModelMediaGallery } from "./model-media-gallery";
 import {
+  createModelOptionAction,
   createModelWorkHistoryAction,
   deleteModelWorkHistoryAction,
   markMeasurementsUpdatedAction,
@@ -295,6 +304,200 @@ function listValue(values: string[] | null | undefined) {
   return values?.length ? values.join(", ") : "";
 }
 
+type SelectableModelOption = Pick<ModelOption, "id" | "label">;
+
+const modelOptionConfig: Record<
+  ModelOptionType,
+  {
+    addLabel: string;
+    emptyLabel: string;
+    fieldName: string;
+    placeholder: string;
+    title: string;
+  }
+> = {
+  hobby: {
+    addLabel: "Adicionar hobby",
+    emptyLabel: "Nenhum hobby cadastrado.",
+    fieldName: "hobby_options",
+    placeholder: "Ex: Fotografia",
+    title: "Lifestyle e publicidade"
+  },
+  instrument: {
+    addLabel: "Adicionar instrumento",
+    emptyLabel: "Nenhum instrumento cadastrado.",
+    fieldName: "instruments",
+    placeholder: "Ex: Harpa",
+    title: "Instrumentos"
+  },
+  language: {
+    addLabel: "Adicionar idioma",
+    emptyLabel: "Nenhum idioma cadastrado.",
+    fieldName: "languages",
+    placeholder: "Ex: Holandês",
+    title: "Idiomas"
+  },
+  skill: {
+    addLabel: "Adicionar habilidade",
+    emptyLabel: "Nenhuma habilidade cadastrada.",
+    fieldName: "skill_options",
+    placeholder: "Ex: Teleprompter",
+    title: "Performance e cena"
+  },
+  sport: {
+    addLabel: "Adicionar esporte",
+    emptyLabel: "Nenhum esporte cadastrado.",
+    fieldName: "sport_options",
+    placeholder: "Ex: Remo",
+    title: "Esportes e atividades físicas"
+  }
+};
+
+const languageLevelOptions = [
+  "",
+  "Básico",
+  "Intermediário",
+  "Avançado",
+  "Fluente",
+  "Nativo"
+];
+
+function optionsForType(options: ModelOption[], optionType: ModelOptionType) {
+  return options.filter((option) => option.option_type === optionType);
+}
+
+function optionsWithSelected(
+  options: ModelOption[],
+  selectedValues: string[] | null | undefined
+): SelectableModelOption[] {
+  const selected = selectedValues ?? [];
+  const existing = new Set(options.map((option) => option.label));
+  const selectedOnly = selected
+    .filter((label) => label && !existing.has(label))
+    .map((label) => ({
+      id: `selected-${label}`,
+      label
+    }));
+
+  return [...options, ...selectedOnly];
+}
+
+function OptionChecklist({
+  emptyLabel,
+  name,
+  options,
+  selectedValues
+}: {
+  emptyLabel: string;
+  name: string;
+  options: SelectableModelOption[];
+  selectedValues?: string[] | null;
+}) {
+  const selected = new Set(selectedValues ?? []);
+
+  if (options.length === 0) {
+    return <p className="notice">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="option-chip-grid">
+      {options.map((option) => (
+        <label
+          className={`option-chip${selected.has(option.label) ? " is-selected" : ""}`}
+          key={option.id}
+        >
+          <input
+            defaultChecked={selected.has(option.label)}
+            name={name}
+            type="checkbox"
+            value={option.label}
+          />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function LanguageChecklist({
+  emptyLabel,
+  levels,
+  options,
+  selectedValues
+}: {
+  emptyLabel: string;
+  levels?: Record<string, string> | null;
+  options: SelectableModelOption[];
+  selectedValues?: string[] | null;
+}) {
+  const selected = new Set(selectedValues ?? []);
+
+  if (options.length === 0) {
+    return <p className="notice">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="language-option-list">
+      {options.map((option) => (
+        <div className="language-option-row" key={option.id}>
+          <label
+            className={`option-chip${selected.has(option.label) ? " is-selected" : ""}`}
+          >
+            <input
+              defaultChecked={selected.has(option.label)}
+              name="languages"
+              type="checkbox"
+              value={option.label}
+            />
+            <span>{option.label}</span>
+          </label>
+          <select
+            defaultValue={levels?.[option.label] ?? ""}
+            name={`language_level:${option.label}`}
+          >
+            {languageLevelOptions.map((level) => (
+              <option key={level || "empty"} value={level}>
+                {level || "Nível"}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AddModelOptionForm({
+  modelId,
+  optionType
+}: {
+  modelId: string;
+  optionType: ModelOptionType;
+}) {
+  const config = modelOptionConfig[optionType];
+
+  return (
+    <form
+      action={createModelOptionAction.bind(null, modelId)}
+      className="option-add-form"
+    >
+      <input name="option_type" type="hidden" value={optionType} />
+      <label>
+        <span>{config.addLabel}</span>
+        <input
+          maxLength={80}
+          name="label"
+          placeholder={config.placeholder}
+          required
+        />
+      </label>
+      <button className="button secondary" type="submit">
+        Adicionar
+      </button>
+    </form>
+  );
+}
+
 function BasicTab({ model }: { model: Model }) {
   return (
     <form action={updateModelBasicAction.bind(null, model.id)} className="form wide-form">
@@ -546,7 +749,17 @@ function MediaTab({ profile }: { profile: ModelProfile }) {
 }
 
 function SkillsTab({ profile }: { profile: ModelProfile }) {
-  const { model, skills } = profile;
+  const { model, modelOptions, skills } = profile;
+  const optionsByType = useMemo(
+    () => ({
+      hobby: optionsForType(modelOptions, "hobby"),
+      instrument: optionsForType(modelOptions, "instrument"),
+      language: optionsForType(modelOptions, "language"),
+      skill: optionsForType(modelOptions, "skill"),
+      sport: optionsForType(modelOptions, "sport")
+    }),
+    [modelOptions]
+  );
   const skillFields = [
     ["acting", "Atuação"],
     ["dancing", "Dança"],
@@ -564,7 +777,6 @@ function SkillsTab({ profile }: { profile: ModelProfile }) {
     ["horseback_riding", "Equitação"],
     ["drives_car", "Dirige carro"],
     ["drives_motorcycle", "Dirige moto"],
-    ["has_drivers_license", "Tem CNH"],
     ["runway_experience", "Experiência passarela"],
     ["ecommerce_experience", "Experiência e-commerce"],
     ["beauty_experience", "Experiência beauty"],
@@ -572,34 +784,120 @@ function SkillsTab({ profile }: { profile: ModelProfile }) {
   ] as const;
 
   return (
-    <form action={updateModelSkillsAction.bind(null, model.id)} className="form wide-form">
-      <div className="checkbox-grid">
-        {skillFields.map(([name, label]) => (
+    <div className="skills-manager">
+      <form
+        action={updateModelSkillsAction.bind(null, model.id)}
+        className="form wide-form"
+      >
+        {skills?.has_drivers_license ? (
+          <input name="has_drivers_license" type="hidden" value="on" />
+        ) : null}
+        <div className="skills-option-sections">
+          <section className="skills-option-section">
+            <h3>{modelOptionConfig.skill.title}</h3>
+            <OptionChecklist
+              emptyLabel={modelOptionConfig.skill.emptyLabel}
+              name={modelOptionConfig.skill.fieldName}
+              options={optionsWithSelected(
+                optionsByType.skill,
+                skills?.skill_options
+              )}
+              selectedValues={skills?.skill_options}
+            />
+          </section>
+          <section className="skills-option-section">
+            <h3>{modelOptionConfig.sport.title}</h3>
+            <OptionChecklist
+              emptyLabel={modelOptionConfig.sport.emptyLabel}
+              name={modelOptionConfig.sport.fieldName}
+              options={optionsWithSelected(
+                optionsByType.sport,
+                skills?.sport_options
+              )}
+              selectedValues={skills?.sport_options}
+            />
+          </section>
+          <section className="skills-option-section">
+            <h3>{modelOptionConfig.hobby.title}</h3>
+            <OptionChecklist
+              emptyLabel={modelOptionConfig.hobby.emptyLabel}
+              name={modelOptionConfig.hobby.fieldName}
+              options={optionsWithSelected(
+                optionsByType.hobby,
+                skills?.hobby_options
+              )}
+              selectedValues={skills?.hobby_options}
+            />
+          </section>
+          <section className="skills-option-section">
+            <h3>{modelOptionConfig.language.title}</h3>
+            <LanguageChecklist
+              emptyLabel={modelOptionConfig.language.emptyLabel}
+              levels={skills?.language_levels}
+              options={optionsWithSelected(
+                optionsByType.language,
+                skills?.languages
+              )}
+              selectedValues={skills?.languages}
+            />
+          </section>
+          <section className="skills-option-section">
+            <h3>{modelOptionConfig.instrument.title}</h3>
+            <OptionChecklist
+              emptyLabel={modelOptionConfig.instrument.emptyLabel}
+              name={modelOptionConfig.instrument.fieldName}
+              options={optionsWithSelected(
+                optionsByType.instrument,
+                skills?.instruments
+              )}
+              selectedValues={skills?.instruments}
+            />
+          </section>
+        </div>
+        <section className="skills-option-section">
+          <h3>Experiências rápidas</h3>
+          <div className="checkbox-grid">
+            {skillFields.map(([name, label]) => (
+              <CheckboxField
+                checked={skills?.[name] ?? false}
+                key={name}
+                label={label}
+                name={name}
+              />
+            ))}
+          </div>
+        </section>
+        <div className="checkbox-row">
           <CheckboxField
-            checked={skills?.[name] ?? false}
-            key={name}
-            label={label}
-            name={name}
+            checked={skills?.approved_for_client_view ?? false}
+            label="Aprovado para visualização do cliente"
+            name="approved_for_client_view"
+          />
+        </div>
+        <SaveButton>Salvar habilidades</SaveButton>
+      </form>
+      <div className="skills-option-admin">
+        <h3>Adicionar opção global</h3>
+        <p className="notice">
+          Novas opções ficam disponíveis para todos os modelos.
+        </p>
+        {(
+          [
+            "skill",
+            "sport",
+            "hobby",
+            "language",
+            "instrument"
+          ] as ModelOptionType[]
+        ).map((optionType) => (
+          <AddModelOptionForm
+            key={optionType}
+            modelId={model.id}
+            optionType={optionType}
           />
         ))}
       </div>
-      <div className="grid">
-        <Field label="Idiomas" name="languages" value={listValue(skills?.languages)} />
-        <Field
-          label="Instrumentos"
-          name="instruments"
-          value={listValue(skills?.instruments)}
-        />
-      </div>
-      <div className="checkbox-row">
-        <CheckboxField
-          checked={skills?.approved_for_client_view ?? false}
-          label="Aprovado para visualização do cliente"
-          name="approved_for_client_view"
-        />
-      </div>
-      <SaveButton>Salvar habilidades</SaveButton>
-    </form>
+    </div>
   );
 }
 
@@ -729,6 +1027,38 @@ function HealthTab({ profile }: { profile: ModelProfile }) {
           name="accepts_artistic_nudity"
         />
       </div>
+      <section className="mini-panel stack">
+        <h3>Carteira de motorista</h3>
+        <div className="checkbox-row">
+          <CheckboxField
+            checked={healthLogistics?.has_drivers_license}
+            label="Tem carteira de motorista"
+            name="has_drivers_license"
+          />
+        </div>
+        <div className="grid">
+          <Field
+            label="Categoria / tipo"
+            name="drivers_license_category"
+            value={healthLogistics?.drivers_license_category}
+          />
+          <Field
+            label="Número"
+            name="drivers_license_number"
+            value={healthLogistics?.drivers_license_number}
+          />
+          <Field
+            label="País"
+            name="drivers_license_country"
+            value={healthLogistics?.drivers_license_country}
+          />
+        </div>
+        <TextareaField
+          label="Observações"
+          name="drivers_license_notes"
+          value={healthLogistics?.drivers_license_notes}
+        />
+      </section>
       <SaveButton>Salvar saúde e logística</SaveButton>
     </form>
   );
@@ -941,7 +1271,24 @@ export function ModelProfileEditor({
   activeTab,
   profile
 }: ModelProfileEditorProps) {
-  const model = profile.model;
+  const [selectedTab, setSelectedTab] = useState<ModelProfileTab>(activeTab);
+
+  useEffect(() => {
+    setSelectedTab(activeTab);
+  }, [activeTab]);
+
+  function selectTab(tab: ModelProfileTab) {
+    setSelectedTab(tab);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    url.searchParams.delete("saved");
+    window.history.replaceState(null, "", url.toString());
+  }
 
   return (
     <div className="stack">
@@ -956,25 +1303,131 @@ export function ModelProfileEditor({
         }}
       >
         {modelProfileTabs.map((tab) => (
-          <Link
-            className={`tab-link${activeTab === tab.id ? " active" : ""}`}
-            href={`/admin/models/${model.id}/edit?tab=${tab.id}`}
+          <button
+            aria-selected={selectedTab === tab.id}
+            className={`tab-link${selectedTab === tab.id ? " active" : ""}`}
             key={tab.id}
+            onClick={() => selectTab(tab.id)}
+            role="tab"
             style={{
+              background:
+                selectedTab === tab.id
+                  ? "color-mix(in srgb, var(--foreground) 8%, transparent)"
+                  : "transparent",
               border: "1px solid var(--border)",
               borderRadius: "999px",
+              color: "var(--foreground)",
+              cursor: "pointer",
               display: "inline-flex",
-              fontWeight: activeTab === tab.id ? 700 : 500,
+              font: "inherit",
+              fontWeight: selectedTab === tab.id ? 700 : 500,
               padding: "0.65rem 0.9rem",
               textDecoration: "none",
               whiteSpace: "nowrap"
             }}
+            type="button"
           >
             {tab.label}
-          </Link>
+          </button>
         ))}
       </nav>
-      <section className="panel stack">{renderActiveTab(profile, activeTab)}</section>
+      <section className="panel stack">{renderActiveTab(profile, selectedTab)}</section>
+      <style>{`
+        .skills-manager {
+          display: grid;
+          gap: 1rem;
+          grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+        }
+
+        .skills-option-sections,
+        .skills-option-admin {
+          display: grid;
+          gap: 1rem;
+        }
+
+        .skills-option-section {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.75rem;
+          padding: 0.85rem;
+        }
+
+        .skills-option-section h3,
+        .skills-option-admin h3 {
+          font-size: 0.95rem;
+          margin: 0;
+        }
+
+        .option-chip-grid,
+        .language-option-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+        }
+
+        .option-chip {
+          align-items: center;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          cursor: pointer;
+          display: inline-flex;
+          font-size: 0.82rem;
+          gap: 0.4rem;
+          min-height: 34px;
+          padding: 0.38rem 0.62rem;
+        }
+
+        .option-chip.is-selected {
+          background: color-mix(in srgb, var(--foreground) 7%, transparent);
+        }
+
+        .option-chip:has(input:checked) {
+          background: color-mix(in srgb, var(--foreground) 9%, transparent);
+          border-color: color-mix(in srgb, var(--foreground) 22%, var(--border));
+        }
+
+        .option-chip input {
+          margin: 0;
+        }
+
+        .language-option-row {
+          align-items: center;
+          display: inline-flex;
+          gap: 0.35rem;
+        }
+
+        .language-option-row select {
+          border-radius: 999px;
+          font-size: 0.78rem;
+          min-height: 34px;
+          padding: 0.35rem 0.5rem;
+        }
+
+        .option-add-form {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.45rem;
+          padding: 0.7rem;
+        }
+
+        .option-add-form label {
+          display: grid;
+          gap: 0.3rem;
+        }
+
+        .option-add-form span {
+          color: var(--muted);
+          font-size: 0.76rem;
+        }
+
+        @media (max-width: 980px) {
+          .skills-manager {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </div>
   );
 }

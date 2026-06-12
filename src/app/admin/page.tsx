@@ -30,11 +30,11 @@ export default async function AdminPage() {
       </div>
       <section className="panel stack">
         <div>
-          <span className="eyebrow">Próxima ação</span>
-          <h2>Operação pronta para casting</h2>
+          <span className="eyebrow">Cadastro360</span>
+          <h2>Modelos</h2>
           <p>
-            Crie novos perfis, revise pendências ou abra a lista completa de
-            modelos.
+            Acesse a lista de modelos, crie perfis ou revise cadastros
+            pendentes.
           </p>
         </div>
         <div className="actions">
