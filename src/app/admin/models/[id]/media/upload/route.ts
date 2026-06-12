@@ -51,14 +51,6 @@ const mediaCategoryRules: Record<string, MediaCategoryRule> = {
     friendlyLabel: "JPG, PNG ou WebP",
     storageFolder: "portfolio"
   },
-  client_materials: {
-    acceptedTypes: {
-      portfolio: /^image\/(jpeg|jpg|png)$/,
-      video: /^video\/(mp4|quicktime|webm)$/
-    },
-    friendlyLabel: "JPG, PNG, MP4, MOV ou WebM",
-    storageFolder: "client_materials"
-  },
   composite: {
     acceptedTypes: {
       portfolio: /^image\/(jpeg|jpg|png)$/
@@ -72,14 +64,6 @@ const mediaCategoryRules: Record<string, MediaCategoryRule> = {
     },
     friendlyLabel: "PDF",
     storageFolder: "document"
-  },
-  mother_agency_materials: {
-    acceptedTypes: {
-      portfolio: /^image\/(jpeg|jpg|png)$/,
-      video: /^video\/(mp4|quicktime|webm)$/
-    },
-    friendlyLabel: "JPG, PNG, MP4, MOV ou WebM",
-    storageFolder: "mother_agency_materials"
   },
   polaroids: {
     acceptedTypes: {

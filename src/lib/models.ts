@@ -803,8 +803,22 @@ export async function createModelMediaPreviewUrls(modelId: string) {
     throw error;
   }
 
+  const visiblePreviewMedia = (media ?? []).filter((item) => {
+    const prefix = `models/${item.model_id}/`;
+    const path = item.storage_path.startsWith(prefix)
+      ? item.storage_path.slice(prefix.length)
+      : item.storage_path;
+    const folder = path.split("/")[0];
+
+    if (item.media_type === "portfolio") {
+      return folder === "portfolio" || folder === "book" || folder === "composite";
+    }
+
+    return item.media_type === "polaroid" && (folder === "polaroid" || folder === "polaroids");
+  });
+
   const previews = await Promise.all(
-    (media ?? []).map(async (item) => {
+    visiblePreviewMedia.map(async (item) => {
       const previewPath = item.thumbnail_path || item.storage_path;
       const { data, error: signedUrlError } = await admin.storage
         .from(item.storage_bucket)

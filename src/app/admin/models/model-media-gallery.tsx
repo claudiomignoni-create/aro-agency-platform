@@ -133,24 +133,6 @@ const mediaCategories: MediaCategory[] = [
     placeholder: "PDF",
     title: "PDFs / Documents",
     uploadLabel: "Adicionar PDF"
-  },
-  {
-    accept: "image/jpeg,image/png,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.mp4,.mov,.webm",
-    description: "Materiais recebidos de agencias parceiras.",
-    emptyLabel: "Ainda sem materiais cadastrados",
-    id: "mother_agency_materials",
-    placeholder: "Material",
-    title: "Mother Agency Materials",
-    uploadLabel: "Adicionar material"
-  },
-  {
-    accept: "image/jpeg,image/png,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.mp4,.mov,.webm",
-    description: "Pacotes e selecoes preparados para clientes.",
-    emptyLabel: "Ainda sem materiais cadastrados",
-    id: "client_materials",
-    placeholder: "Material",
-    title: "Client Materials",
-    uploadLabel: "Adicionar material"
   }
 ];
 
@@ -202,14 +184,6 @@ function mediaCategoryIdFromItem(item: ModelMedia) {
     return "videos";
   }
 
-  if (segment === "mother-agency") {
-    return "mother_agency_materials";
-  }
-
-  if (segment === "client-materials") {
-    return "client_materials";
-  }
-
   return segment;
 }
 
@@ -239,59 +213,6 @@ function mediaCardLabel(category: MediaCategory, item: ModelMedia) {
 
 function canOpenInViewer(item: ModelMedia, previewUrls: Record<string, string>) {
   return Boolean(previewUrls[item.id]) || isVideoMedia(item) || isDocumentMedia(item);
-}
-
-function isImageFile(file: File) {
-  const fileName = file.name.toLowerCase();
-
-  return (
-    /^image\/(jpeg|jpg|png|webp)$/.test(file.type) ||
-    /\.(jpe?g|png|webp)$/.test(fileName)
-  );
-}
-
-function isVideoFile(file: File) {
-  const fileName = file.name.toLowerCase();
-
-  return (
-    /^video\/(mp4|quicktime|webm)$/.test(file.type) ||
-    /\.(mp4|mov|webm)$/.test(fileName)
-  );
-}
-
-function resolveUploadMediaType(category: MediaCategory, file: File) {
-  if (category.id === "mother_agency_materials" || category.id === "client_materials") {
-    if (isVideoFile(file)) {
-      return "video" satisfies ModelMedia["media_type"];
-    }
-
-    if (isImageFile(file)) {
-      return "portfolio" satisfies ModelMedia["media_type"];
-    }
-
-    return null;
-  }
-
-  return category.mediaType ?? null;
-}
-
-function uploadConcurrencyForItems(
-  category: MediaCategory,
-  items: UploadQueueItem[]
-) {
-  const mediaTypes = items
-    .map((item) => resolveUploadMediaType(category, item.file))
-    .filter((type): type is ModelMedia["media_type"] => Boolean(type));
-
-  if (mediaTypes.includes("video")) {
-    return 1;
-  }
-
-  if (mediaTypes.includes("document")) {
-    return 2;
-  }
-
-  return 3;
 }
 
 function sortMediaItems(items: ModelMedia[]) {
@@ -479,12 +400,15 @@ function UploadArea({
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  if (!category.accept || !category.uploadLabel) {
+  const mediaType = category.mediaType;
+
+  if (!mediaType || !category.accept || !category.uploadLabel) {
     return (
       <p className="media-future-note">Ainda sem suporte de upload nesta fase</p>
     );
   }
 
+  const uploadMediaType: ModelMedia["media_type"] = mediaType;
   const uploadedCount = uploadItems.filter((item) => item.status === "uploaded")
     .length;
   const failedItems = uploadItems.filter((item) => item.status === "failed");
@@ -495,12 +419,7 @@ function UploadArea({
     .length;
   const completedCount = uploadedCount + failedCount;
   const totalCount = uploadItems.length;
-  const concurrencyLimit =
-    totalCount > 0
-      ? uploadConcurrencyForItems(category, uploadItems)
-      : category.mediaType
-        ? uploadConcurrency(category.mediaType)
-        : 3;
+  const concurrencyLimit = uploadConcurrency(uploadMediaType);
   const currentUploadNumber =
     totalCount > 0
       ? Math.min(completedCount + Math.max(uploadingCount, 1), totalCount)
@@ -530,23 +449,6 @@ function UploadArea({
   }
 
   async function uploadQueueItem(item: UploadQueueItem) {
-    const mediaType = resolveUploadMediaType(category, item.file);
-
-    if (!mediaType) {
-      const error: UploadErrorResponse = {
-        code: "UNSUPPORTED_FILE_TYPE",
-        fileName: item.file.name,
-        message: "Tipo de arquivo nao suportado para esta categoria.",
-        success: false
-      };
-      updateUploadItem(item.id, {
-        code: error.code,
-        error: error.message,
-        status: "failed"
-      });
-      return error;
-    }
-
     setCurrentFileName(item.file.name);
     updateUploadItem(item.id, {
       code: undefined,
@@ -557,7 +459,7 @@ function UploadArea({
 
     const preparedUpload = await uploadRequest(
       modelId,
-      uploadPayload("prepare", category, item.file, mediaType),
+      uploadPayload("prepare", category, item.file, uploadMediaType),
       activeControllersRef
     );
 
@@ -606,7 +508,7 @@ function UploadArea({
 
     const completedUpload = await uploadRequest(
       modelId,
-      uploadPayload("complete", category, item.file, mediaType, {
+      uploadPayload("complete", category, item.file, uploadMediaType, {
         bucket: preparedUpload.bucket,
         path: preparedUpload.path
       }),
@@ -669,7 +571,6 @@ function UploadArea({
 
     let uploadedInRun = 0;
     let failedInRun = 0;
-    const concurrencyLimitForRun = uploadConcurrencyForItems(category, itemsToUpload);
     let stoppedForAuth = false;
     let nextIndex = 0;
 
@@ -704,7 +605,7 @@ function UploadArea({
 
       await Promise.all(
         Array.from({
-          length: Math.min(concurrencyLimitForRun, itemsToUpload.length)
+          length: Math.min(concurrencyLimit, itemsToUpload.length)
         }).map(() => worker())
       );
 
