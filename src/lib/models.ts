@@ -971,7 +971,8 @@ export async function updateModelMainImageFromMedia(
 
   if (
     media.media_type !== "portfolio" ||
-    media.storage_bucket !== mediaBuckets.portfolio
+    media.storage_bucket !== mediaBuckets.portfolio ||
+    !media.storage_path.startsWith(`models/${modelId}/portfolio/`)
   ) {
     throw new Error("A foto principal deve ser uma imagem do Book.");
   }

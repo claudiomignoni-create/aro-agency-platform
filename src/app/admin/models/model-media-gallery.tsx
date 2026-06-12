@@ -105,14 +105,17 @@ const mediaCategories: MediaCategory[] = [
     uploadLabel: "Adicionar Polaroids"
   },
   {
-    description: "Cartao visual do modelo em imagem ou PDF.",
-    emptyLabel: "Categoria preparada para proxima fase",
+    accept: "image/jpeg,image/png,.jpg,.jpeg,.png",
+    description: "Cartao visual do modelo em imagem.",
+    emptyLabel: "Ainda sem materiais cadastrados",
     id: "composite",
-    placeholder: "Arquivo privado",
-    title: "Composite"
+    mediaType: "portfolio",
+    placeholder: "Imagem",
+    title: "Composite",
+    uploadLabel: "Adicionar Composite"
   },
   {
-    accept: "video/*",
+    accept: "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm",
     description: "Videos gerais do modelo.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "videos",
@@ -122,54 +125,92 @@ const mediaCategories: MediaCategory[] = [
     uploadLabel: "Adicionar Videos"
   },
   {
-    description: "Registros de trabalhos ja realizados.",
-    emptyLabel: "Categoria preparada para proxima fase",
-    id: "work-videos",
-    placeholder: "Video",
-    title: "Work videos"
-  },
-  {
-    description: "Apresentacoes em video para casting.",
-    emptyLabel: "Categoria preparada para proxima fase",
-    id: "video-casting",
-    placeholder: "Video",
-    title: "Video casting"
-  },
-  {
-    accept: "application/pdf,image/jpeg,image/png,image/webp",
-    description: "Documentos administrativos e privados.",
+    accept: "application/pdf,.pdf",
+    description: "PDFs e documentos administrativos privados.",
     emptyLabel: "Ainda sem materiais cadastrados",
     id: "documents",
     mediaType: "document",
-    placeholder: "Documento",
-    title: "Documentos",
-    uploadLabel: "Adicionar Documentos"
+    placeholder: "PDF",
+    title: "PDFs / Documents",
+    uploadLabel: "Adicionar PDF"
   },
   {
+    accept: "image/jpeg,image/png,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.mp4,.mov,.webm",
     description: "Materiais recebidos de agencias parceiras.",
-    emptyLabel: "Categoria preparada para proxima fase",
-    id: "mother-agency",
-    placeholder: "Arquivo privado",
-    title: "Materiais de agencia mae"
+    emptyLabel: "Ainda sem materiais cadastrados",
+    id: "mother_agency_materials",
+    placeholder: "Material",
+    title: "Mother Agency Materials",
+    uploadLabel: "Adicionar material"
   },
   {
+    accept: "image/jpeg,image/png,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.mp4,.mov,.webm",
     description: "Pacotes e selecoes preparados para clientes.",
-    emptyLabel: "Categoria preparada para proxima fase",
-    id: "client-materials",
-    placeholder: "Arquivo privado",
-    title: "Materiais para cliente"
+    emptyLabel: "Ainda sem materiais cadastrados",
+    id: "client_materials",
+    placeholder: "Material",
+    title: "Client Materials",
+    uploadLabel: "Adicionar material"
   }
 ];
 
 const initialVisibleMediaCount = 30;
 const visibleMediaIncrement = 30;
+const imageMediaTypes: ModelMedia["media_type"][] = ["portfolio", "polaroid"];
 
-function mediaTitle(item: ModelMedia) {
-  return item.title?.trim() || item.storage_path?.split("/").pop() || "-";
+function isImageMedia(item: ModelMedia) {
+  return imageMediaTypes.includes(item.media_type);
+}
+
+function isVideoMedia(item: ModelMedia) {
+  return item.media_type === "video";
+}
+
+function isDocumentMedia(item: ModelMedia) {
+  return item.media_type === "document";
 }
 
 function shouldShowMediaLabel(item: ModelMedia) {
-  return item.media_type !== "portfolio" && item.media_type !== "polaroid";
+  return !isImageMedia(item);
+}
+
+function storageCategorySegment(item: ModelMedia) {
+  const prefix = `models/${item.model_id}/`;
+  const path = item.storage_path.startsWith(prefix)
+    ? item.storage_path.slice(prefix.length)
+    : item.storage_path;
+
+  return path.split("/")[0] || item.media_type;
+}
+
+function mediaCategoryIdFromItem(item: ModelMedia) {
+  const segment = storageCategorySegment(item);
+
+  if (segment === "portfolio" || segment === "book") {
+    return "book";
+  }
+
+  if (segment === "polaroid" || segment === "polaroids") {
+    return "polaroids";
+  }
+
+  if (segment === "document" || segment === "documents") {
+    return "documents";
+  }
+
+  if (segment === "video" || segment === "videos") {
+    return "videos";
+  }
+
+  if (segment === "mother-agency") {
+    return "mother_agency_materials";
+  }
+
+  if (segment === "client-materials") {
+    return "client_materials";
+  }
+
+  return segment;
 }
 
 function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
@@ -180,6 +221,77 @@ function mediaPlaceholder(category: MediaCategory, item?: ModelMedia) {
   }
 
   return category.placeholder;
+}
+
+function mediaCardLabel(category: MediaCategory, item: ModelMedia) {
+  if (isDocumentMedia(item)) {
+    return item.storage_path.toLowerCase().endsWith(".pdf")
+      ? "Documento PDF"
+      : "Documento";
+  }
+
+  if (isVideoMedia(item)) {
+    return "Video";
+  }
+
+  return category.placeholder;
+}
+
+function canOpenInViewer(item: ModelMedia, previewUrls: Record<string, string>) {
+  return Boolean(previewUrls[item.id]) || isVideoMedia(item) || isDocumentMedia(item);
+}
+
+function isImageFile(file: File) {
+  const fileName = file.name.toLowerCase();
+
+  return (
+    /^image\/(jpeg|jpg|png|webp)$/.test(file.type) ||
+    /\.(jpe?g|png|webp)$/.test(fileName)
+  );
+}
+
+function isVideoFile(file: File) {
+  const fileName = file.name.toLowerCase();
+
+  return (
+    /^video\/(mp4|quicktime|webm)$/.test(file.type) ||
+    /\.(mp4|mov|webm)$/.test(fileName)
+  );
+}
+
+function resolveUploadMediaType(category: MediaCategory, file: File) {
+  if (category.id === "mother_agency_materials" || category.id === "client_materials") {
+    if (isVideoFile(file)) {
+      return "video" satisfies ModelMedia["media_type"];
+    }
+
+    if (isImageFile(file)) {
+      return "portfolio" satisfies ModelMedia["media_type"];
+    }
+
+    return null;
+  }
+
+  return category.mediaType ?? null;
+}
+
+function uploadConcurrencyForItems(
+  category: MediaCategory,
+  items: UploadQueueItem[]
+) {
+  const mediaTypes = items
+    .map((item) => resolveUploadMediaType(category, item.file))
+    .filter((type): type is ModelMedia["media_type"] => Boolean(type));
+
+  if (mediaTypes.includes("video")) {
+    return 1;
+  }
+
+  if (mediaTypes.includes("document")) {
+    return 2;
+  }
+
+  return 3;
 }
 
 function sortMediaItems(items: ModelMedia[]) {
@@ -367,14 +479,12 @@ function UploadArea({
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  if (!category.mediaType || !category.accept || !category.uploadLabel) {
+  if (!category.accept || !category.uploadLabel) {
     return (
       <p className="media-future-note">Ainda sem suporte de upload nesta fase</p>
     );
   }
 
-  const mediaType = category.mediaType;
-  const concurrencyLimit = uploadConcurrency(mediaType);
   const uploadedCount = uploadItems.filter((item) => item.status === "uploaded")
     .length;
   const failedItems = uploadItems.filter((item) => item.status === "failed");
@@ -385,6 +495,12 @@ function UploadArea({
     .length;
   const completedCount = uploadedCount + failedCount;
   const totalCount = uploadItems.length;
+  const concurrencyLimit =
+    totalCount > 0
+      ? uploadConcurrencyForItems(category, uploadItems)
+      : category.mediaType
+        ? uploadConcurrency(category.mediaType)
+        : 3;
   const currentUploadNumber =
     totalCount > 0
       ? Math.min(completedCount + Math.max(uploadingCount, 1), totalCount)
@@ -414,6 +530,23 @@ function UploadArea({
   }
 
   async function uploadQueueItem(item: UploadQueueItem) {
+    const mediaType = resolveUploadMediaType(category, item.file);
+
+    if (!mediaType) {
+      const error: UploadErrorResponse = {
+        code: "UNSUPPORTED_FILE_TYPE",
+        fileName: item.file.name,
+        message: "Tipo de arquivo nao suportado para esta categoria.",
+        success: false
+      };
+      updateUploadItem(item.id, {
+        code: error.code,
+        error: error.message,
+        status: "failed"
+      });
+      return error;
+    }
+
     setCurrentFileName(item.file.name);
     updateUploadItem(item.id, {
       code: undefined,
@@ -536,6 +669,7 @@ function UploadArea({
 
     let uploadedInRun = 0;
     let failedInRun = 0;
+    const concurrencyLimitForRun = uploadConcurrencyForItems(category, itemsToUpload);
     let stoppedForAuth = false;
     let nextIndex = 0;
 
@@ -570,7 +704,7 @@ function UploadArea({
 
       await Promise.all(
         Array.from({
-          length: Math.min(concurrencyLimit, itemsToUpload.length)
+          length: Math.min(concurrencyLimitForRun, itemsToUpload.length)
         }).map(() => worker())
       );
 
@@ -624,7 +758,7 @@ function UploadArea({
       onSubmit={handleUpload}
     >
       <input name="media_category" type="hidden" value={category.id} />
-      <input name="media_type" type="hidden" value={category.mediaType} />
+      <input name="media_type" type="hidden" value={category.mediaType ?? ""} />
       <input name="media_status" type="hidden" value="pending_review" />
       <input name="media_visibility" type="hidden" value="private" />
       <label className="media-upload-tile">
@@ -753,7 +887,9 @@ function BatchActionBar({
   const singleSelected = selectedItems[0];
   const allSelected = selectedCount === totalCount && totalCount > 0;
   const canSetMainImage =
-    selectedCount === 1 && singleSelected?.media_type === "portfolio";
+    selectedCount === 1 &&
+    singleSelected?.media_type === "portfolio" &&
+    mediaCategoryIdFromItem(singleSelected) === "book";
   const canChangeClientVisibility = selectedItems.every(
     (item) => item.media_type !== "document"
   );
@@ -871,12 +1007,13 @@ function MediaCard({
 }) {
   const hasPreview = Boolean(previewUrl);
   const showLabel = shouldShowMediaLabel(item);
+  const canOpen = hasPreview || isDocumentMedia(item) || isVideoMedia(item);
 
   return (
     <article className={`media-card${isSelected ? " is-selected" : ""}`}>
       <button
         className="media-thumb"
-        onClick={isEditing ? onToggle : hasPreview ? onOpen : undefined}
+        onClick={isEditing ? onToggle : canOpen ? onOpen : undefined}
         type="button"
       >
         {hasPreview ? (
@@ -888,7 +1025,9 @@ function MediaCard({
             src={previewUrl}
           />
         ) : (
-          <span>{mediaPlaceholder(category, item)}</span>
+          <span className={`media-thumb-label ${item.media_type}`}>
+            {mediaPlaceholder(category, item)}
+          </span>
         )}
         {isEditing ? (
           <span className="media-select-indicator" aria-hidden="true">
@@ -898,7 +1037,7 @@ function MediaCard({
       </button>
       {showLabel ? (
         <div className="media-card-body">
-          <strong>{mediaTitle(item)}</strong>
+          <strong>{mediaCardLabel(category, item)}</strong>
         </div>
       ) : null}
     </article>
@@ -924,6 +1063,7 @@ function Lightbox({
 }) {
   const [isMounted, setIsMounted] = useState(false);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const item = items.find((mediaItem) => mediaItem.id === selectedId);
 
   useEffect(() => {
@@ -967,7 +1107,12 @@ function Lightbox({
   }
 
   const previewUrl = previewUrls[item.id];
-  const imageUrl = originalUrl || previewUrl;
+  const viewerUrl = originalUrl || previewUrl;
+
+  function handleClose() {
+    videoRef.current?.pause();
+    onClose();
+  }
 
   if (!isMounted) {
     return null;
@@ -975,20 +1120,58 @@ function Lightbox({
 
   return createPortal(
     <div className="media-lightbox" role="dialog" aria-modal="true">
-      <button className="media-lightbox-close" onClick={onClose} type="button">
+      <button className="media-lightbox-close" onClick={handleClose} type="button">
         X
       </button>
       <button className="media-lightbox-nav previous" onClick={onPrevious} type="button">
         Anterior
       </button>
       <figure>
-        {imageUrl ? (
+        {isImageMedia(item) && viewerUrl ? (
           <img
             alt="Model media image"
             decoding="async"
             fetchPriority="high"
-            src={imageUrl}
+            src={viewerUrl}
           />
+        ) : null}
+        {isDocumentMedia(item) ? (
+          <div className="media-lightbox-panel">
+            {viewerUrl ? (
+              <>
+                <iframe
+                  className="media-lightbox-frame"
+                  src={viewerUrl}
+                  title="Model media PDF"
+                />
+                <a
+                  className="media-lightbox-link"
+                  href={viewerUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Abrir PDF em nova aba
+                </a>
+              </>
+            ) : (
+              <p className="media-lightbox-loading">Preparando PDF...</p>
+            )}
+          </div>
+        ) : null}
+        {isVideoMedia(item) ? (
+          <div className="media-lightbox-panel">
+            {viewerUrl ? (
+              <video
+                className="media-lightbox-video"
+                controls
+                preload="metadata"
+                ref={videoRef}
+                src={viewerUrl}
+              />
+            ) : (
+              <p className="media-lightbox-loading">Preparando video...</p>
+            )}
+          </div>
         ) : null}
       </figure>
       <button className="media-lightbox-nav next" onClick={onNext} type="button">
@@ -1114,13 +1297,14 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
     Record<string, string[]>
   >({});
 
-  const itemsByType = useMemo(() => {
-    const map = new Map<ModelMedia["media_type"], ModelMedia[]>();
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, ModelMedia[]>();
 
     for (const item of media) {
-      const items = map.get(item.media_type) ?? [];
+      const categoryId = mediaCategoryIdFromItem(item);
+      const items = map.get(categoryId) ?? [];
       items.push(item);
-      map.set(item.media_type, items);
+      map.set(categoryId, items);
     }
 
     return map;
@@ -1149,9 +1333,9 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
   const lightboxCategory = lightbox
     ? mediaCategories.find((category) => category.id === lightbox.categoryId)
     : null;
-  const lightboxItems = lightboxCategory?.mediaType
-    ? sortMediaItems(itemsByType.get(lightboxCategory.mediaType) ?? []).filter(
-        (item) => previewUrls[item.id]
+  const lightboxItems = lightboxCategory
+    ? sortMediaItems(itemsByCategory.get(lightboxCategory.id) ?? []).filter(
+        (item) => canOpenInViewer(item, previewUrls)
       )
     : [];
 
@@ -1205,7 +1389,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           <MediaCategorySection
             category={category}
             editingCategory={editingCategory}
-            items={category.mediaType ? itemsByType.get(category.mediaType) ?? [] : []}
+            items={itemsByCategory.get(category.id) ?? []}
             key={category.id}
             modelId={modelId}
             previewUrls={previewUrls}
@@ -1473,6 +1657,25 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           width: 100%;
         }
 
+        .media-thumb-label {
+          align-items: center;
+          color: var(--muted);
+          display: inline-flex;
+          font-size: 0.78rem;
+          justify-content: center;
+          padding: 0.8rem;
+        }
+
+        .media-thumb-label.video::before {
+          border-bottom: 7px solid transparent;
+          border-left: 10px solid currentColor;
+          border-top: 7px solid transparent;
+          content: "";
+          height: 0;
+          margin-right: 0.45rem;
+          width: 0;
+        }
+
         .media-select-indicator {
           align-items: center;
           background: rgba(12, 26, 44, 0.82);
@@ -1675,6 +1878,42 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           max-height: calc(100dvh - 7rem);
           max-width: 100%;
           object-fit: contain;
+        }
+
+        .media-lightbox-panel {
+          align-items: center;
+          display: grid;
+          gap: 0.75rem;
+          justify-items: center;
+          max-height: calc(100dvh - 7rem);
+          max-width: min(82vw, 960px);
+          width: min(82vw, 960px);
+        }
+
+        .media-lightbox-frame {
+          background: white;
+          border: 0;
+          border-radius: 8px;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+          height: min(78dvh, 760px);
+          width: 100%;
+        }
+
+        .media-lightbox-video {
+          background: black;
+          border-radius: 8px;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+          display: block;
+          max-height: calc(100dvh - 7rem);
+          max-width: 100%;
+          width: min(82vw, 900px);
+        }
+
+        .media-lightbox-link,
+        .media-lightbox-loading {
+          color: white;
+          font-size: 0.86rem;
+          margin: 0;
         }
 
         .media-lightbox-close,

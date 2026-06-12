@@ -37,11 +37,64 @@ const mediaBuckets: Record<MediaType, string> = {
   video: "model-videos"
 };
 
-const mediaCategoryTypes: Record<string, MediaType> = {
-  book: "portfolio",
-  documents: "document",
-  polaroids: "polaroid",
-  videos: "video"
+type MediaCategoryRule = {
+  acceptedTypes: Partial<Record<MediaType, RegExp>>;
+  friendlyLabel: string;
+  storageFolder: string;
+};
+
+const mediaCategoryRules: Record<string, MediaCategoryRule> = {
+  book: {
+    acceptedTypes: {
+      portfolio: /^image\/(jpeg|jpg|png|webp)$/
+    },
+    friendlyLabel: "JPG, PNG ou WebP",
+    storageFolder: "portfolio"
+  },
+  client_materials: {
+    acceptedTypes: {
+      portfolio: /^image\/(jpeg|jpg|png)$/,
+      video: /^video\/(mp4|quicktime|webm)$/
+    },
+    friendlyLabel: "JPG, PNG, MP4, MOV ou WebM",
+    storageFolder: "client_materials"
+  },
+  composite: {
+    acceptedTypes: {
+      portfolio: /^image\/(jpeg|jpg|png)$/
+    },
+    friendlyLabel: "JPG ou PNG",
+    storageFolder: "composite"
+  },
+  documents: {
+    acceptedTypes: {
+      document: /^application\/pdf$/
+    },
+    friendlyLabel: "PDF",
+    storageFolder: "document"
+  },
+  mother_agency_materials: {
+    acceptedTypes: {
+      portfolio: /^image\/(jpeg|jpg|png)$/,
+      video: /^video\/(mp4|quicktime|webm)$/
+    },
+    friendlyLabel: "JPG, PNG, MP4, MOV ou WebM",
+    storageFolder: "mother_agency_materials"
+  },
+  polaroids: {
+    acceptedTypes: {
+      polaroid: /^image\/(jpeg|jpg|png|webp)$/
+    },
+    friendlyLabel: "JPG, PNG ou WebP",
+    storageFolder: "polaroid"
+  },
+  videos: {
+    acceptedTypes: {
+      video: /^video\/(mp4|quicktime|webm)$/
+    },
+    friendlyLabel: "MP4, MOV ou WebM",
+    storageFolder: "video"
+  }
 };
 
 const allowedUploadMediaStatuses: MediaStatus[] = [
@@ -60,20 +113,6 @@ const uploadLimits: Record<MediaType, number> = {
   polaroid: 30 * bytesInMb,
   portfolio: 30 * bytesInMb,
   video: 200 * bytesInMb
-};
-
-const acceptedTypes: Record<MediaType, RegExp> = {
-  document: /^(application\/pdf|image\/(jpeg|png|webp))$/,
-  polaroid: /^image\/(jpeg|png|webp)$/,
-  portfolio: /^image\/(jpeg|png|webp)$/,
-  video: /^video\//
-};
-
-const friendlyTypeLabels: Record<MediaType, string> = {
-  document: "PDF, JPG, PNG ou WebP",
-  polaroid: "JPG, PNG ou WebP",
-  portfolio: "JPG, PNG ou WebP",
-  video: "vídeo"
 };
 
 class UploadRequestError extends Error {
@@ -155,19 +194,58 @@ function sanitizeStorageFileName(fileName: string) {
   return safeName || "arquivo";
 }
 
+function normalizedFileType(fileType: string, fileName: string) {
+  if (fileType && fileType !== "application/octet-stream") {
+    return fileType.toLowerCase();
+  }
+
+  const lowerFileName = fileName.toLowerCase();
+
+  if (lowerFileName.endsWith(".jpg") || lowerFileName.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+
+  if (lowerFileName.endsWith(".png")) {
+    return "image/png";
+  }
+
+  if (lowerFileName.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  if (lowerFileName.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+
+  if (lowerFileName.endsWith(".mp4")) {
+    return "video/mp4";
+  }
+
+  if (lowerFileName.endsWith(".mov")) {
+    return "video/quicktime";
+  }
+
+  if (lowerFileName.endsWith(".webm")) {
+    return "video/webm";
+  }
+
+  return fileType.toLowerCase();
+}
+
 function validateUploadRequest(body: Record<string, unknown>) {
   const fileName = requiredString(body, "fileName");
   const fileSize = Number(body.fileSize);
-  const fileType = requiredString(body, "fileType");
+  const fileType = normalizedFileType(requiredString(body, "fileType"), fileName);
   const mediaCategory = requiredString(body, "media_category");
   const mediaType = requiredString(body, "media_type") as MediaType;
   const status = (optionalString(body.media_status) ||
     "pending_review") as MediaStatus;
   const visibility = (optionalString(body.media_visibility) ||
     "private") as MediaVisibility;
-  const expectedMediaType = mediaCategoryTypes[mediaCategory];
+  const categoryRule = mediaCategoryRules[mediaCategory];
+  const acceptedType = categoryRule?.acceptedTypes[mediaType];
 
-  if (!expectedMediaType || expectedMediaType !== mediaType) {
+  if (!categoryRule || !acceptedType) {
     throw new UploadRequestError({
       code: "INVALID_CATEGORY",
       fileName,
@@ -192,12 +270,12 @@ function validateUploadRequest(body: Record<string, unknown>) {
     });
   }
 
-  if (!acceptedTypes[mediaType].test(fileType)) {
+  if (!acceptedType.test(fileType)) {
     throw new UploadRequestError({
       code: "UNSUPPORTED_FILE_TYPE",
-      details: `Tipo recebido: ${fileType || "desconhecido"}. Aceito: ${friendlyTypeLabels[mediaType]}.`,
+      details: `Tipo recebido: ${fileType || "desconhecido"}. Aceito: ${categoryRule.friendlyLabel}.`,
       fileName,
-      message: `Tipo de arquivo não suportado para esta categoria. Envie ${friendlyTypeLabels[mediaType]}.`
+      message: `Tipo de arquivo não suportado para esta categoria. Envie ${categoryRule.friendlyLabel}.`
     });
   }
 
@@ -224,6 +302,7 @@ function validateUploadRequest(body: Record<string, unknown>) {
     mediaType,
     reviewNotes: optionalString(body.review_notes),
     status,
+    storageFolder: categoryRule.storageFolder,
     title: optionalString(body.title) || fileName,
     visibility: mediaType === "document" ? "private" : visibility
   };
@@ -282,7 +361,7 @@ async function prepareUpload(id: string, body: Record<string, unknown>) {
   const admin = createAdminClient();
   const bucket = mediaBuckets[input.mediaType];
   const safeFileName = sanitizeStorageFileName(input.fileName);
-  const storagePath = `models/${id}/${input.mediaType}/${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
+  const storagePath = `models/${id}/${input.storageFolder}/${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
   const { data, error } = await admin.storage
     .from(bucket)
     .createSignedUploadUrl(storagePath, { upsert: false });
@@ -316,7 +395,7 @@ async function completeUpload(
 
   if (
     bucket !== expectedBucket ||
-    !storagePath.startsWith(`models/${id}/${input.mediaType}/`)
+    !storagePath.startsWith(`models/${id}/${input.storageFolder}/`)
   ) {
     throw new UploadRequestError({
       code: "STORAGE_UPLOAD_FAILED",
