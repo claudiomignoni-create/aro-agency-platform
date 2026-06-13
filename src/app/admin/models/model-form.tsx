@@ -6,7 +6,8 @@ import type {
   Model,
   ModelOption,
   ModelOptionType,
-  ModelProfile
+  ModelProfile,
+  ModelUpdateRequest
 } from "@/types/database";
 import { ModelMediaGallery } from "./model-media-gallery";
 import {
@@ -298,6 +299,156 @@ function formatDateTime(value: string | null | undefined) {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function historyDateValue(value: string | null | undefined) {
+  return value ? new Date(value).getTime() : 0;
+}
+
+function requestStatusLabel(status: string | null | undefined) {
+  const normalized = status?.toLowerCase();
+
+  if (!normalized || normalized === "sent" || normalized === "pending") {
+    return "Pendente";
+  }
+
+  if (normalized === "completed" || normalized === "reviewed") {
+    return "Revisado";
+  }
+
+  if (normalized === "approved") {
+    return "Aprovado";
+  }
+
+  if (normalized === "rejected") {
+    return "Rejeitado";
+  }
+
+  return status ?? "Pendente";
+}
+
+function requestStatusTone(status: string | null | undefined) {
+  const normalized = status?.toLowerCase();
+
+  if (normalized === "approved" || normalized === "completed" || normalized === "reviewed") {
+    return "positive";
+  }
+
+  if (normalized === "rejected") {
+    return "negative";
+  }
+
+  return "pending";
+}
+
+type HistoryEntry = {
+  actor: string;
+  date: string | null;
+  id: string;
+  origin: string;
+  sections?: string[];
+  status: string;
+  statusTone: string;
+  summary: string;
+  title: string;
+};
+
+function updateRequestHistoryEntry(request: ModelUpdateRequest): HistoryEntry {
+  const isCompleted = Boolean(request.completed_at);
+
+  return {
+    actor: isCompleted
+      ? request.email_to ?? "Modelo"
+      : request.requested_by
+        ? "Admin"
+        : request.email_to ?? "Origem não identificada",
+    date: request.completed_at ?? request.sent_at,
+    id: `request-${request.id}`,
+    origin: isCompleted
+      ? "Modelo"
+      : request.requested_by
+        ? "Admin"
+        : request.email_to
+          ? "Modelo"
+          : "Origem não identificada",
+    sections: request.requested_sections,
+    status: requestStatusLabel(request.status),
+    statusTone: requestStatusTone(request.status),
+    summary: request.message ?? "Pedido de atualização do Cadastro360.",
+    title: isCompleted ? "Atualização recebida" : "Pedido de atualização"
+  };
+}
+
+function modelTimestampHistoryEntries(model: Model, hasUpdateRequests: boolean) {
+  const entries: HistoryEntry[] = [
+    {
+      actor: "Equipe AROLAB",
+      date: model.last_profile_update_at,
+      id: "last-profile-update",
+      origin: "Agência",
+      sections: ["Perfil"],
+      status: "Atualizado",
+      statusTone: "positive",
+      summary: "Dados principais do Cadastro360 foram atualizados.",
+      title: "Perfil atualizado"
+    },
+    {
+      actor: "Equipe AROLAB",
+      date: model.last_measurements_update_at,
+      id: "last-measurements-update",
+      origin: "Agência",
+      sections: ["Medidas"],
+      status: "Atualizado",
+      statusTone: "positive",
+      summary: "Medidas e características físicas foram atualizadas.",
+      title: "Medidas atualizadas"
+    },
+    {
+      actor: "Equipe AROLAB",
+      date: model.last_media_update_at,
+      id: "last-media-update",
+      origin: "Agência",
+      sections: ["Mídia"],
+      status: "Atualizado",
+      statusTone: "positive",
+      summary: "Materiais de mídia foram atualizados.",
+      title: "Mídia atualizada"
+    },
+    {
+      actor: "Equipe AROLAB",
+      date: model.profile_reviewed_at,
+      id: "profile-reviewed",
+      origin: "Admin",
+      sections: ["Cadastro360"],
+      status: "Revisado",
+      statusTone: "positive",
+      summary: "Perfil marcado como revisado pela equipe.",
+      title: "Perfil revisado"
+    }
+  ];
+
+  if (!hasUpdateRequests) {
+    entries.push({
+      actor: "Admin",
+      date: model.last_update_request_sent_at,
+      id: "last-update-request",
+      origin: "Admin",
+      sections: ["Perfil", "Medidas", "Mídia"],
+      status: "Pendente",
+      statusTone: "pending",
+      summary: "Pedido administrativo de atualização enviado ao modelo.",
+      title: "Pedido enviado"
+    });
+  }
+
+  return entries.filter((entry) => entry.date);
+}
+
+function modelHistoryEntries(model: Model, updateRequests: ModelUpdateRequest[]) {
+  return [
+    ...updateRequests.map(updateRequestHistoryEntry),
+    ...modelTimestampHistoryEntries(model, updateRequests.length > 0)
+  ].sort((first, second) => historyDateValue(second.date) - historyDateValue(first.date));
 }
 
 function listValue(values: string[] | null | undefined) {
@@ -1156,13 +1307,63 @@ function InternalTab({ model }: { model: Model }) {
 
 function HistoryTab({ profile }: { profile: ModelProfile }) {
   const { model, updateRequests } = profile;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyEntries = useMemo(
+    () => modelHistoryEntries(model, updateRequests),
+    [model, updateRequests]
+  );
+  const latestEntry = historyEntries[0] ?? {
+    actor: "Equipe AROLAB",
+    date: model.created_at,
+    id: "created",
+    origin: "Agência",
+    sections: ["Cadastro360"],
+    status: "Criado",
+    statusTone: "pending",
+    summary: "Cadastro do modelo criado.",
+    title: "Cadastro criado"
+  };
+
+  useEffect(() => {
+    if (!historyOpen) {
+      return;
+    }
+
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [historyOpen]);
 
   return (
-    <div className="stack">
-      <div className="actions">
+    <div className="history-tab">
+      <section className="history-summary">
+        <div>
+          <span className="eyebrow">Última atualização</span>
+          <h3>{latestEntry.title}</h3>
+          <p>{formatDateTime(latestEntry.date)}</p>
+        </div>
+        <div className="history-summary-meta">
+          <span className={`history-status ${latestEntry.statusTone}`}>
+            {latestEntry.status}
+          </span>
+          <span>{latestEntry.origin}</span>
+          <span>{latestEntry.actor}</span>
+        </div>
+        <button
+          className="history-text-button"
+          onClick={() => setHistoryOpen(true)}
+          type="button"
+        >
+          Ver histórico
+        </button>
+      </section>
+
+      <div className="history-actions">
         <form action={sendModelUpdateRequestAction.bind(null, model.id)}>
-          <button className="button" type="submit">
-            Enviar pedido de atualização por e-mail
+          <button className="button secondary" type="submit">
+            Solicitar atualização
           </button>
         </form>
         <form action={markProfileReviewedAction.bind(null, model.id)}>
@@ -1181,59 +1382,91 @@ function HistoryTab({ profile }: { profile: ModelProfile }) {
           </button>
         </form>
       </div>
-      <div className="grid">
-        <section className="mini-panel">
+
+      <div className="history-snapshot-grid">
+        <section>
           <span className="eyebrow">Última atualização de perfil</span>
           <strong>{formatDateTime(model.last_profile_update_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Última atualização de mídia</span>
           <strong>{formatDateTime(model.last_media_update_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Última atualização de medidas</span>
           <strong>{formatDateTime(model.last_measurements_update_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Último pedido enviado</span>
           <strong>{formatDateTime(model.last_update_request_sent_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Perfil revisado em</span>
           <strong>{formatDateTime(model.profile_reviewed_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Criado em</span>
           <strong>{formatDateTime(model.created_at)}</strong>
         </section>
-        <section className="mini-panel">
+        <section>
           <span className="eyebrow">Atualizado em</span>
           <strong>{formatDateTime(model.updated_at)}</strong>
         </section>
       </div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Enviado em</th>
-              <th>E-mail</th>
-              <th>Status</th>
-              <th>Seções</th>
-            </tr>
-          </thead>
-          <tbody>
-            {updateRequests.map((request) => (
-              <tr key={request.id}>
-                <td>{formatDateTime(request.sent_at)}</td>
-                <td>{request.email_to ?? "-"}</td>
-                <td><span className="status">{request.status}</span></td>
-                <td>{request.requested_sections.join(", ") || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {updateRequests.length === 0 ? <p>Nenhum pedido de atualização enviado.</p> : null}
-      </div>
+
+      {historyOpen ? (
+        <div
+          aria-modal="true"
+          className="history-modal-backdrop"
+          onClick={() => setHistoryOpen(false)}
+          role="dialog"
+        >
+          <section
+            className="history-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Histórico de atualizações</span>
+                <h3>Cadastro360</h3>
+              </div>
+              <button
+                aria-label="Fechar histórico"
+                className="history-close-button"
+                onClick={() => setHistoryOpen(false)}
+                type="button"
+              >
+                X
+              </button>
+            </header>
+            <div className="history-timeline">
+              {historyEntries.length > 0 ? (
+                historyEntries.map((entry) => (
+                  <article className="history-timeline-item" key={entry.id}>
+                    <div>
+                      <strong>{entry.title}</strong>
+                      <span>{formatDateTime(entry.date)}</span>
+                    </div>
+                    <div className="history-timeline-meta">
+                      <span className={`history-status ${entry.statusTone}`}>
+                        {entry.status}
+                      </span>
+                      <span>{entry.origin}</span>
+                      <span>{entry.actor}</span>
+                    </div>
+                    <p>{entry.summary}</p>
+                    {entry.sections?.length ? (
+                      <small>Seções: {entry.sections.join(", ")}</small>
+                    ) : null}
+                  </article>
+                ))
+              ) : (
+                <p className="history-empty">Nenhuma atualização registrada.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1291,7 +1524,7 @@ export function ModelProfileEditor({
   }
 
   return (
-    <div className="stack">
+    <div className="stack model-profile-editor">
       <nav
         aria-label="Abas do perfil do modelo"
         className="tabs"
@@ -1333,6 +1566,219 @@ export function ModelProfileEditor({
       </nav>
       <section className="panel stack">{renderActiveTab(profile, selectedTab)}</section>
       <style>{`
+        .model-profile-editor .panel {
+          font-size: 0.92rem;
+        }
+
+        .model-profile-editor label,
+        .model-profile-editor .notice {
+          font-size: 0.86rem;
+        }
+
+        .model-profile-editor .button.secondary {
+          font-size: 0.8rem;
+          min-height: 34px;
+          padding: 0.4rem 0.68rem;
+        }
+
+        .history-tab {
+          display: grid;
+          gap: 1rem;
+        }
+
+        .history-summary {
+          align-items: center;
+          background:
+            linear-gradient(135deg, rgba(9, 28, 52, 0.95), rgba(15, 47, 82, 0.88)),
+            color-mix(in srgb, #102a4a 88%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 22%, transparent);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.9rem;
+          grid-template-columns: minmax(0, 1fr) auto auto;
+          padding: 0.9rem;
+        }
+
+        .history-summary h3 {
+          color: color-mix(in srgb, #eef8ff 94%, white);
+          font-size: 1rem;
+          letter-spacing: 0;
+          margin: 0.15rem 0 0;
+        }
+
+        .history-summary p,
+        .history-summary-meta,
+        .history-timeline-item p,
+        .history-timeline-item small,
+        .history-empty {
+          color: color-mix(in srgb, #aacfe8 86%, white);
+          font-size: 0.8rem;
+          margin: 0;
+        }
+
+        .history-summary-meta,
+        .history-timeline-meta {
+          align-items: center;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.4rem;
+          justify-content: flex-end;
+        }
+
+        .history-summary-meta > span:not(.history-status),
+        .history-timeline-meta > span:not(.history-status) {
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, transparent);
+          border-radius: 999px;
+          padding: 0.28rem 0.52rem;
+        }
+
+        .history-status {
+          border: 1px solid color-mix(in srgb, #86c8ff 28%, transparent);
+          border-radius: 999px;
+          color: #f5fbff;
+          display: inline-flex;
+          font-size: 0.74rem;
+          font-weight: 700;
+          line-height: 1;
+          padding: 0.32rem 0.54rem;
+        }
+
+        .history-status.positive {
+          background: color-mix(in srgb, #2f8ac6 42%, transparent);
+        }
+
+        .history-status.pending {
+          background: color-mix(in srgb, #1d4f80 58%, transparent);
+        }
+
+        .history-status.negative {
+          background: color-mix(in srgb, #9f3f68 42%, transparent);
+        }
+
+        .history-text-button,
+        .history-close-button {
+          background: color-mix(in srgb, #1d4f80 76%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 28%, transparent);
+          border-radius: 999px;
+          color: color-mix(in srgb, #e8f6ff 92%, white);
+          cursor: pointer;
+          font: inherit;
+          font-size: 0.78rem;
+          min-height: 32px;
+          padding: 0.34rem 0.68rem;
+        }
+
+        .history-actions {
+          align-items: center;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+        }
+
+        .history-snapshot-grid {
+          display: grid;
+          gap: 0.55rem;
+          grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+        }
+
+        .history-snapshot-grid section {
+          background: color-mix(in srgb, #0c2848 62%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 16%, var(--border));
+          border-radius: 8px;
+          display: grid;
+          gap: 0.28rem;
+          min-height: 4.35rem;
+          padding: 0.65rem;
+        }
+
+        .history-snapshot-grid strong {
+          color: var(--foreground);
+          font-size: 0.84rem;
+          line-height: 1.2;
+        }
+
+        .history-modal-backdrop {
+          align-items: center;
+          background: rgba(5, 12, 22, 0.72);
+          display: flex;
+          inset: 0;
+          justify-content: center;
+          padding: 1rem;
+          position: fixed;
+          z-index: 1000;
+        }
+
+        .history-modal {
+          background:
+            linear-gradient(180deg, rgba(9, 28, 52, 0.98), rgba(13, 38, 68, 0.95)),
+            #0c2848;
+          border: 1px solid color-mix(in srgb, #86c8ff 26%, transparent);
+          border-radius: 8px;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+          color: color-mix(in srgb, #eef8ff 94%, white);
+          display: grid;
+          gap: 1rem;
+          max-height: min(82dvh, 720px);
+          max-width: 760px;
+          overflow: hidden;
+          padding: 1rem;
+          width: min(94vw, 760px);
+        }
+
+        .history-modal header {
+          align-items: center;
+          border-bottom: 1px solid color-mix(in srgb, #86c8ff 16%, transparent);
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          padding-bottom: 0.75rem;
+        }
+
+        .history-modal h3 {
+          font-size: 1rem;
+          letter-spacing: 0;
+          margin: 0.15rem 0 0;
+        }
+
+        .history-close-button {
+          min-width: 34px;
+          padding-inline: 0.5rem;
+        }
+
+        .history-timeline {
+          display: grid;
+          gap: 0.65rem;
+          overflow: auto;
+          padding-right: 0.2rem;
+        }
+
+        .history-timeline-item {
+          background: rgba(7, 23, 42, 0.42);
+          border: 1px solid rgba(126, 196, 255, 0.14);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.5rem;
+          padding: 0.75rem;
+        }
+
+        .history-timeline-item > div:first-child {
+          align-items: baseline;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+          justify-content: space-between;
+        }
+
+        .history-timeline-item strong {
+          color: color-mix(in srgb, #eef8ff 94%, white);
+          font-size: 0.9rem;
+        }
+
+        .history-timeline-item > div:first-child span {
+          color: color-mix(in srgb, #aacfe8 82%, white);
+          font-size: 0.76rem;
+        }
+
         .skills-manager {
           display: grid;
           gap: 1rem;
@@ -1541,6 +1987,15 @@ export function ModelProfileEditor({
         @media (max-width: 980px) {
           .skills-manager {
             grid-template-columns: 1fr;
+          }
+
+          .history-summary {
+            align-items: flex-start;
+            grid-template-columns: 1fr;
+          }
+
+          .history-summary-meta {
+            justify-content: flex-start;
           }
         }
 
