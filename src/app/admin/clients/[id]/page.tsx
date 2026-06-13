@@ -271,15 +271,21 @@ export default async function AdminClientDetailPage({
         .client-detail-shell {
           display: grid;
           gap: 1rem;
+          max-width: 100%;
+          min-width: 0;
         }
 
         .client-detail-header,
         .client-detail-section,
         .client-alert {
-          background: color-mix(in srgb, var(--panel) 92%, transparent);
-          border: 1px solid var(--line);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.14);
+          max-width: 100%;
+          min-width: 0;
           padding: 1rem;
         }
 
@@ -304,8 +310,9 @@ export default async function AdminClientDetailPage({
         }
 
         .client-detail-header h2 {
-          font-size: 1.45rem;
+          font-size: 1.35rem;
           line-height: 1.2;
+          overflow-wrap: anywhere;
         }
 
         .client-detail-header p {
@@ -327,7 +334,10 @@ export default async function AdminClientDetailPage({
         }
 
         .client-detail-section h3 {
+          color: color-mix(in srgb, #e8f4ff 92%, white);
           font-size: 1rem;
+          font-weight: 680;
+          letter-spacing: 0;
         }
 
         .detail-grid,
@@ -335,6 +345,7 @@ export default async function AdminClientDetailPage({
           display: grid;
           gap: 0.75rem;
           grid-template-columns: repeat(3, minmax(0, 1fr));
+          min-width: 0;
         }
 
         .detail-grid.compact {
@@ -342,11 +353,13 @@ export default async function AdminClientDetailPage({
         }
 
         .detail-item {
-          border: 1px solid var(--line);
+          background: rgba(6, 22, 42, 0.28);
+          border: 1px solid rgba(126, 196, 255, 0.14);
           border-radius: 8px;
           display: grid;
           gap: 0.3rem;
           min-height: 4.15rem;
+          min-width: 0;
           padding: 0.75rem;
         }
 
@@ -371,11 +384,13 @@ export default async function AdminClientDetailPage({
         }
 
         .contact-detail-card {
-          border: 1px solid var(--line);
+          background: rgba(6, 22, 42, 0.28);
+          border: 1px solid rgba(126, 196, 255, 0.14);
           border-radius: 8px;
           display: grid;
           gap: 0.85rem;
           padding: 0.85rem;
+          min-width: 0;
         }
 
         .contact-detail-heading {
@@ -399,6 +414,8 @@ export default async function AdminClientDetailPage({
         }
 
         .empty-copy {
+          color: color-mix(in srgb, #aacfe8 86%, white);
+          font-size: 0.82rem;
           margin: 0;
         }
 
@@ -412,16 +429,36 @@ export default async function AdminClientDetailPage({
         @media (max-width: 640px) {
           .client-detail-header {
             flex-direction: column;
+            padding: 0.85rem;
           }
 
           .client-detail-actions {
+            align-items: stretch;
+            flex-direction: column;
             justify-content: flex-start;
+            width: 100%;
           }
 
           .detail-grid,
           .detail-grid.compact,
           .notes-grid {
             grid-template-columns: 1fr;
+          }
+
+          .client-detail-section,
+          .client-alert,
+          .contact-detail-card {
+            padding: 0.8rem;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .client-detail-header,
+          .client-detail-section,
+          .client-alert,
+          .contact-detail-card,
+          .detail-item {
+            padding: 0.72rem;
           }
         }
       `}</style>

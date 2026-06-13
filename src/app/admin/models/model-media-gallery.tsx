@@ -1604,15 +1604,19 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         .media-hub {
           display: grid;
           gap: 1rem;
+          max-width: 100%;
+          min-width: 0;
         }
 
         .media-section {
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
           padding: 1rem;
           background:
-            linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.42)),
-            color-mix(in srgb, var(--surface) 94%, white);
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          max-width: 100%;
+          min-width: 0;
         }
 
         .media-section.is-editing {
@@ -1625,6 +1629,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           gap: 1rem;
           justify-content: space-between;
           margin-bottom: 1rem;
+          min-width: 0;
         }
 
         .media-section-header p,
@@ -1638,7 +1643,9 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         .media-title-row {
           align-items: center;
           display: flex;
+          flex-wrap: wrap;
           gap: 0.5rem;
+          min-width: 0;
         }
 
         .media-title-row h3 {
@@ -1647,7 +1654,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-title-row span {
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 20%, transparent);
           border-radius: 999px;
           color: var(--muted);
           font-size: 0.75rem;
@@ -1661,6 +1668,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           flex-wrap: wrap;
           gap: 0.5rem;
           justify-content: flex-end;
+          min-width: 0;
         }
 
         .media-upload {
@@ -1669,6 +1677,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           flex-wrap: wrap;
           gap: 0.5rem;
           justify-content: flex-end;
+          min-width: 0;
         }
 
         .media-contract-upload-fields {
@@ -1692,8 +1701,8 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-contract-upload-fields input,
         .media-contract-details-form input {
-          background: color-mix(in srgb, var(--surface) 92%, white);
-          border: 1px solid var(--line);
+          background: color-mix(in srgb, #081d35 84%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 22%, transparent);
           border-radius: 8px;
           color: var(--foreground);
           font: inherit;
@@ -1705,7 +1714,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         .media-upload-tile {
           align-items: center;
           backdrop-filter: blur(10px);
-          border: 1px solid color-mix(in srgb, var(--line) 82%, white);
+          border: 1px solid color-mix(in srgb, #86c8ff 24%, transparent);
           border-radius: 8px;
           color: var(--foreground);
           cursor: pointer;
@@ -1718,7 +1727,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-upload-icon {
           align-items: center;
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 22%, transparent);
           border-radius: 999px;
           display: inline-flex;
           height: 22px;
@@ -1745,7 +1754,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-upload-progress {
-          background: color-mix(in srgb, var(--line) 74%, transparent);
+          background: color-mix(in srgb, #86c8ff 16%, transparent);
           border-radius: 999px;
           flex: 1 1 120px;
           height: 4px;
@@ -1763,14 +1772,14 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-upload-error,
         .media-upload-success {
-          color: #b42318;
+          color: #ffdce1;
           flex-basis: 100%;
           font-size: 0.78rem;
           margin: 0;
         }
 
         .media-upload-success {
-          color: #047857;
+          color: #dffff5;
         }
 
         .media-upload-errors {
@@ -1781,8 +1790,8 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-upload-error-item {
           align-items: center;
-          background: color-mix(in srgb, #fee2e2 55%, transparent);
-          border: 1px solid color-mix(in srgb, #ef4444 30%, var(--line));
+          background: color-mix(in srgb, var(--danger) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
           border-radius: 8px;
           display: flex;
           gap: 0.75rem;
@@ -1811,13 +1820,13 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-upload-error-item span,
         .media-upload-error-item small {
-          color: #991b1b;
+          color: #ffdce1;
           font-size: 0.72rem;
         }
 
         .media-retry-button {
-          background: color-mix(in srgb, var(--surface) 92%, white);
-          border: 1px solid var(--line);
+          background: color-mix(in srgb, #173a63 76%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 24%, transparent);
           border-radius: 999px;
           color: var(--foreground);
           cursor: pointer;
@@ -1837,6 +1846,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           display: grid;
           gap: 0.85rem;
           grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
+          min-width: 0;
         }
 
         .media-card {
@@ -1854,9 +1864,9 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
           align-items: center;
           aspect-ratio: 2 / 3;
           background:
-            linear-gradient(180deg, rgba(255,255,255,0.75), rgba(255,255,255,0.44)),
-            color-mix(in srgb, var(--surface) 84%, var(--line));
-          border: 1px solid var(--line);
+            linear-gradient(180deg, rgba(18, 54, 92, 0.75), rgba(8, 29, 53, 0.9)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
           border-radius: 8px;
           color: var(--muted);
           cursor: pointer;
@@ -1971,7 +1981,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-thumbnail-upload > span {
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 20%, transparent);
           border-radius: 999px;
           color: var(--foreground);
           padding: 0.28rem 0.52rem;
@@ -1983,7 +1993,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         .media-contract-details-form {
-          border-top: 1px solid var(--line);
+          border-top: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           display: grid;
           gap: 0.45rem;
           margin-top: 0.2rem;
@@ -1992,7 +2002,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-load-more {
           background: transparent;
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 22%, transparent);
           border-radius: 999px;
           color: var(--muted);
           cursor: pointer;
@@ -2006,7 +2016,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
 
         .media-empty {
           align-items: center;
-          border: 1px dashed var(--line);
+          border: 1px dashed color-mix(in srgb, #86c8ff 22%, transparent);
           border-radius: 8px;
           color: var(--muted);
           display: flex;
@@ -2018,7 +2028,7 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         .media-empty span {
           align-items: center;
           aspect-ratio: 2 / 3;
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
           border-radius: 6px;
           display: flex;
           font-size: 0.72rem;
@@ -2206,25 +2216,47 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
         }
 
         @media (max-width: 720px) {
+          .media-section {
+            padding: 0.8rem;
+          }
+
           .media-section-header {
             display: grid;
           }
 
           .media-section-tools,
           .media-upload {
+            align-items: stretch;
+            display: grid;
             justify-content: flex-start;
+          }
+
+          .media-upload-tile,
+          .media-retry-button,
+          .media-load-more {
+            width: 100%;
+          }
+
+          .media-contract-upload-fields {
+            display: grid;
+            grid-template-columns: 1fr;
           }
 
           .media-gallery-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.65rem;
           }
 
           .media-lightbox {
-            gap: 1rem;
+            display: grid;
+            gap: 0.75rem;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             padding: 1rem;
           }
 
           .media-lightbox figure {
+            grid-column: 1 / -1;
+            grid-row: 1;
             max-width: 100%;
           }
 
@@ -2238,6 +2270,42 @@ export function ModelMediaGallery({ media, modelId }: ModelMediaGalleryProps) {
             padding: 0.4rem 0.6rem;
           }
 
+          .media-lightbox-nav.previous {
+            grid-column: 1;
+            grid-row: 2;
+            justify-self: stretch;
+          }
+
+          .media-lightbox-nav.next {
+            grid-column: 2;
+            grid-row: 2;
+            justify-self: stretch;
+          }
+
+          .media-lightbox-panel {
+            max-width: 100%;
+            width: 100%;
+          }
+
+          .media-lightbox-frame {
+            height: min(68dvh, 620px);
+          }
+        }
+
+        @media (max-width: 390px) {
+          .media-section {
+            padding: 0.7rem;
+          }
+
+          .media-gallery-grid {
+            gap: 0.55rem;
+          }
+
+          .media-batch-actions,
+          .media-batch-actions form {
+            display: grid;
+            width: 100%;
+          }
         }
       `}</style>
     </>

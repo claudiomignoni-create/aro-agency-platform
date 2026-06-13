@@ -204,7 +204,7 @@ export function ModelForm({ action, model, submitLabel }: ModelFormProps) {
 }
 
 export const modelProfileTabs = [
-  { id: "basic", label: "Perfil básico" },
+  { id: "basic", label: "Informações" },
   { id: "documents", label: "Documentos" },
   { id: "media", label: "Mídia" },
   { id: "skills", label: "Habilidades" },
@@ -831,7 +831,7 @@ function BasicTab({ profile }: { profile: ModelProfile }) {
         </div>
       </section>
 
-      <SaveButton>Salvar perfil básico</SaveButton>
+      <SaveButton>Salvar informações</SaveButton>
     </form>
   );
 }
@@ -1793,7 +1793,7 @@ export function ModelProfileEditor({
                 selectedTab === tab.id
                   ? "color-mix(in srgb, var(--foreground) 8%, transparent)"
                   : "transparent",
-              border: "1px solid var(--border)",
+              border: "1px solid var(--line)",
               borderRadius: "999px",
               color: "var(--foreground)",
               cursor: "pointer",
@@ -1814,6 +1814,8 @@ export function ModelProfileEditor({
       <style>{`
         .model-profile-editor .panel {
           font-size: 0.92rem;
+          max-width: 100%;
+          overflow: hidden;
         }
 
         .model-profile-editor label,
@@ -1840,6 +1842,7 @@ export function ModelProfileEditor({
           border: 1px solid color-mix(in srgb, #6eb6ff 16%, transparent);
           border-radius: 8px;
           padding: 0.9rem;
+          min-width: 0;
         }
 
         .profile-form-section h3,
@@ -1876,6 +1879,7 @@ export function ModelProfileEditor({
           display: grid;
           gap: 0.85rem;
           padding: 0.9rem;
+          min-width: 0;
         }
 
         .section-heading-row {
@@ -1892,6 +1896,7 @@ export function ModelProfileEditor({
         .international-agency-list {
           display: grid;
           gap: 0.6rem;
+          min-width: 0;
         }
 
         .international-agency-row {
@@ -1903,6 +1908,7 @@ export function ModelProfileEditor({
           gap: 0.55rem;
           grid-template-columns: minmax(10rem, 1.3fr) minmax(7rem, 0.8fr) minmax(7rem, 0.8fr) minmax(8rem, 0.75fr) minmax(8rem, 0.75fr) auto;
           padding: 0.65rem;
+          min-width: 0;
         }
 
         .international-agency-row label {
@@ -1938,6 +1944,7 @@ export function ModelProfileEditor({
           gap: 0.9rem;
           grid-template-columns: minmax(0, 1fr) auto auto;
           padding: 0.9rem;
+          min-width: 0;
         }
 
         .history-summary h3 {
@@ -2024,7 +2031,7 @@ export function ModelProfileEditor({
 
         .history-snapshot-grid section {
           background: color-mix(in srgb, #0c2848 62%, transparent);
-          border: 1px solid color-mix(in srgb, #86c8ff 16%, var(--border));
+          border: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           border-radius: 8px;
           display: grid;
           gap: 0.28rem;
@@ -2141,6 +2148,7 @@ export function ModelProfileEditor({
           display: grid;
           gap: 0.75rem;
           padding: 0.85rem;
+          min-width: 0;
         }
 
         .skills-option-section h3,
@@ -2157,6 +2165,7 @@ export function ModelProfileEditor({
           display: flex;
           flex-wrap: wrap;
           gap: 0.45rem;
+          min-width: 0;
         }
 
         .option-chip {
@@ -2345,9 +2354,30 @@ export function ModelProfileEditor({
         }
 
         @media (max-width: 620px) {
+          .model-profile-editor .panel {
+            padding: 0.75rem;
+          }
+
+          .model-profile-editor .tabs {
+            gap: 0.35rem;
+            padding-bottom: 0.55rem;
+          }
+
+          .model-profile-editor .tab-link {
+            min-height: 38px;
+            padding: 0.48rem 0.7rem;
+          }
+
+          .profile-form-section,
+          .international-agencies-panel,
+          .skills-option-section {
+            padding: 0.72rem;
+          }
+
           .option-chip,
           .skills-option-section .checkbox-grid label {
             white-space: normal;
+            min-width: 0;
           }
 
           .language-option-row {

@@ -46,6 +46,39 @@ export default async function AdminPage() {
           </Link>
         </div>
       </section>
+      <style>{`
+        .stack {
+          max-width: 100%;
+          min-width: 0;
+        }
+
+        .mini-panel,
+        .panel {
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border-color: color-mix(in srgb, #6eb6ff 20%, transparent);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.14);
+        }
+
+        .panel h2 {
+          font-size: 1.35rem;
+          line-height: 1.2;
+          margin-bottom: 0.4rem;
+        }
+
+        .panel p {
+          font-size: 0.86rem;
+          line-height: 1.5;
+        }
+
+        @media (max-width: 430px) {
+          .panel,
+          .mini-panel {
+            padding: 0.9rem;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -304,21 +304,27 @@ export default async function AdminModelsPage({
           display: flex;
           flex-direction: column;
           gap: 1rem;
+          max-width: 100%;
+          min-width: 0;
         }
 
         .models-gallery-header {
           align-items: flex-start;
-          background: color-mix(in srgb, var(--panel) 92%, transparent);
-          border: 1px solid var(--border);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
           display: flex;
           gap: 1rem;
           justify-content: space-between;
+          max-width: 100%;
+          min-width: 0;
           padding: 1rem;
         }
 
         .models-gallery-header h2 {
-          font-size: 1.45rem;
+          font-size: 1.35rem;
           line-height: 1.2;
           margin: 0;
         }
@@ -341,6 +347,7 @@ export default async function AdminModelsPage({
 
         .models-toolbar-panel {
           max-width: 100%;
+          min-width: 0;
         }
 
         .models-toolbar-panel summary {
@@ -353,8 +360,10 @@ export default async function AdminModelsPage({
 
         .models-filter-panel,
         .models-summary-chips {
-          background: var(--panel);
-          border: 1px solid var(--border);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.94), rgba(13, 38, 68, 0.84)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
           box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
           display: grid;
@@ -373,8 +382,11 @@ export default async function AdminModelsPage({
         }
 
         .models-filter-form label {
-          font-size: 0.75rem;
+          color: color-mix(in srgb, #aacfe8 88%, white);
+          font-size: 0.82rem;
+          font-weight: 650;
           line-height: 1.35;
+          min-width: 0;
         }
 
         .models-filter-form input,
@@ -396,7 +408,7 @@ export default async function AdminModelsPage({
         }
 
         .models-planned-actions {
-          border-top: 1px solid var(--border);
+          border-top: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           font-size: 0.72rem;
           padding-top: 0.75rem;
         }
@@ -414,7 +426,7 @@ export default async function AdminModelsPage({
         }
 
         .models-summary-chips span {
-          border: 1px solid var(--border);
+          border: 1px solid color-mix(in srgb, #86c8ff 20%, transparent);
           border-radius: 999px;
           font-size: 0.72rem;
           line-height: 1;
@@ -426,6 +438,7 @@ export default async function AdminModelsPage({
           display: grid;
           gap: 0.85rem;
           grid-template-columns: repeat(5, minmax(0, 1fr));
+          min-width: 0;
         }
 
         .model-gallery-card {
@@ -448,7 +461,7 @@ export default async function AdminModelsPage({
           background:
             linear-gradient(145deg, color-mix(in srgb, var(--panel) 70%, transparent), color-mix(in srgb, var(--muted) 14%, var(--panel))),
             radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--foreground) 16%, transparent), transparent 34%);
-          border: 1px solid var(--border);
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
           border-radius: 8px;
           display: flex;
           height: 100%;
@@ -456,7 +469,7 @@ export default async function AdminModelsPage({
         }
 
         .model-card-image {
-          border: 1px solid var(--border);
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
           border-radius: 8px;
           display: block;
           height: 100%;
@@ -468,7 +481,7 @@ export default async function AdminModelsPage({
           align-items: center;
           backdrop-filter: blur(14px);
           background: color-mix(in srgb, var(--panel) 76%, transparent);
-          border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+          border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
           border-radius: 999px;
           display: inline-flex;
           font-size: clamp(1.6rem, 4vw, 2.6rem);
@@ -568,10 +581,19 @@ export default async function AdminModelsPage({
           .models-filter-panel,
           .models-filter-form {
             grid-template-columns: 1fr;
+            min-width: min(100%, calc(100vw - 2rem));
+            width: 100%;
           }
 
           .models-filter-actions {
+            align-items: stretch;
+            flex-direction: column;
             justify-content: flex-start;
+          }
+
+          .models-planned-actions {
+            align-items: stretch;
+            flex-direction: column;
           }
         }
 

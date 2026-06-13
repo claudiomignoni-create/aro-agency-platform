@@ -195,12 +195,15 @@ export default async function EditModelPage({
       <style>{`
         .model-profile-hero {
           align-items: stretch;
-          background: color-mix(in srgb, var(--panel) 94%, var(--background));
-          border: 1px solid var(--border);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
           display: grid;
           gap: 1rem;
           grid-template-columns: minmax(11rem, 18rem) 1fr;
+          max-width: 100%;
           overflow: hidden;
           padding: 1rem;
         }
@@ -215,7 +218,7 @@ export default async function EditModelPage({
 
         .model-profile-photo img,
         .model-profile-photo-placeholder {
-          border: 1px solid var(--border);
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
           border-radius: 8px;
           height: 100%;
           width: 100%;
@@ -237,7 +240,7 @@ export default async function EditModelPage({
           align-items: center;
           backdrop-filter: blur(14px);
           background: color-mix(in srgb, var(--panel) 76%, transparent);
-          border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+          border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
           border-radius: 999px;
           display: inline-flex;
           font-size: clamp(1.8rem, 4vw, 3rem);
@@ -281,6 +284,7 @@ export default async function EditModelPage({
         .model-profile-facts {
           display: grid;
           gap: 0.55rem;
+          min-width: 0;
         }
 
         .model-profile-fact-row {
@@ -297,9 +301,10 @@ export default async function EditModelPage({
         }
 
         .model-profile-fact {
-          border: 1px solid var(--border);
+          border: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           border-radius: 8px;
           min-height: 4.15rem;
+          min-width: 0;
           padding: 0.65rem 0.7rem;
         }
 
@@ -314,7 +319,7 @@ export default async function EditModelPage({
         }
 
         .model-profile-fact strong {
-          border: 1px solid var(--border);
+          border: 1px solid var(--line);
           border-color: transparent;
           color: var(--foreground);
           display: block;
@@ -331,7 +336,7 @@ export default async function EditModelPage({
         }
 
         .model-profile-admin-actions {
-          border-top: 1px solid var(--border);
+          border-top: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           padding-top: 0.85rem;
         }
 
@@ -353,6 +358,35 @@ export default async function EditModelPage({
           .model-profile-fact-row.row-1,
           .model-profile-fact-row.row-2 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 430px) {
+          .model-profile-hero {
+            padding: 0.75rem;
+          }
+
+          .model-profile-photo {
+            max-width: min(100%, 14rem);
+          }
+
+          .model-profile-summary h2 {
+            font-size: 1.9rem;
+          }
+
+          .model-profile-fact-row.row-1,
+          .model-profile-fact-row.row-2 {
+            grid-template-columns: 1fr;
+          }
+
+          .model-profile-links,
+          .model-profile-admin-actions {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .model-profile-admin-actions form {
+            width: 100%;
           }
         }
       `}</style>

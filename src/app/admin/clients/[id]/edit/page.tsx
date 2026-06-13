@@ -232,14 +232,20 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         .client-form-shell {
           display: grid;
           gap: 1rem;
+          max-width: 100%;
+          min-width: 0;
         }
 
         .client-form-header,
         .client-form-section {
-          background: color-mix(in srgb, var(--panel) 92%, transparent);
-          border: 1px solid var(--line);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.14);
+          max-width: 100%;
+          min-width: 0;
           padding: 1rem;
         }
 
@@ -249,7 +255,7 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         }
 
         .client-form-header h2 {
-          font-size: 1.45rem;
+          font-size: 1.35rem;
           line-height: 1.2;
         }
 
@@ -267,7 +273,7 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
 
         .client-form-section {
           display: grid;
-          gap: 1rem;
+          gap: 0.85rem;
         }
 
         .client-section-heading {
@@ -278,11 +284,15 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         }
 
         .client-form-section h3 {
+          color: color-mix(in srgb, #e8f4ff 92%, white);
           font-size: 1rem;
+          font-weight: 680;
+          letter-spacing: 0;
         }
 
         .client-form-section p {
-          font-size: 0.82rem;
+          color: color-mix(in srgb, #aacfe8 86%, white);
+          font-size: 0.78rem;
           line-height: 1.45;
           margin: 0.35rem 0 0;
           max-width: 42rem;
@@ -292,12 +302,15 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
           display: grid;
           gap: 0.85rem;
           grid-template-columns: repeat(2, minmax(0, 1fr));
+          min-width: 0;
         }
 
         .client-form-grid label {
-          color: var(--muted-strong);
-          font-size: 0.75rem;
+          color: color-mix(in srgb, #aacfe8 88%, white);
+          font-size: 0.82rem;
+          font-weight: 650;
           line-height: 1.35;
+          min-width: 0;
         }
 
         .client-form-grid input,
@@ -318,7 +331,8 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         }
 
         .contact-card {
-          border: 1px solid var(--line);
+          background: rgba(6, 22, 42, 0.28);
+          border: 1px solid rgba(126, 196, 255, 0.14);
           border-radius: 8px;
           display: grid;
           gap: 0.85rem;
@@ -333,7 +347,8 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         }
 
         .contact-card-header strong {
-          font-size: 0.86rem;
+          color: color-mix(in srgb, #eef8ff 92%, white);
+          font-size: 0.88rem;
         }
 
         .checkbox-field {
@@ -356,6 +371,11 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         }
 
         @media (max-width: 720px) {
+          .client-form-header,
+          .client-form-section {
+            padding: 0.8rem;
+          }
+
           .client-section-heading {
             flex-direction: column;
           }
@@ -365,7 +385,22 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
           }
 
           .client-form-actions {
+            align-items: stretch;
+            flex-direction: column;
             justify-content: flex-start;
+          }
+
+          .contact-card-header {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .client-form-header,
+          .client-form-section,
+          .contact-card {
+            padding: 0.72rem;
           }
         }
       `}</style>

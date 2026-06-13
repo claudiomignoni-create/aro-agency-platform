@@ -238,24 +238,24 @@ export default async function AdminClientsPage({
                     }
                     key={client.id}
                   >
-                    <td>
+                    <td data-label="Empresa">
                       <Link className="client-detail-link" href={`/admin/clients/${client.id}`}>
                         <strong>{client.company_name}</strong>
                       </Link>
                     </td>
-                    <td>{getClientTypeLabel(client.client_type)}</td>
-                    <td>
+                    <td data-label="Tipo">{getClientTypeLabel(client.client_type)}</td>
+                    <td data-label="Status">
                       <span className={`status-pill ${client.status}`}>
                         {getStatusLabel(client.status)}
                       </span>
                     </td>
-                    <td>{getClientValue(client.country)}</td>
-                    <td>{getClientValue(client.city)}</td>
-                    <td>{getClientValue(client.general_email)}</td>
-                    <td>{getClientValue(client.general_whatsapp)}</td>
-                    <td>{getClientValue(client.general_wechat)}</td>
-                    <td>{formatDate(client.last_contact_at)}</td>
-                    <td>{formatDate(client.next_follow_up_at)}</td>
+                    <td data-label="País">{getClientValue(client.country)}</td>
+                    <td data-label="Cidade">{getClientValue(client.city)}</td>
+                    <td data-label="Email geral">{getClientValue(client.general_email)}</td>
+                    <td data-label="WhatsApp geral">{getClientValue(client.general_whatsapp)}</td>
+                    <td data-label="WeChat geral">{getClientValue(client.general_wechat)}</td>
+                    <td data-label="Último contato">{formatDate(client.last_contact_at)}</td>
+                    <td data-label="Próximo follow-up">{formatDate(client.next_follow_up_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -277,16 +277,22 @@ export default async function AdminClientsPage({
         .clients-shell {
           display: grid;
           gap: 1rem;
+          max-width: 100%;
+          min-width: 0;
         }
 
         .clients-header,
         .clients-filter-panel,
         .clients-table-panel,
         .clients-empty-state {
-          background: color-mix(in srgb, var(--panel) 92%, transparent);
-          border: 1px solid var(--line);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
           border-radius: 8px;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.14);
+          max-width: 100%;
+          min-width: 0;
         }
 
         .clients-header {
@@ -298,7 +304,7 @@ export default async function AdminClientsPage({
         }
 
         .clients-header h2 {
-          font-size: 1.45rem;
+          font-size: 1.35rem;
           line-height: 1.2;
           margin: 0;
         }
@@ -325,7 +331,7 @@ export default async function AdminClientsPage({
 
         .clients-header-meta span,
         .status-pill {
-          border: 1px solid var(--line);
+          border: 1px solid color-mix(in srgb, #86c8ff 20%, transparent);
           border-radius: 999px;
           font-size: 0.72rem;
           line-height: 1;
@@ -345,9 +351,11 @@ export default async function AdminClientsPage({
         }
 
         .clients-filter-form label {
-          color: var(--muted-strong);
-          font-size: 0.75rem;
+          color: color-mix(in srgb, #aacfe8 88%, white);
+          font-size: 0.82rem;
+          font-weight: 650;
           line-height: 1.35;
+          min-width: 0;
         }
 
         .clients-filter-form input,
@@ -376,6 +384,7 @@ export default async function AdminClientsPage({
 
         .clients-table-scroll {
           overflow-x: auto;
+          max-width: 100%;
         }
 
         .clients-table {
@@ -392,6 +401,7 @@ export default async function AdminClientsPage({
           padding: 0.8rem;
           text-align: left;
           vertical-align: top;
+          overflow-wrap: anywhere;
         }
 
         .clients-table th {
@@ -469,12 +479,14 @@ export default async function AdminClientsPage({
         @media (max-width: 720px) {
           .clients-header {
             flex-direction: column;
+            padding: 0.85rem;
           }
 
           .clients-header-meta {
             align-items: flex-start;
             flex-direction: row;
             flex-wrap: wrap;
+            width: 100%;
           }
 
           .clients-filter-form {
@@ -482,7 +494,74 @@ export default async function AdminClientsPage({
           }
 
           .clients-filter-actions {
+            align-items: stretch;
+            flex-direction: column;
             justify-content: flex-start;
+          }
+
+          .clients-filter-actions .button,
+          .clients-header-meta .button {
+            width: 100%;
+          }
+
+          .clients-table-scroll {
+            overflow-x: visible;
+          }
+
+          .clients-table {
+            border-collapse: separate;
+            border-spacing: 0 0.65rem;
+            min-width: 0;
+          }
+
+          .clients-table thead {
+            display: none;
+          }
+
+          .clients-table tbody,
+          .clients-table tr,
+          .clients-table td {
+            display: block;
+            width: 100%;
+          }
+
+          .clients-table tr {
+            background: rgba(6, 22, 42, 0.3);
+            border: 1px solid rgba(126, 196, 255, 0.14);
+            border-radius: 8px;
+            padding: 0.65rem;
+          }
+
+          .clients-table td {
+            align-items: baseline;
+            border-bottom: 0;
+            display: grid;
+            gap: 0.3rem;
+            grid-template-columns: minmax(6.5rem, 0.42fr) minmax(0, 1fr);
+            padding: 0.32rem 0;
+          }
+
+          .clients-table td::before {
+            color: color-mix(in srgb, #aacfe8 78%, white);
+            content: attr(data-label);
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+
+          .clients-table td strong {
+            max-width: 100%;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .clients-filter-panel,
+          .clients-empty-state {
+            padding: 0.75rem;
+          }
+
+          .clients-table td {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
