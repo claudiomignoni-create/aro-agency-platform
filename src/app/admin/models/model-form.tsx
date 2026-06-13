@@ -1346,7 +1346,10 @@ export function ModelProfileEditor({
         }
 
         .skills-option-section {
-          border: 1px solid var(--border);
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.92), rgba(13, 38, 68, 0.84)),
+            color-mix(in srgb, #102a4a 88%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 22%, transparent);
           border-radius: 8px;
           display: grid;
           gap: 0.75rem;
@@ -1355,7 +1358,10 @@ export function ModelProfileEditor({
 
         .skills-option-section h3,
         .skills-option-admin h3 {
+          color: color-mix(in srgb, #e8f4ff 92%, white);
           font-size: 0.95rem;
+          font-weight: 680;
+          letter-spacing: 0;
           margin: 0;
         }
 
@@ -1368,48 +1374,90 @@ export function ModelProfileEditor({
 
         .option-chip {
           align-items: center;
-          border: 1px solid var(--border);
+          background: color-mix(in srgb, #173a63 76%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 24%, transparent);
           border-radius: 999px;
+          color: color-mix(in srgb, #c7e8ff 92%, white);
           cursor: pointer;
           display: inline-flex;
           font-size: 0.82rem;
+          font-weight: 620;
           gap: 0.4rem;
           min-height: 34px;
           padding: 0.38rem 0.62rem;
+          position: relative;
+          transition:
+            background 150ms ease,
+            border-color 150ms ease,
+            box-shadow 150ms ease,
+            color 150ms ease,
+            transform 150ms ease;
+          user-select: none;
+          white-space: nowrap;
         }
 
-        .option-chip.is-selected {
-          background: color-mix(in srgb, var(--foreground) 7%, transparent);
+        .option-chip:hover {
+          background: color-mix(in srgb, #23517f 84%, transparent);
+          border-color: color-mix(in srgb, #9bd4ff 40%, transparent);
         }
 
+        .option-chip.is-selected,
         .option-chip:has(input:checked) {
-          background: color-mix(in srgb, var(--foreground) 9%, transparent);
-          border-color: color-mix(in srgb, var(--foreground) 22%, var(--border));
+          background: linear-gradient(135deg, rgba(50, 126, 198, 0.94), rgba(35, 91, 154, 0.92));
+          border-color: color-mix(in srgb, #b9e4ff 58%, transparent);
+          box-shadow: 0 8px 22px rgba(21, 74, 124, 0.24);
+          color: #f5fbff;
         }
 
         .option-chip input {
+          height: 1px;
           margin: 0;
+          opacity: 0;
+          overflow: hidden;
+          pointer-events: none;
+          position: absolute;
+          width: 1px;
+        }
+
+        .option-chip:focus-within {
+          box-shadow:
+            0 0 0 2px rgba(13, 38, 68, 0.94),
+            0 0 0 4px rgba(116, 197, 255, 0.42);
+          outline: none;
+        }
+
+        .option-chip span {
+          line-height: 1;
         }
 
         .language-option-row {
           align-items: center;
+          background: rgba(6, 22, 42, 0.28);
+          border: 1px solid rgba(126, 196, 255, 0.14);
+          border-radius: 999px;
           display: inline-flex;
           gap: 0.35rem;
+          padding: 0.16rem;
         }
 
         .language-option-row select {
+          appearance: none;
+          background: color-mix(in srgb, #0b2441 86%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 22%, transparent);
           border-radius: 999px;
+          color: color-mix(in srgb, #d7efff 92%, white);
           font-size: 0.78rem;
           min-height: 34px;
-          padding: 0.35rem 0.5rem;
+          padding: 0.35rem 1.45rem 0.35rem 0.62rem;
         }
 
         .option-add-form {
-          border: 1px solid var(--border);
+          background: color-mix(in srgb, #0c2848 72%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, transparent);
           border-radius: 8px;
           display: grid;
-          gap: 0.45rem;
-          padding: 0.7rem;
+          gap: 0.5rem;
+          padding: 0.62rem;
         }
 
         .option-add-form label {
@@ -1418,13 +1466,100 @@ export function ModelProfileEditor({
         }
 
         .option-add-form span {
-          color: var(--muted);
+          color: color-mix(in srgb, #aacfe8 88%, white);
           font-size: 0.76rem;
+        }
+
+        .option-add-form input {
+          background: color-mix(in srgb, #081d35 84%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 22%, transparent);
+          border-radius: 999px;
+          color: color-mix(in srgb, #eef8ff 92%, white);
+          font: inherit;
+          font-size: 0.82rem;
+          min-height: 34px;
+          padding: 0.38rem 0.7rem;
+        }
+
+        .option-add-form input::placeholder {
+          color: color-mix(in srgb, #9bbdd5 72%, transparent);
+        }
+
+        .option-add-form .button {
+          background: color-mix(in srgb, #1d4f80 76%, transparent);
+          border-color: color-mix(in srgb, #86c8ff 28%, transparent);
+          color: color-mix(in srgb, #e8f6ff 92%, white);
+          font-size: 0.78rem;
+          justify-self: start;
+          min-height: 32px;
+          padding: 0.34rem 0.68rem;
+        }
+
+        .skills-option-section .checkbox-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+        }
+
+        .skills-option-section .checkbox-grid label {
+          align-items: center;
+          background: color-mix(in srgb, #173a63 76%, transparent);
+          border: 1px solid color-mix(in srgb, #86c8ff 24%, transparent);
+          border-radius: 999px;
+          color: color-mix(in srgb, #c7e8ff 92%, white);
+          cursor: pointer;
+          display: inline-flex;
+          font-size: 0.82rem;
+          font-weight: 620;
+          min-height: 34px;
+          padding: 0.38rem 0.62rem;
+          position: relative;
+          white-space: nowrap;
+        }
+
+        .skills-option-section .checkbox-grid label:has(input:checked) {
+          background: linear-gradient(135deg, rgba(50, 126, 198, 0.94), rgba(35, 91, 154, 0.92));
+          border-color: color-mix(in srgb, #b9e4ff 58%, transparent);
+          color: #f5fbff;
+        }
+
+        .skills-option-section .checkbox-grid input {
+          height: 1px;
+          opacity: 0;
+          overflow: hidden;
+          pointer-events: none;
+          position: absolute;
+          width: 1px;
+        }
+
+        .skills-option-section .checkbox-grid label:focus-within {
+          box-shadow:
+            0 0 0 2px rgba(13, 38, 68, 0.94),
+            0 0 0 4px rgba(116, 197, 255, 0.42);
         }
 
         @media (max-width: 980px) {
           .skills-manager {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .option-chip,
+          .skills-option-section .checkbox-grid label {
+            white-space: normal;
+          }
+
+          .language-option-row {
+            align-items: stretch;
+            border-radius: 8px;
+            display: grid;
+            width: 100%;
+          }
+
+          .language-option-row .option-chip,
+          .language-option-row select {
+            width: 100%;
           }
         }
       `}</style>
