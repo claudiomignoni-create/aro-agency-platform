@@ -8,6 +8,7 @@ import type {
   ModelClientProfile,
   ModelDocuments,
   ModelHealthLogistics,
+  ModelInternationalAgency,
   ModelMedia,
   ModelOption,
   ModelOptionType,
@@ -290,6 +291,18 @@ const representationSelect = `
   updated_at
 `;
 
+const internationalAgencySelect = `
+  id,
+  model_id,
+  agency_name,
+  country,
+  city,
+  contract_start_date,
+  contract_end_date,
+  created_at,
+  updated_at
+`;
+
 const mediaSelect = `
   id,
   model_id,
@@ -466,6 +479,14 @@ export type ModelMediaContractDetailsInput = {
   valid_until: string | null;
 };
 
+export type ModelInternationalAgencyInput = {
+  agency_name: string;
+  city: string | null;
+  contract_end_date: string | null;
+  contract_start_date: string | null;
+  country: string | null;
+};
+
 export type ModelOptionInput = {
   label: string;
   option_type: ModelOptionType;
@@ -589,6 +610,7 @@ export async function getModelProfile(id: string) {
     workHistoryResult,
     healthLogisticsResult,
     representationResult,
+    internationalAgenciesResult,
     mediaResult,
     updateRequestsResult,
     modelOptionsResult
@@ -624,6 +646,11 @@ export async function getModelProfile(id: string) {
       .eq("model_id", id)
       .maybeSingle(),
     supabase
+      .from("model_international_agencies")
+      .select(internationalAgencySelect)
+      .eq("model_id", id)
+      .order("created_at", { ascending: true }),
+    supabase
       .from("model_media")
       .select(mediaSelect)
       .eq("model_id", id)
@@ -646,6 +673,9 @@ export async function getModelProfile(id: string) {
     documentsResult,
     workHistoryResult,
     representationResult,
+    ...(isMissingSchemaError(internationalAgenciesResult.error)
+      ? []
+      : [internationalAgenciesResult]),
     mediaResult,
     updateRequestsResult
   ];
@@ -658,6 +688,8 @@ export async function getModelProfile(id: string) {
 
   let skillsData = normalizeModelSkills(skillsResult.data);
   let healthLogisticsData = normalizeHealthLogistics(healthLogisticsResult.data);
+  let internationalAgenciesData =
+    (internationalAgenciesResult.data ?? []) as ModelInternationalAgency[];
   let modelOptionsData = (modelOptionsResult.data ?? []) as ModelOption[];
 
   if (isMissingSchemaError(skillsResult.error)) {
@@ -700,6 +732,12 @@ export async function getModelProfile(id: string) {
     throw modelOptionsResult.error;
   }
 
+  if (isMissingSchemaError(internationalAgenciesResult.error)) {
+    internationalAgenciesData = [];
+  } else if (internationalAgenciesResult.error) {
+    throw internationalAgenciesResult.error;
+  }
+
   return {
     model: model as Model,
     socialLinks: socialLinksResult.data as ModelSocialLinks | null,
@@ -709,6 +747,7 @@ export async function getModelProfile(id: string) {
     healthLogistics: healthLogisticsData,
     representation:
       representationResult.data as ModelRepresentation | null,
+    internationalAgencies: internationalAgenciesData,
     media: (mediaResult.data ?? []) as ModelMedia[],
     updateRequests: (updateRequestsResult.data ?? []) as ModelUpdateRequest[],
     modelOptions: modelOptionsData
@@ -873,6 +912,49 @@ export async function updateModelRepresentation(
 
   if (error) {
     throw error;
+  }
+}
+
+export async function updateModelInternationalAgencies(
+  modelId: string,
+  agencies: ModelInternationalAgencyInput[]
+) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const normalizedAgencies = agencies
+    .map((agency) => ({
+      agency_name: agency.agency_name.trim(),
+      city: agency.city,
+      contract_end_date: agency.contract_end_date,
+      contract_start_date: agency.contract_start_date,
+      country: agency.country
+    }))
+    .filter((agency) => agency.agency_name.length > 0);
+
+  const { error: deleteError } = await supabase
+    .from("model_international_agencies")
+    .delete()
+    .eq("model_id", modelId);
+
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  if (normalizedAgencies.length === 0) {
+    return;
+  }
+
+  const { error: insertError } = await supabase
+    .from("model_international_agencies")
+    .insert(
+      normalizedAgencies.map((agency) => ({
+        model_id: modelId,
+        ...agency
+      }))
+    );
+
+  if (insertError) {
+    throw insertError;
   }
 }
 

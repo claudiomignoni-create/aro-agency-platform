@@ -26,6 +26,7 @@ import {
   updateModel,
   updateModelDocuments,
   updateModelHealthLogistics,
+  updateModelInternationalAgencies,
   updateModelMainImageFromMedia,
   updateModelMediaStatus,
   updateModelMediaTitle,
@@ -39,6 +40,7 @@ import {
   type ModelDocumentsInput,
   type ModelHealthLogisticsInput,
   type ModelInput,
+  type ModelInternationalAgencyInput,
   type ModelMeasurementsInput,
   type ModelMediaInput,
   type ModelOptionInput,
@@ -192,6 +194,19 @@ function stringValues(formData: FormData, key: string) {
     .filter(Boolean);
 }
 
+function stringListValues(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .flatMap((value) => String(value).split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function nullableValue(value: FormDataEntryValue | undefined) {
+  const normalized = String(value ?? "").trim();
+  return normalized.length ? normalized : null;
+}
+
 function modelOptionInputFromFormData(formData: FormData): ModelOptionInput {
   const optionType = requiredString(formData, "option_type") as ModelOptionType;
 
@@ -277,7 +292,7 @@ function basicInputFromFormData(formData: FormData): ModelBasicInput {
     base_country: nullableString(formData, "base_country"),
     bio: nullableString(formData, "bio"),
     birth_date: nullableString(formData, "birth_date"),
-    categories: stringList(formData, "categories"),
+    categories: stringListValues(formData, "categories"),
     current_city: currentCity,
     current_country: currentCountry,
     display_name: stageName,
@@ -491,6 +506,8 @@ function healthLogisticsInputFromFormData(
 function representationInputFromFormData(
   formData: FormData
 ): ModelRepresentationInput {
+  const structuredAgencyNames = stringValues(formData, "agency_name");
+
   return {
     agency_commission: nullableNumber(formData, "agency_commission"),
     available_markets: stringList(formData, "available_markets"),
@@ -498,13 +515,35 @@ function representationInputFromFormData(
     contract_end_date: nullableString(formData, "contract_end_date"),
     contract_start_date: nullableString(formData, "contract_start_date"),
     exclusive_contract: checked(formData, "exclusive_contract"),
-    international_agencies: stringList(formData, "international_agencies"),
+    international_agencies: structuredAgencyNames.length
+      ? structuredAgencyNames
+      : stringListValues(formData, "international_agencies"),
     model_commission: nullableNumber(formData, "model_commission"),
     mother_agency: nullableString(formData, "mother_agency"),
     previous_markets: stringList(formData, "previous_markets"),
     responsible_booker: nullableString(formData, "responsible_booker"),
     strategic_notes: nullableString(formData, "strategic_notes")
   };
+}
+
+function internationalAgenciesInputFromFormData(
+  formData: FormData
+): ModelInternationalAgencyInput[] {
+  const names = formData.getAll("agency_name");
+  const countries = formData.getAll("agency_country");
+  const cities = formData.getAll("agency_city");
+  const starts = formData.getAll("agency_contract_start_date");
+  const ends = formData.getAll("agency_contract_end_date");
+
+  return names
+    .map((name, index) => ({
+      agency_name: String(name ?? "").trim(),
+      city: nullableValue(cities[index]),
+      contract_end_date: nullableValue(ends[index]),
+      contract_start_date: nullableValue(starts[index]),
+      country: nullableValue(countries[index])
+    }))
+    .filter((agency) => agency.agency_name.length > 0);
 }
 
 export async function createModelAction(formData: FormData) {
@@ -526,8 +565,12 @@ export async function updateModelBasicAction(id: string, formData: FormData) {
   await requireRole(["admin"]);
   await updateModel(id, {
     ...basicInputFromFormData(formData),
+    ...measurementsInputFromFormData(formData),
+    ...contactInputFromFormData(formData),
+    last_measurements_update_at: new Date().toISOString(),
     last_profile_update_at: new Date().toISOString()
   });
+  await updateModelSocialLinks(id, socialLinksInputFromFormData(formData));
   revalidateModelPaths(id);
   redirectToTab(id, "basic");
 }
@@ -624,6 +667,10 @@ export async function updateModelRepresentationAction(
   await updateModelRepresentation(
     id,
     representationInputFromFormData(formData)
+  );
+  await updateModelInternationalAgencies(
+    id,
+    internationalAgenciesInputFromFormData(formData)
   );
   revalidateModelPaths(id);
   redirectToTab(id, "representation");

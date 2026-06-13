@@ -289,6 +289,18 @@ export type ModelRepresentation = {
   updated_at: string;
 };
 
+export type ModelInternationalAgency = {
+  id: string;
+  model_id: string;
+  agency_name: string;
+  country: string | null;
+  city: string | null;
+  contract_start_date: string | null;
+  contract_end_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ModelUpdateRequest = {
   id: string;
   model_id: string;
@@ -312,6 +324,7 @@ export type ModelProfile = {
   workHistory: ModelWorkHistory[];
   healthLogistics: ModelHealthLogistics | null;
   representation: ModelRepresentation | null;
+  internationalAgencies: ModelInternationalAgency[];
   media: ModelMedia[];
   updateRequests: ModelUpdateRequest[];
 };

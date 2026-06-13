@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   Model,
+  ModelInternationalAgency,
   ModelOption,
   ModelOptionType,
   ModelProfile,
@@ -204,9 +205,6 @@ export function ModelForm({ action, model, submitLabel }: ModelFormProps) {
 
 export const modelProfileTabs = [
   { id: "basic", label: "Perfil básico" },
-  { id: "measurements", label: "Medidas" },
-  { id: "contact", label: "Contato e endereço" },
-  { id: "social", label: "Redes sociais" },
   { id: "documents", label: "Documentos" },
   { id: "media", label: "Mídia" },
   { id: "skills", label: "Habilidades" },
@@ -455,6 +453,13 @@ function listValue(values: string[] | null | undefined) {
   return values?.length ? values.join(", ") : "";
 }
 
+const officialModelCategories = [
+  "Desenvolvimento",
+  "New Face",
+  "Mainboard",
+  "Image"
+];
+
 type SelectableModelOption = Pick<ModelOption, "id" | "label">;
 
 const modelOptionConfig: Record<
@@ -570,6 +575,42 @@ function OptionChecklist({
   );
 }
 
+function CategoryChecklist({ selectedValues }: { selectedValues?: string[] | null }) {
+  const selected = new Set(selectedValues ?? []);
+  const legacyCategories = (selectedValues ?? []).filter(
+    (category) => !officialModelCategories.includes(category)
+  );
+
+  return (
+    <div className="category-chip-field">
+      {legacyCategories.map((category) => (
+        <input key={category} name="categories" type="hidden" value={category} />
+      ))}
+      <div className="option-chip-grid">
+        {officialModelCategories.map((category) => (
+          <label
+            className={`option-chip${selected.has(category) ? " is-selected" : ""}`}
+            key={category}
+          >
+            <input
+              defaultChecked={selected.has(category)}
+              name="categories"
+              type="checkbox"
+              value={category}
+            />
+            <span>{category}</span>
+          </label>
+        ))}
+      </div>
+      {legacyCategories.length ? (
+        <p className="notice">
+          Categorias antigas preservadas: {legacyCategories.join(", ")}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function LanguageChecklist({
   emptyLabel,
   levels,
@@ -649,60 +690,147 @@ function AddModelOptionForm({
   );
 }
 
-function BasicTab({ model }: { model: Model }) {
+function BasicTab({ profile }: { profile: ModelProfile }) {
+  const { model, socialLinks } = profile;
+
   return (
-    <form action={updateModelBasicAction.bind(null, model.id)} className="form wide-form">
-      <div className="grid">
-        <Field
-          label="Nome artístico"
-          name="stage_name"
-          required
-          value={model.stage_name ?? model.display_name}
-        />
-        <Field label="Nome civil" name="legal_name" value={model.legal_name} />
-        <Field label="Gênero" name="gender" value={model.gender} />
-        <Field label="Pronomes" name="pronouns" value={model.pronouns} />
-        <Field
-          label="Data de nascimento"
-          name="birth_date"
-          type="date"
-          value={model.birth_date}
-        />
-        <Field label="Nacionalidade" name="nationality" value={model.nationality} />
-        <Field label="Cidade atual" name="current_city" value={model.current_city} />
-        <Field
-          label="País atual"
-          name="current_country"
-          value={model.current_country}
-        />
-        <Field label="Cidade base" name="base_city" value={model.base_city} />
-        <Field label="País base" name="base_country" value={model.base_country} />
-        <Field label="Localização comercial" name="location" value={model.location} />
-        <Field label="Tipo de modelo" name="model_type" value={model.model_type} />
-        <label>
-          Status
-          <select defaultValue={model.status} name="status">
-            <option value="draft">draft</option>
-            <option value="pending_review">pending_review</option>
-            <option value="approved">approved</option>
-            <option value="archived">archived</option>
-          </select>
-        </label>
-        <Field
-          label="Categorias"
-          name="categories"
-          value={model.categories.join(", ")}
-        />
-      </div>
-      <TextareaField label="Bio comercial" name="bio" value={model.bio} />
-      <div className="checkbox-row">
-        <CheckboxField checked={model.is_minor} label="Modelo menor de idade" name="is_minor" />
-        <CheckboxField
-          checked={model.is_published}
-          label="Publicado para clientes quando aprovado"
-          name="is_published"
-        />
-      </div>
+    <form
+      action={updateModelBasicAction.bind(null, model.id)}
+      className="form wide-form consolidated-basic-form"
+    >
+      <section className="profile-form-section">
+        <h3>Dados principais</h3>
+        <div className="grid">
+          <Field
+            label="Nome artístico"
+            name="stage_name"
+            required
+            value={model.stage_name ?? model.display_name}
+          />
+          <Field label="Nome civil" name="legal_name" value={model.legal_name} />
+          <Field label="Gênero" name="gender" value={model.gender} />
+          <Field label="Pronomes" name="pronouns" value={model.pronouns} />
+          <Field
+            label="Data de nascimento"
+            name="birth_date"
+            type="date"
+            value={model.birth_date}
+          />
+          <Field label="Nacionalidade" name="nationality" value={model.nationality} />
+          <Field label="Cidade atual" name="current_city" value={model.current_city} />
+          <Field
+            label="País atual"
+            name="current_country"
+            value={model.current_country}
+          />
+          <Field label="Cidade base" name="base_city" value={model.base_city} />
+          <Field label="País base" name="base_country" value={model.base_country} />
+          <Field label="Localização comercial" name="location" value={model.location} />
+          <Field label="Tipo de modelo" name="model_type" value={model.model_type} />
+          <label>
+            Status
+            <select defaultValue={model.status} name="status">
+              <option value="draft">draft</option>
+              <option value="pending_review">pending_review</option>
+              <option value="approved">approved</option>
+              <option value="archived">archived</option>
+            </select>
+          </label>
+        </div>
+        <div className="stack compact-stack">
+          <span className="field-label">Categorias</span>
+          <CategoryChecklist selectedValues={model.categories} />
+        </div>
+        <TextareaField label="Bio comercial" name="bio" value={model.bio} />
+        <div className="checkbox-row">
+          <CheckboxField checked={model.is_minor} label="Modelo menor de idade" name="is_minor" />
+          <CheckboxField
+            checked={model.is_published}
+            label="Publicado para clientes quando aprovado"
+            name="is_published"
+          />
+        </div>
+      </section>
+
+      <section className="profile-form-section">
+        <h3>Medidas</h3>
+        <div className="grid">
+          <Field label="Altura em cm" name="height_cm" type="number" value={model.height_cm} />
+          <Field label="Busto" name="bust_cm" type="number" value={model.bust_cm} />
+          <Field label="Cintura" name="waist_cm" type="number" value={model.waist_cm} />
+          <Field label="Quadril" name="hips_cm" type="number" value={model.hips_cm} />
+          <Field label="Sapato BR" name="shoe_size_br" value={model.shoe_size_br ?? model.shoe_size} />
+          <Field label="Sapato EU" name="shoe_size_eu" value={model.shoe_size_eu} />
+          <Field label="Sapato US" name="shoe_size_us" value={model.shoe_size_us} />
+          <Field label="Vestido BR" name="dress_size_br" value={model.dress_size_br ?? model.clothing_size} />
+          <Field label="Vestido EU" name="dress_size_eu" value={model.dress_size_eu} />
+          <Field label="Vestido US" name="dress_size_us" value={model.dress_size_us} />
+          <Field label="Camisa" name="shirt_size" value={model.shirt_size} />
+          <Field label="Calça" name="pants_size" value={model.pants_size} />
+          <Field label="Terno" name="suit_size" value={model.suit_size} />
+          <Field label="Cor do cabelo" name="hair_color" value={model.hair_color} />
+          <Field label="Comprimento do cabelo" name="hair_length" value={model.hair_length} />
+          <Field label="Tipo de cabelo" name="hair_type" value={model.hair_type} />
+          <Field label="Cor dos olhos" name="eye_color" value={model.eye_color} />
+          <Field label="Tom de pele" name="skin_tone" value={model.skin_tone} />
+        </div>
+        <div className="grid">
+          <TextareaField label="Tatuagens" name="tattoos" value={model.tattoos} />
+          <TextareaField label="Piercings" name="piercings" value={model.piercings} />
+          <TextareaField label="Cicatrizes visíveis" name="visible_scars" value={model.visible_scars} />
+          <TextareaField label="Aparelho ortodôntico" name="braces" value={model.braces} />
+        </div>
+      </section>
+
+      <section className="profile-form-section">
+        <h3>Contato e endereço</h3>
+        <div className="grid">
+          <Field label="E-mail" name="email" type="email" value={model.email} />
+          <Field label="Telefone" name="phone" value={model.phone} />
+          <Field label="WhatsApp" name="whatsapp" value={model.whatsapp} />
+          <Field label="WeChat" name="wechat" value={model.wechat} />
+          <Field
+            label="Contato de emergência"
+            name="emergency_contact_name"
+            value={model.emergency_contact_name}
+          />
+          <Field
+            label="Telefone de emergência"
+            name="emergency_contact_phone"
+            value={model.emergency_contact_phone}
+          />
+          <Field
+            label="Relação do contato"
+            name="emergency_contact_relationship"
+            value={model.emergency_contact_relationship}
+          />
+          <Field label="Endereço" name="address_line" value={model.address_line} />
+          <Field label="Cidade" name="city" value={model.city} />
+          <Field label="Estado" name="state" value={model.state} />
+          <Field label="País" name="country" value={model.country} />
+          <Field label="CEP / Postal code" name="postal_code" value={model.postal_code} />
+        </div>
+      </section>
+
+      <section className="profile-form-section">
+        <h3>Redes sociais</h3>
+        <div className="grid">
+          <Field label="Instagram" name="instagram" value={socialLinks?.instagram} />
+          <Field label="TikTok" name="tiktok" value={socialLinks?.tiktok} />
+          <Field label="YouTube" name="youtube" value={socialLinks?.youtube} />
+          <Field label="Xiaohongshu" name="xiaohongshu" value={socialLinks?.xiaohongshu} />
+          <Field label="Weibo" name="weibo" value={socialLinks?.weibo} />
+          <Field label="WeChat ID" name="wechat_id" value={socialLinks?.wechat_id} />
+          <Field label="Website" name="website" value={socialLinks?.website} />
+          <Field
+            label="Portfolio externo"
+            name="external_portfolio_url"
+            value={socialLinks?.external_portfolio_url}
+          />
+          <Field label="Composite URL" name="composite_url" value={socialLinks?.composite_url} />
+        </div>
+      </section>
+
       <SaveButton>Salvar perfil básico</SaveButton>
     </form>
   );
@@ -1215,21 +1343,98 @@ function HealthTab({ profile }: { profile: ModelProfile }) {
   );
 }
 
+type InternationalAgencyDraft = Pick<
+  ModelInternationalAgency,
+  | "agency_name"
+  | "city"
+  | "contract_end_date"
+  | "contract_start_date"
+  | "country"
+> & {
+  id: string;
+};
+
+function emptyInternationalAgencyDraft(id = "agency-empty"): InternationalAgencyDraft {
+  return {
+    agency_name: "",
+    city: "",
+    contract_end_date: "",
+    contract_start_date: "",
+    country: "",
+    id
+  };
+}
+
+function internationalAgencyDraftsFromProfile(
+  internationalAgencies: ModelInternationalAgency[],
+  legacyAgencies: string[] | null | undefined
+): InternationalAgencyDraft[] {
+  if (internationalAgencies.length > 0) {
+    return internationalAgencies.map((agency) => ({
+      agency_name: agency.agency_name,
+      city: agency.city ?? "",
+      contract_end_date: agency.contract_end_date ?? "",
+      contract_start_date: agency.contract_start_date ?? "",
+      country: agency.country ?? "",
+      id: agency.id
+    }));
+  }
+
+  const legacyRows = (legacyAgencies ?? [])
+    .filter(Boolean)
+    .map((agency, index) => ({
+      agency_name: agency,
+      city: "",
+      contract_end_date: "",
+      contract_start_date: "",
+      country: "",
+      id: `legacy-agency-${index}`
+    }));
+
+  return legacyRows.length ? legacyRows : [emptyInternationalAgencyDraft()];
+}
+
 function RepresentationTab({ profile }: { profile: ModelProfile }) {
-  const { model, representation } = profile;
+  const { internationalAgencies, model, representation } = profile;
+  const [agencyRows, setAgencyRows] = useState<InternationalAgencyDraft[]>(() =>
+    internationalAgencyDraftsFromProfile(
+      internationalAgencies,
+      representation?.international_agencies
+    )
+  );
+
+  useEffect(() => {
+    setAgencyRows(
+      internationalAgencyDraftsFromProfile(
+        internationalAgencies,
+        representation?.international_agencies
+      )
+    );
+  }, [internationalAgencies, representation?.international_agencies]);
+
+  function addAgencyRow() {
+    setAgencyRows((rows) => [
+      ...rows,
+      emptyInternationalAgencyDraft(`agency-new-${Date.now()}-${rows.length}`)
+    ]);
+  }
+
+  function removeAgencyRow(id: string) {
+    setAgencyRows((rows) => rows.filter((row) => row.id !== id));
+  }
 
   return (
     <form
       action={updateModelRepresentationAction.bind(null, model.id)}
       className="form wide-form"
     >
+      <input
+        name="commercial_status"
+        type="hidden"
+        value={representation?.commercial_status ?? ""}
+      />
       <div className="grid">
         <Field label="Mother agency" name="mother_agency" value={representation?.mother_agency} />
-        <Field
-          label="Agências internacionais"
-          name="international_agencies"
-          value={listValue(representation?.international_agencies)}
-        />
         <Field
           label="Mercados disponíveis"
           name="available_markets"
@@ -1269,11 +1474,6 @@ function RepresentationTab({ profile }: { profile: ModelProfile }) {
           name="responsible_booker"
           value={representation?.responsible_booker}
         />
-        <Field
-          label="Status comercial"
-          name="commercial_status"
-          value={representation?.commercial_status}
-        />
       </div>
       <div className="checkbox-row">
         <CheckboxField
@@ -1282,6 +1482,58 @@ function RepresentationTab({ profile }: { profile: ModelProfile }) {
           name="exclusive_contract"
         />
       </div>
+      <section className="international-agencies-panel">
+        <div className="section-heading-row">
+          <div>
+            <h3>Agências internacionais</h3>
+            <p className="notice">
+              Cadastre contratos internacionais por agência, país e período.
+            </p>
+          </div>
+          <button className="button secondary" onClick={addAgencyRow} type="button">
+            Adicionar agência
+          </button>
+        </div>
+        <div className="international-agency-list">
+          {agencyRows.length ? (
+            agencyRows.map((agency, index) => (
+              <div className="international-agency-row" key={agency.id}>
+                <Field
+                  label="Nome da agência"
+                  name="agency_name"
+                  value={agency.agency_name}
+                />
+                <Field label="País" name="agency_country" value={agency.country} />
+                <Field label="Cidade" name="agency_city" value={agency.city} />
+                <Field
+                  label="Início"
+                  name="agency_contract_start_date"
+                  type="date"
+                  value={agency.contract_start_date}
+                />
+                <Field
+                  label="Término"
+                  name="agency_contract_end_date"
+                  type="date"
+                  value={agency.contract_end_date}
+                />
+                <div className="agency-row-actions">
+                  <span>#{index + 1}</span>
+                  <button
+                    className="button secondary"
+                    onClick={() => removeAgencyRow(agency.id)}
+                    type="button"
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="notice">Nenhuma agência internacional cadastrada.</p>
+          )}
+        </div>
+      </section>
       <TextareaField
         label="Notas estratégicas"
         name="strategic_notes"
@@ -1474,13 +1726,7 @@ function HistoryTab({ profile }: { profile: ModelProfile }) {
 function renderActiveTab(profile: ModelProfile, activeTab: ModelProfileTab) {
   switch (activeTab) {
     case "basic":
-      return <BasicTab model={profile.model} />;
-    case "measurements":
-      return <MeasurementsTab model={profile.model} />;
-    case "contact":
-      return <ContactTab model={profile.model} />;
-    case "social":
-      return <SocialTab profile={profile} />;
+      return <BasicTab profile={profile} />;
     case "documents":
       return <DocumentsTab profile={profile} />;
     case "media":
@@ -1579,6 +1825,101 @@ export function ModelProfileEditor({
           font-size: 0.8rem;
           min-height: 34px;
           padding: 0.4rem 0.68rem;
+        }
+
+        .consolidated-basic-form,
+        .profile-form-section {
+          display: grid;
+          gap: 0.85rem;
+        }
+
+        .profile-form-section {
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.74), rgba(13, 38, 68, 0.58)),
+            color-mix(in srgb, #102a4a 82%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 16%, transparent);
+          border-radius: 8px;
+          padding: 0.9rem;
+        }
+
+        .profile-form-section h3,
+        .international-agencies-panel h3 {
+          color: color-mix(in srgb, #e8f4ff 92%, white);
+          font-size: 0.95rem;
+          font-weight: 680;
+          letter-spacing: 0;
+          margin: 0;
+        }
+
+        .compact-stack {
+          gap: 0.45rem;
+        }
+
+        .field-label {
+          color: color-mix(in srgb, #aacfe8 88%, white);
+          display: inline-flex;
+          font-size: 0.82rem;
+          font-weight: 650;
+        }
+
+        .category-chip-field {
+          display: grid;
+          gap: 0.45rem;
+        }
+
+        .international-agencies-panel {
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.72), rgba(13, 38, 68, 0.54)),
+            color-mix(in srgb, #102a4a 82%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 16%, transparent);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.85rem;
+          padding: 0.9rem;
+        }
+
+        .section-heading-row {
+          align-items: flex-start;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+        }
+
+        .section-heading-row .notice {
+          margin: 0.2rem 0 0;
+        }
+
+        .international-agency-list {
+          display: grid;
+          gap: 0.6rem;
+        }
+
+        .international-agency-row {
+          align-items: end;
+          background: rgba(6, 22, 42, 0.28);
+          border: 1px solid rgba(126, 196, 255, 0.14);
+          border-radius: 8px;
+          display: grid;
+          gap: 0.55rem;
+          grid-template-columns: minmax(10rem, 1.3fr) minmax(7rem, 0.8fr) minmax(7rem, 0.8fr) minmax(8rem, 0.75fr) minmax(8rem, 0.75fr) auto;
+          padding: 0.65rem;
+        }
+
+        .international-agency-row label {
+          gap: 0.3rem;
+        }
+
+        .agency-row-actions {
+          align-items: center;
+          display: flex;
+          gap: 0.45rem;
+          justify-content: flex-end;
+        }
+
+        .agency-row-actions span {
+          color: color-mix(in srgb, #aacfe8 72%, white);
+          font-size: 0.76rem;
+          font-weight: 700;
         }
 
         .history-tab {
@@ -1989,6 +2330,10 @@ export function ModelProfileEditor({
             grid-template-columns: 1fr;
           }
 
+          .international-agency-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
           .history-summary {
             align-items: flex-start;
             grid-template-columns: 1fr;
@@ -2015,6 +2360,16 @@ export function ModelProfileEditor({
           .language-option-row .option-chip,
           .language-option-row select {
             width: 100%;
+          }
+
+          .section-heading-row,
+          .agency-row-actions {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .international-agency-row {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

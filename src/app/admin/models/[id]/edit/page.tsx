@@ -49,9 +49,6 @@ function modelCategories(model: Model) {
 
 const modelProfileTabIds: ModelProfileTab[] = [
   "basic",
-  "measurements",
-  "contact",
-  "social",
   "documents",
   "media",
   "skills",
