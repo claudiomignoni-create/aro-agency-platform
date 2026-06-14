@@ -61,6 +61,22 @@ export type BookingStatus =
   | "completed"
   | "canceled";
 
+export type NotificationType =
+  | "job_created"
+  | "job_approved_for_model"
+  | "job_waiting_model"
+  | "job_confirmed"
+  | "job_canceled"
+  | "job_reminder"
+  | "model_profile_update_request"
+  | "model_measurements_update_request"
+  | "model_media_update_request"
+  | "client_request_update";
+
+export type EmailDeliveryStatus = "pending" | "sent" | "failed" | "canceled";
+
+export type EmailProvider = "gmail" | "resend" | "manual" | "disabled";
+
 export type Profile = {
   id: string;
   role: UserRole;
@@ -311,6 +327,68 @@ export type ModelUpdateRequest = {
   status: string;
   sent_at: string;
   completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Notification = {
+  id: string;
+  recipient_profile_id: string;
+  recipient_role: UserRole;
+  type: NotificationType;
+  title: string;
+  message: string;
+  action_url: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type EmailTemplate = {
+  id: string;
+  key: string;
+  name: string;
+  subject: string;
+  body_html: string;
+  body_text: string;
+  variables: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmailOutbox = {
+  id: string;
+  template_key: string | null;
+  recipient_email: string;
+  recipient_name: string | null;
+  recipient_profile_id: string | null;
+  sender_email: string | null;
+  sender_name: string | null;
+  reply_to: string | null;
+  subject: string;
+  body_html: string;
+  body_text: string;
+  status: EmailDeliveryStatus;
+  provider: EmailProvider;
+  provider_message_id: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  error_message: string | null;
+  scheduled_for: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmailSettings = {
+  id: string;
+  provider: EmailProvider;
+  sender_email: string;
+  sender_name: string;
+  reply_to: string | null;
+  is_enabled: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -78,14 +78,16 @@ export const adminNavItems = [
   { href: "/admin/models", label: "Modelos" },
   { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
-  { href: "/admin/requests", label: "Pedidos" }
+  { href: "/admin/requests", label: "Pedidos" },
+  { href: "/admin/notifications", label: "Notificações" }
 ];
 
 export const modelNavItems = [
   { href: "/model", label: "Dashboard" },
   { href: "/model/profile", label: "Perfil" },
   { href: "/model/media", label: "Mídias" },
-  { href: "/model/availability", label: "Disponibilidade" }
+  { href: "/model/availability", label: "Disponibilidade" },
+  { href: "/model/notifications", label: "Notificações" }
 ];
 
 export const clientNavItems = [

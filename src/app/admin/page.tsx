@@ -1,12 +1,21 @@
 import Link from "next/link";
+import { listEmailOutbox } from "@/lib/email";
 import { listModels } from "@/lib/models";
+import { listAdminNotifications } from "@/lib/notifications";
 
 export default async function AdminPage() {
-  const models = await listModels();
+  const [models, notifications, emailOutbox] = await Promise.all([
+    listModels(),
+    listAdminNotifications(12),
+    listEmailOutbox(12)
+  ]);
   const pendingModels = models.filter(
     (model) => model.status === "pending_review"
   ).length;
   const publishedModels = models.filter((model) => model.is_published).length;
+  const pendingEmails = emailOutbox.filter(
+    (email) => email.status === "pending"
+  ).length;
 
   return (
     <div className="stack">
@@ -43,6 +52,28 @@ export default async function AdminPage() {
           </Link>
           <Link className="button secondary" href="/admin/models">
             Ver modelos
+          </Link>
+        </div>
+      </section>
+      <section className="panel stack">
+        <div>
+          <span className="eyebrow">Operação</span>
+          <h2>Notificações e e-mails</h2>
+          <p>
+            Acompanhe solicitações enviadas para modelos e a fila segura de
+            e-mails.
+          </p>
+        </div>
+        <div className="compact-list">
+          <span>{notifications.length} notificações recentes</span>
+          <span>{pendingEmails} e-mails pendentes</span>
+        </div>
+        <div className="actions">
+          <Link className="button" href="/admin/notifications">
+            Abrir central
+          </Link>
+          <Link className="button secondary" href="/admin/models">
+            Solicitar atualização
           </Link>
         </div>
       </section>

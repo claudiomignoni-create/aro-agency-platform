@@ -9,6 +9,9 @@ import {
 import {
   archiveModelAction,
   deleteModelAction,
+  requestModelMediaUpdateAction,
+  requestModelMeasurementsUpdateAction,
+  requestModelProfileUpdateAction,
   updateModelStatusAction
 } from "../../actions";
 
@@ -68,9 +71,21 @@ type EditModelPageProps = {
     id: string;
   }>;
   searchParams?: Promise<{
+    notice?: string;
     saved?: string;
     tab?: string;
   }>;
+};
+
+const noticeMessages: Record<string, string> = {
+  media_update_requested:
+    "Solicitação de novas polaroids criada e e-mail colocado na fila.",
+  measurements_update_requested:
+    "Solicitação de medidas criada e e-mail colocado na fila.",
+  missing_model_contact:
+    "Este modelo ainda não tem usuário vinculado nem e-mail para receber solicitações.",
+  profile_update_requested:
+    "Solicitação de perfil criada e e-mail colocado na fila."
 };
 
 export default async function EditModelPage({
@@ -78,7 +93,7 @@ export default async function EditModelPage({
   searchParams
 }: EditModelPageProps) {
   const { id } = await params;
-  const { saved, tab } = (await searchParams) ?? {};
+  const { notice, saved, tab } = (await searchParams) ?? {};
   const activeTab: ModelProfileTab =
     tab && isModelProfileTab(tab) ? tab : "basic";
   const profile = await getModelProfile(id);
@@ -126,6 +141,15 @@ export default async function EditModelPage({
   return (
     <div className="stack">
       {saved ? <p className="toast">Alteração salva com sucesso.</p> : null}
+      {notice ? (
+        <p
+          className={`toast ${
+            notice === "missing_model_contact" ? "error" : ""
+          }`}
+        >
+          {noticeMessages[notice] ?? "Solicitação registrada."}
+        </p>
+      ) : null}
       <section className="model-profile-hero">
         <div className="model-profile-photo">
           {mainImageUrl ? (
@@ -186,6 +210,25 @@ export default async function EditModelPage({
             <form action={deleteModelAction.bind(null, model.id)}>
               <button className="button danger" type="submit">
                 Excluir
+              </button>
+            </form>
+          </div>
+          <div className="model-profile-admin-actions request-actions">
+            <form action={requestModelProfileUpdateAction.bind(null, model.id)}>
+              <button className="button secondary" type="submit">
+                Solicitar atualização de perfil
+              </button>
+            </form>
+            <form
+              action={requestModelMeasurementsUpdateAction.bind(null, model.id)}
+            >
+              <button className="button secondary" type="submit">
+                Solicitar atualização de medidas
+              </button>
+            </form>
+            <form action={requestModelMediaUpdateAction.bind(null, model.id)}>
+              <button className="button secondary" type="submit">
+                Solicitar novas polaroids
               </button>
             </form>
           </div>
@@ -338,6 +381,10 @@ export default async function EditModelPage({
         .model-profile-admin-actions {
           border-top: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
           padding-top: 0.85rem;
+        }
+
+        .request-actions {
+          border-top-style: dashed;
         }
 
         @media (max-width: 760px) {
