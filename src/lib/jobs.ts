@@ -788,7 +788,7 @@ export async function approveJobForModel(jobId: string, modelId: string) {
   const supabase = await createClient();
   const now = new Date().toISOString();
 
-  const { error: modelError } = await supabase
+  const { data: jobModel, error: modelError } = await supabase
     .from("job_models")
     .update({
       agency_approved_at: now,
@@ -796,10 +796,17 @@ export async function approveJobForModel(jobId: string, modelId: string) {
       status: "waiting_model"
     })
     .eq("job_id", jobId)
-    .eq("model_id", modelId);
+    .eq("model_id", modelId)
+    .in("model_response_status", ["not_released", "waiting"])
+    .select("id")
+    .maybeSingle();
 
   if (modelError) {
     throw modelError;
+  }
+
+  if (!jobModel) {
+    throw new Error("Modelo nao encontrado ou trabalho ja respondido.");
   }
 
   const { error: blockError } = await supabase

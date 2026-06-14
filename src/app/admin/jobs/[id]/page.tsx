@@ -9,7 +9,8 @@ import {
   modelDisplayName,
   modelInitials,
   modelLocation,
-  modelMeasurements
+  modelMeasurements,
+  type JobModelWithModel
 } from "@/lib/jobs";
 import { createModelMainImageUrls } from "@/lib/models";
 import {
@@ -21,6 +22,10 @@ type AdminJobDetailPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    error?: string;
+    notice?: string;
+  }>;
 };
 
 const statusActions = [
@@ -28,14 +33,64 @@ const statusActions = [
   ["Recusar solicitação", "declined"],
   ["Confirmar trabalho", "confirmed"],
   ["Cancelar trabalho", "canceled"],
-  ["Marcar como finalizado", "completed"],
-  ["Liberar para o modelo responder", "waiting_model"]
+  ["Marcar como finalizado", "completed"]
 ] as const;
 
+const noticeMessages: Record<string, string> = {
+  model_sent: "Trabalho enviado para a modelo. Aguardando resposta."
+};
+
+const errorMessages: Record<string, string> = {
+  model_send_failed:
+    "Não foi possível enviar o trabalho para a modelo. Tente novamente."
+};
+
+function modelResponseLabel(jobModel: JobModelWithModel) {
+  if (jobModel.status === "confirmed") {
+    return "Confirmado";
+  }
+
+  if (jobModel.model_response_status === "accepted") {
+    return "Aceito pela modelo";
+  }
+
+  if (jobModel.model_response_status === "declined") {
+    return "Recusado pela modelo";
+  }
+
+  if (jobModel.model_response_status === "waiting") {
+    return "Aguardando resposta";
+  }
+
+  return "Não enviado";
+}
+
+function modelActionState(jobModel: JobModelWithModel) {
+  if (jobModel.status === "confirmed") {
+    return { disabled: true, label: "Confirmado" };
+  }
+
+  if (jobModel.model_response_status === "accepted") {
+    return { disabled: true, label: "Aceito pela modelo" };
+  }
+
+  if (jobModel.model_response_status === "declined") {
+    return { disabled: true, label: "Recusado pela modelo" };
+  }
+
+  if (jobModel.model_response_status === "waiting") {
+    return { disabled: true, label: "Aguardando resposta" };
+  }
+
+  return { disabled: false, label: "Enviar para modelo aprovar" };
+}
+
 export default async function AdminJobDetailPage({
-  params
+  params,
+  searchParams
 }: AdminJobDetailPageProps) {
   const { id } = await params;
+  const { error, notice } = (await searchParams) ?? {};
   const job = await getAdminJob(id);
 
   if (!job) {
@@ -52,16 +107,55 @@ export default async function AdminJobDetailPage({
     ["Tipo", jobTypeLabel(job.type)],
     ["Status geral", job.status],
     ["Data", formatDatePtBr(dateKeyFromIso(job.start_at))],
-    ["Chegada", new Date(job.call_time ?? job.start_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })],
-    ["Término previsto", job.end_at ? new Date(job.end_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-"],
-    ["Endereço", [job.location_name, job.address_line, job.city, job.country].filter(Boolean).join(" · ") || "-"],
+    [
+      "Chegada",
+      new Date(job.call_time ?? job.start_at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    ],
+    [
+      "Término previsto",
+      job.end_at
+        ? new Date(job.end_at).toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit"
+          })
+        : "-"
+    ],
+    [
+      "Endereço",
+      [job.location_name, job.address_line, job.city, job.country]
+        .filter(Boolean)
+        .join(" · ") || "-"
+    ],
     ["Valor informado", formatMoney(job.client_budget)],
     ["Valor final +20%", formatMoney(job.final_amount)],
-    ["Utilização", [job.usage_term_months ? `${job.usage_term_months} meses` : null, job.usage_scope, job.usage_countries.join(", ")].filter(Boolean).join(" · ") || "-"]
+    [
+      "Utilização",
+      [
+        job.usage_term_months ? `${job.usage_term_months} meses` : null,
+        job.usage_scope,
+        job.usage_countries.join(", ")
+      ]
+        .filter(Boolean)
+        .join(" · ") || "-"
+    ]
   ];
 
   return (
     <div className="stack">
+      {notice ? (
+        <p className="toast">
+          {noticeMessages[notice] ?? "Alteração aplicada com sucesso."}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="toast error">
+          {errorMessages[error] ??
+            "Não foi possível concluir a ação. Tente novamente."}
+        </p>
+      ) : null}
       <section className="panel job-detail-hero">
         <div>
           <span className="eyebrow">Trabalho</span>
@@ -72,7 +166,10 @@ export default async function AdminJobDetailPage({
           <Link className="button secondary" href="/admin/jobs">
             Voltar
           </Link>
-          <Link className="button secondary" href={`/admin/jobs/new?type=${job.type}`}>
+          <Link
+            className="button secondary"
+            href={`/admin/jobs/new?type=${job.type}`}
+          >
             Duplicar fluxo
           </Link>
         </div>
@@ -92,10 +189,17 @@ export default async function AdminJobDetailPage({
         </article>
 
         <article className="panel stack">
-          <span className="eyebrow">Ações</span>
+          <span className="eyebrow">Status geral</span>
+          <p className="action-hint">
+            Para enviar uma modelo para aprovação, use o botão principal na
+            tabela de modelos vinculados.
+          </p>
           <div className="job-action-grid">
             {statusActions.map(([label, status]) => (
-              <form action={updateJobStatusAction.bind(null, job.id, status)} key={status}>
+              <form
+                action={updateJobStatusAction.bind(null, job.id, status)}
+                key={status}
+              >
                 <button className="button secondary" type="submit">
                   {label}
                 </button>
@@ -119,55 +223,75 @@ export default async function AdminJobDetailPage({
               </tr>
             </thead>
             <tbody>
-              {job.job_models.map((jobModel) => (
-                <tr key={jobModel.id}>
-                  <td>
-                    <div className="model-summary">
-                      {jobModel.model && modelImageUrls[jobModel.model.id] ? (
-                        <img
-                          alt={modelDisplayName(jobModel.model)}
-                          src={modelImageUrls[jobModel.model.id]}
-                        />
-                      ) : (
-                        <span className="model-summary-placeholder">
-                          {modelInitials(jobModel.model)}
-                        </span>
-                      )}
-                      <span>
-                        <strong>{modelDisplayName(jobModel.model) || "-"}</strong>
-                        <small>{modelLocation(jobModel.model) || "Praça não informada"}</small>
-                        <small>{modelMeasurements(jobModel.model) || "Medidas não informadas"}</small>
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="status">{jobModel.status}</span>
-                  </td>
-                  <td>{jobModel.model_response_status}</td>
-                  <td>{formatMoney(jobModel.final_amount ?? jobModel.fee_amount)}</td>
-                  <td>
-                    <div className="actions">
-                      <form
-                        action={approveJobForModelAction.bind(
-                          null,
-                          job.id,
-                          jobModel.model_id
+              {job.job_models.map((jobModel) => {
+                const actionState = modelActionState(jobModel);
+
+                return (
+                  <tr key={jobModel.id}>
+                    <td>
+                      <div className="model-summary">
+                        {jobModel.model && modelImageUrls[jobModel.model.id] ? (
+                          <img
+                            alt={modelDisplayName(jobModel.model)}
+                            src={modelImageUrls[jobModel.model.id]}
+                          />
+                        ) : (
+                          <span className="model-summary-placeholder">
+                            {modelInitials(jobModel.model)}
+                          </span>
                         )}
-                      >
-                        <button className="button secondary" type="submit">
-                          Liberar resposta
-                        </button>
-                      </form>
-                      <Link
-                        className="button secondary"
-                        href={`/admin/jobs/new?modelId=${jobModel.model_id}&type=option`}
-                      >
-                        Colocar em opção
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <span>
+                          <strong>
+                            {modelDisplayName(jobModel.model) || "-"}
+                          </strong>
+                          <small>
+                            {modelLocation(jobModel.model) ||
+                              "Praça não informada"}
+                          </small>
+                          <small>
+                            {modelMeasurements(jobModel.model) ||
+                              "Medidas não informadas"}
+                          </small>
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="status">{jobModel.status}</span>
+                    </td>
+                    <td>{modelResponseLabel(jobModel)}</td>
+                    <td>
+                      {formatMoney(
+                        jobModel.final_amount ?? jobModel.fee_amount
+                      )}
+                    </td>
+                    <td>
+                      <div className="actions model-row-actions">
+                        <form
+                          action={approveJobForModelAction.bind(
+                            null,
+                            job.id,
+                            jobModel.model_id
+                          )}
+                        >
+                          <button
+                            className="button model-approval-button"
+                            disabled={actionState.disabled}
+                            type="submit"
+                          >
+                            {actionState.label}
+                          </button>
+                        </form>
+                        <Link
+                          className="button secondary"
+                          href={`/admin/jobs/new?modelId=${jobModel.model_id}&type=option`}
+                        >
+                          Colocar em opção
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -237,7 +361,25 @@ export default async function AdminJobDetailPage({
         }
 
         .job-action-grid .button {
+          font-size: 0.78rem;
+          min-height: 2.25rem;
+          padding: 0.35rem 0.75rem;
           width: 100%;
+        }
+
+        .action-hint {
+          font-size: 0.82rem;
+          line-height: 1.45;
+          margin: 0;
+        }
+
+        .model-row-actions {
+          align-items: center;
+          flex-wrap: nowrap;
+        }
+
+        .model-approval-button {
+          min-width: 13.5rem;
         }
 
         .model-summary {

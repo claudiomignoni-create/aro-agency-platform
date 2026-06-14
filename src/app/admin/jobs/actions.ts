@@ -48,7 +48,15 @@ export async function updateJobStatusAction(jobId: string, status: JobStatus) {
 }
 
 export async function approveJobForModelAction(jobId: string, modelId: string) {
-  await approveJobForModel(jobId, modelId);
+  try {
+    await approveJobForModel(jobId, modelId);
+  } catch {
+    revalidatePath("/admin/jobs");
+    revalidatePath(`/admin/jobs/${jobId}`);
+    redirect(`/admin/jobs/${jobId}?error=model_send_failed`);
+  }
+
   revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
+  redirect(`/admin/jobs/${jobId}?notice=model_sent`);
 }
