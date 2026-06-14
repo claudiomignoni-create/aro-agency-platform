@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { AIAssistantPanel } from "@/components/ai/ai-assistant-panel";
 import { requireRole } from "@/lib/auth";
 import { listModels } from "@/lib/models";
 
 export default async function AdminPage() {
-  const profile = await requireRole(["admin"]);
+  await requireRole(["admin"]);
   const models = await listModels();
   const pendingModels = models.filter(
     (model) => model.status === "pending_review"
@@ -49,7 +48,19 @@ export default async function AdminPage() {
           </Link>
         </div>
       </section>
-      <AIAssistantPanel role={profile.role} />
+      <section className="panel assistant-entry-panel">
+        <div>
+          <span className="eyebrow">AI Assistant</span>
+          <h2>Consultas internas assistidas</h2>
+          <p>
+            Abra uma tela dedicada para buscar modelos, clientes e contatos com
+            as ferramentas read-only do perfil admin.
+          </p>
+        </div>
+        <Link className="button" href="/admin/assistant">
+          Abrir AI Assistant
+        </Link>
+      </section>
       <style>{`
         .stack {
           max-width: 100%;
