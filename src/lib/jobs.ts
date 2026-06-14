@@ -211,16 +211,23 @@ const typeLabels: Record<JobType, string> = {
   casting: "Casting",
   job: "Trabalho",
   manual_block: "Bloqueio de agenda",
-  option: "Opcao",
-  shoot: "Ensaio"
+  option: "Opção",
+  shoot: "Ensaio fotográfico"
 };
+
+const missingAgendaSchemaMessage =
+  "A estrutura de Agenda + Trabalhos ainda não foi aplicada no banco. Aplique a migration 009_model_calendar_jobs.sql no Supabase.";
 
 export function jobTypeLabel(type: JobType) {
   return typeLabels[type] ?? type;
 }
 
 export function jobTitle(job: Pick<Job, "brand_name" | "project_name" | "type">) {
-  return job.project_name || job.brand_name || jobTypeLabel(job.type);
+  return (
+    job.project_name ||
+    job.brand_name ||
+    (job.type === "job" ? "Trabalho sem título" : jobTypeLabel(job.type))
+  );
 }
 
 export function formatMoney(value: number | null | undefined) {
@@ -307,6 +314,12 @@ function isMissingSchemaError(error: { code?: string; message?: string } | null)
     error?.code === "42703" ||
     Boolean(error?.message && /does not exist|schema cache/i.test(error.message))
   );
+}
+
+function assertAgendaSchema(error: { code?: string; message?: string } | null) {
+  if (isMissingSchemaError(error)) {
+    throw new Error(missingAgendaSchemaMessage);
+  }
 }
 
 function normalizeJob(data: unknown) {
@@ -630,13 +643,28 @@ async function createJobRecord({
   visibility: "client_limited" | "model_private";
 }) {
   const supabase = await createClient();
+  const modelIds = Array.from(new Set(input.model_ids.filter(Boolean)));
+
+  if (modelIds.length === 0) {
+    throw new Error("Selecione pelo menos um modelo para criar este evento de agenda.");
+  }
+
   const clientBudget = input.quote_requested ? null : input.client_budget;
   const finalAmount =
     input.final_amount ??
     (clientBudget === null ? null : Number((clientBudget * 1.2).toFixed(2)));
   const startAt = combineDateAndTime(input.date, input.start_time);
   const endAt = input.end_time ? combineDateAndTime(input.date, input.end_time) : null;
-  const title = input.project_name || input.brand_name || jobTypeLabel(input.type);
+  const title =
+    input.project_name ||
+    input.brand_name ||
+    (input.type === "job" ? "Trabalho sem título" : jobTypeLabel(input.type));
+
+  if (endAt && new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+    throw new Error(
+      "O horário previsto de término deve ser depois do horário de chegada."
+    );
+  }
 
   const { data: job, error: jobError } = await supabase
     .from("jobs")
@@ -674,52 +702,54 @@ async function createJobRecord({
     .single();
 
   if (jobError) {
+    assertAgendaSchema(jobError);
     throw jobError;
   }
 
   const jobId = job.id as string;
-  const modelIds = Array.from(new Set(input.model_ids.filter(Boolean)));
 
-  if (modelIds.length) {
-    const jobModelStatus: JobModelStatus =
-      input.type === "option" ? "option" : jobStatusToJobModelStatus(status);
-    const modelResponseStatus: ModelResponseStatus =
-      status === "waiting_model" ? "waiting" : "not_released";
+  const jobModelStatus: JobModelStatus =
+    input.type === "option" ? "option" : jobStatusToJobModelStatus(status);
+  const modelResponseStatus: ModelResponseStatus =
+    status === "waiting_model" ? "waiting" : "not_released";
 
-    const { error: modelError } = await supabase.from("job_models").insert(
+  const { error: modelError } = await supabase.from("job_models").insert(
+    modelIds.map((modelId) => ({
+      fee_amount: clientBudget,
+      final_amount: finalAmount,
+      job_id: jobId,
+      model_id: modelId,
+      model_response_status: modelResponseStatus,
+      status: jobModelStatus
+    }))
+  );
+
+  if (modelError) {
+    await supabase.from("jobs").delete().eq("id", jobId);
+    assertAgendaSchema(modelError);
+    throw modelError;
+  }
+
+  const { error: blockError } = await supabase
+    .from("model_calendar_blocks")
+    .insert(
       modelIds.map((modelId) => ({
-        fee_amount: clientBudget,
-        final_amount: finalAmount,
+        end_at: endAt,
         job_id: jobId,
         model_id: modelId,
-        model_response_status: modelResponseStatus,
-        status: jobModelStatus
+        source: "jobs",
+        start_at: startAt,
+        status: input.type === "option" ? "option" : jobStatusToBlockStatus[status],
+        title,
+        type: input.type,
+        visibility
       }))
     );
 
-    if (modelError) {
-      throw modelError;
-    }
-
-    const { error: blockError } = await supabase
-      .from("model_calendar_blocks")
-      .insert(
-        modelIds.map((modelId) => ({
-          end_at: endAt,
-          job_id: jobId,
-          model_id: modelId,
-          source: "jobs",
-          start_at: startAt,
-          status: input.type === "option" ? "option" : jobStatusToBlockStatus[status],
-          title,
-          type: input.type,
-          visibility
-        }))
-      );
-
-    if (blockError) {
-      throw blockError;
-    }
+  if (blockError) {
+    await supabase.from("jobs").delete().eq("id", jobId);
+    assertAgendaSchema(blockError);
+    throw blockError;
   }
 
   return { id: jobId };

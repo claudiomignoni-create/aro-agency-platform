@@ -11,10 +11,34 @@ import {
 import type { JobStatus } from "@/types/database";
 
 export async function createAdminJobAction(formData: FormData) {
-  const job = await createAdminJob(jobInputFromFormData(formData));
+  let job: { id: string };
+
+  try {
+    job = await createAdminJob(jobInputFromFormData(formData));
+  } catch (error) {
+    const params = new URLSearchParams({
+      error: readableError(error),
+      type: String(formData.get("type") ?? "job")
+    });
+    const [modelId] = formData.getAll("model_ids").map(String).filter(Boolean);
+
+    if (modelId) {
+      params.set("modelId", modelId);
+    }
+
+    redirect(`/admin/jobs/new?${params.toString()}`);
+  }
 
   revalidatePath("/admin/jobs");
   redirect(`/admin/jobs/${job.id}`);
+}
+
+function readableError(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Não foi possível criar este evento de agenda. Revise os dados e tente novamente.";
 }
 
 export async function updateJobStatusAction(jobId: string, status: JobStatus) {
