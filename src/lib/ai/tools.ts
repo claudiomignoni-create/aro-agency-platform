@@ -11,21 +11,23 @@ export type JsonValue =
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
-type ToolProperty =
-  | {
-      type: "integer";
-      description: string;
-      maximum?: number;
-      minimum?: number;
-    }
-  | {
-      type: "string";
-      description: string;
-      enum?: readonly string[];
-      format?: "uuid";
-      maxLength?: number;
-      minLength?: number;
-    };
+type IntegerToolProperty = {
+  description: string;
+  maximum?: number;
+  minimum?: number;
+  type: "integer" | readonly ["integer", "null"];
+};
+
+type StringToolProperty = {
+  description: string;
+  enum?: readonly (string | null)[];
+  format?: "uuid";
+  maxLength?: number;
+  minLength?: number;
+  type: "string" | readonly ["string", "null"];
+};
+
+type ToolProperty = IntegerToolProperty | StringToolProperty;
 
 export type ToolSchema = {
   additionalProperties: false;
@@ -72,7 +74,7 @@ const limitProperty = {
   description: "Maximum number of records to return.",
   maximum: 12,
   minimum: 1,
-  type: "integer"
+  type: ["integer", "null"]
 } as const;
 
 const modelStatusValues = [
@@ -103,6 +105,10 @@ const clientTypeValues = [
   "other"
 ] as const;
 
+const nullableModelStatusValues = [...modelStatusValues, null] as const;
+const nullableClientStatusValues = [...clientStatusValues, null] as const;
+const nullableClientTypeValues = [...clientTypeValues, null] as const;
+
 const toolDefinitions = {
   search_models: {
     description: "Search internal model records for admin review.",
@@ -114,15 +120,15 @@ const toolDefinitions = {
         query: {
           description: "Name, city, country, category, tag, or contact term.",
           maxLength: 120,
-          type: "string"
+          type: ["string", "null"]
         },
         status: {
           description: "Model status filter.",
-          enum: modelStatusValues,
-          type: "string"
+          enum: nullableModelStatusValues,
+          type: ["string", "null"]
         }
       },
-      required: [],
+      required: ["limit", "query", "status"],
       type: "object"
     }
   },
@@ -152,20 +158,20 @@ const toolDefinitions = {
         query: {
           description: "Company, market, city, country, tag, or contact term.",
           maxLength: 120,
-          type: "string"
+          type: ["string", "null"]
         },
         status: {
           description: "Client status filter.",
-          enum: clientStatusValues,
-          type: "string"
+          enum: nullableClientStatusValues,
+          type: ["string", "null"]
         },
         type: {
           description: "Client type filter.",
-          enum: clientTypeValues,
-          type: "string"
+          enum: nullableClientTypeValues,
+          type: ["string", "null"]
         }
       },
-      required: [],
+      required: ["limit", "query", "status", "type"],
       type: "object"
     }
   },
@@ -205,15 +211,15 @@ const toolDefinitions = {
         location: {
           description: "City or country filter.",
           maxLength: 80,
-          type: "string"
+          type: ["string", "null"]
         },
         query: {
           description: "Name, category, type, location, or measurement term.",
           maxLength: 120,
-          type: "string"
+          type: ["string", "null"]
         }
       },
-      required: [],
+      required: ["limit", "location", "query"],
       type: "object"
     }
   },
@@ -231,7 +237,7 @@ const toolDefinitions = {
         },
         limit: limitProperty
       },
-      required: ["brief"],
+      required: ["brief", "limit"],
       type: "object"
     }
   }
@@ -379,16 +385,28 @@ function validateInput(schema: ToolSchema, rawInput: unknown) {
   for (const [key, property] of Object.entries(schema.properties)) {
     const value = input[key];
 
-    if (value === undefined || value === null || value === "") {
+    if (value === undefined) {
       continue;
     }
 
-    if (property.type === "string") {
+    if (value === null) {
+      if (allowsNull(property)) {
+        continue;
+      }
+
+      throw new Error(`Campo ${key} não pode ser nulo.`);
+    }
+
+    if (isStringProperty(property)) {
       if (typeof value !== "string") {
         throw new Error(`Campo ${key} deve ser texto.`);
       }
 
       const trimmedValue = value.trim();
+
+      if (!trimmedValue && allowsNull(property)) {
+        continue;
+      }
 
       if (property.minLength && trimmedValue.length < property.minLength) {
         throw new Error(`Campo ${key} está muito curto.`);
@@ -408,6 +426,10 @@ function validateInput(schema: ToolSchema, rawInput: unknown) {
 
       output[key] = trimmedValue;
       continue;
+    }
+
+    if (!isIntegerProperty(property)) {
+      throw new Error(`Tipo inválido para o campo ${key}.`);
     }
 
     if (!Number.isInteger(value)) {
@@ -777,6 +799,24 @@ function isPlainObject(value: unknown) {
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value
+  );
+}
+
+function allowsNull(property: ToolProperty) {
+  return Array.isArray(property.type) && property.type.some((type) => type === "null");
+}
+
+function isStringProperty(property: ToolProperty): property is StringToolProperty {
+  return (
+    property.type === "string" ||
+    (Array.isArray(property.type) && property.type.some((type) => type === "string"))
+  );
+}
+
+function isIntegerProperty(property: ToolProperty): property is IntegerToolProperty {
+  return (
+    property.type === "integer" ||
+    (Array.isArray(property.type) && property.type.some((type) => type === "integer"))
   );
 }
 

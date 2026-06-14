@@ -88,13 +88,14 @@ export async function POST(request: Request) {
       toolCalls = assistantResult.toolCalls;
     } catch (error) {
       responseStatus = 500;
+      console.error("AI assistant runtime error", error);
 
       if (error instanceof AssistantRuntimeError) {
         responseId = error.responseId;
         toolCalls = error.toolCalls;
       }
 
-      assistantMessage = `Não consegui concluir a consulta com o assistente AI. ${getErrorMessage(error)}`;
+      assistantMessage = getAssistantErrorMessage(error);
     }
   }
 
@@ -183,4 +184,14 @@ async function writeAuditLog({
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Erro inesperado.";
+}
+
+function getAssistantErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+
+  if (/invalid schema|schema|tool|function/i.test(message)) {
+    return "Não consegui iniciar o assistente AI por uma configuração de ferramentas. O detalhe foi registrado no servidor.";
+  }
+
+  return `Não consegui concluir a consulta com o assistente AI. ${message}`;
 }

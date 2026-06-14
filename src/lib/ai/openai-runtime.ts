@@ -150,9 +150,17 @@ function toOpenAITool(tool: ToolDefinition): FunctionTool {
   return {
     description: tool.description,
     name: tool.name,
-    parameters: tool.schema,
+    parameters: toStrictOpenAIParameters(tool.schema),
     strict: true,
     type: "function"
+  };
+}
+
+function toStrictOpenAIParameters(schema: ToolDefinition["schema"]) {
+  return {
+    ...schema,
+    additionalProperties: false,
+    required: Object.keys(schema.properties)
   };
 }
 
