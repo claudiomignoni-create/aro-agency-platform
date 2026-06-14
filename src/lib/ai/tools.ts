@@ -313,7 +313,10 @@ export function chooseToolForMessage(
   return "search_public_models";
 }
 
-export function inputFromMessage(toolName: ToolName, message: string) {
+export function inputFromMessage(
+  toolName: ToolName,
+  message: string
+): Record<string, JsonValue> {
   const uuid = extractUuid(message);
 
   switch (toolName) {
@@ -604,7 +607,7 @@ const toolExecutors: Record<
     }
 
     if (!model) {
-      return { model: null };
+      return { model: null, skills: null };
     }
 
     const { data: skills, error: skillsError } = await supabase
