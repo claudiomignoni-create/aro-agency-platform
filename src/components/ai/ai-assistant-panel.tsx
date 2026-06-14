@@ -18,7 +18,7 @@ type AssistantMessage = {
   data?: unknown;
   id: string;
   role: "assistant" | "user";
-  toolName?: ToolName;
+  toolName?: string;
 };
 
 type AssistantResponse = {
@@ -27,7 +27,7 @@ type AssistantResponse = {
   toolCall?: {
     output: unknown;
     status: "error" | "success";
-    tool_name: ToolName;
+    tool_name: string;
   };
 };
 

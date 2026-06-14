@@ -430,7 +430,7 @@ function validateInput(schema: ToolSchema, rawInput: unknown) {
   return output;
 }
 
-function isToolAllowedForRole(role: UserRole, toolName: ToolName) {
+export function isToolAllowedForRole(role: UserRole, toolName: ToolName) {
   return (toolsByRole[role] as readonly ToolName[]).includes(toolName);
 }
 
