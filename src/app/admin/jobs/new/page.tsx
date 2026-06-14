@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { listClients } from "@/lib/clients";
-import { listModels } from "@/lib/models";
+import {
+  modelDisplayName,
+  modelInitials,
+  modelLocation,
+  modelMeasurements
+} from "@/lib/jobs";
+import { createModelMainImageUrls, listModels } from "@/lib/models";
 import type { JobType } from "@/types/database";
 import { createAdminJobAction } from "../actions";
 
@@ -24,6 +30,7 @@ export default async function NewAdminJobPage({
 }: NewAdminJobPageProps) {
   const params = (await searchParams) ?? {};
   const [clients, models] = await Promise.all([listClients(), listModels()]);
+  const modelImageUrls = await createModelMainImageUrls(models);
   const selectedType = jobTypes.some((type) => type.value === params.type)
     ? params.type
     : "job";
@@ -124,13 +131,17 @@ export default async function NewAdminJobPage({
                   type="checkbox"
                   value={model.id}
                 />
-                <span>
-                  <strong>{model.stage_name || model.display_name}</strong>
-                  <small>
-                    {[model.current_city, model.current_country]
-                      .filter(Boolean)
-                      .join(", ") || "Sem praça"}
-                  </small>
+                {modelImageUrls[model.id] ? (
+                  <img alt={modelDisplayName(model)} src={modelImageUrls[model.id]} />
+                ) : (
+                  <span className="model-check-placeholder">
+                    {modelInitials(model)}
+                  </span>
+                )}
+                <span className="model-check-copy">
+                  <strong>{modelDisplayName(model)}</strong>
+                  <small>{modelLocation(model) || "Sem praça"}</small>
+                  <small>{modelMeasurements(model) || "Medidas não informadas"}</small>
                 </span>
               </label>
             ))}
@@ -302,14 +313,45 @@ export default async function NewAdminJobPage({
           width: auto;
         }
 
-        .model-check span {
+        .model-check img,
+        .model-check-placeholder {
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
+          border-radius: 8px;
+          flex: 0 0 auto;
+          height: 3.2rem;
+          width: 3.2rem;
+        }
+
+        .model-check img {
+          object-fit: cover;
+        }
+
+        .model-check-placeholder {
+          align-items: center;
+          background: rgba(255, 255, 255, 0.06);
+          color: var(--muted-strong);
+          display: inline-flex;
+          font-size: 0.78rem;
+          font-weight: 800;
+          justify-content: center;
+        }
+
+        .model-check-copy {
           display: grid;
           gap: 0.2rem;
+          min-width: 0;
         }
 
         .model-check small {
           color: var(--muted);
           font-size: 0.74rem;
+        }
+
+        .model-check strong,
+        .model-check small {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         @media (max-width: 780px) {

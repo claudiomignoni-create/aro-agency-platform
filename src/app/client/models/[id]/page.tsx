@@ -8,9 +8,13 @@ import {
 } from "@/lib/calendar";
 import {
   listClientVisibleModelCalendar,
+  modelInitials,
   publicAvailabilityStatus
 } from "@/lib/jobs";
-import { listClientModelProfiles } from "@/lib/models";
+import {
+  createModelMainImageUrlsByIds,
+  listClientModelProfiles
+} from "@/lib/models";
 
 type ClientModelDetailPageProps = {
   params: Promise<{
@@ -33,6 +37,7 @@ export default async function ClientModelDetailPage({
   }
 
   const days = generateMonthDays("2026-06-13");
+  const modelImageUrls = await createModelMainImageUrlsByIds([model.id]);
   const upcoming = blocks
     .filter((block) => dateKeyFromIso(block.start_at) >= "2026-06-13")
     .slice(0, 6);
@@ -40,6 +45,13 @@ export default async function ClientModelDetailPage({
   return (
     <div className="stack">
       <section className="panel model-public-hero">
+        <div className="model-public-photo">
+          {modelImageUrls[model.id] ? (
+            <img alt={model.stage_name} src={modelImageUrls[model.id]} />
+          ) : (
+            <span>{modelInitials(model)}</span>
+          )}
+        </div>
         <div>
           <span className="eyebrow">Modelo</span>
           <h2>{model.stage_name}</h2>
@@ -139,6 +151,37 @@ export default async function ClientModelDetailPage({
           justify-content: space-between;
         }
 
+        .model-public-photo {
+          align-items: center;
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
+          border-radius: 8px;
+          display: flex;
+          flex: 0 0 8rem;
+          height: 10rem;
+          justify-content: center;
+          overflow: hidden;
+          width: 8rem;
+        }
+
+        .model-public-photo img {
+          display: block;
+          height: 100%;
+          object-fit: cover;
+          width: 100%;
+        }
+
+        .model-public-photo span {
+          align-items: center;
+          background: rgba(255, 255, 255, 0.06);
+          color: var(--muted-strong);
+          display: inline-flex;
+          font-size: 1.45rem;
+          font-weight: 800;
+          height: 100%;
+          justify-content: center;
+          width: 100%;
+        }
+
         .calendar-grid {
           display: grid;
           gap: 0.45rem;
@@ -191,6 +234,11 @@ export default async function ClientModelDetailPage({
           .model-public-hero {
             align-items: stretch;
             flex-direction: column;
+          }
+
+          .model-public-photo {
+            height: 11rem;
+            width: 100%;
           }
 
           .calendar-grid {

@@ -1356,8 +1356,10 @@ export async function updateModelMainImageFromMedia(
   }
 }
 
-export async function createModelMainImageUrls(models: Model[]) {
-  await requireRole(["admin"]);
+type ModelMainImageSource = Pick<Model, "id" | "main_image_path">;
+
+export async function createModelMainImageUrls(models: ModelMainImageSource[]) {
+  await requireRole(["admin", "client"]);
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const entries = await Promise.all(
@@ -1386,6 +1388,30 @@ export async function createModelMainImageUrls(models: Model[]) {
       Boolean(entry)
     )
   );
+}
+
+export async function createModelMainImageUrlsByIds(modelIds: string[]) {
+  await requireRole(["admin", "client"]);
+  const ids = Array.from(new Set(modelIds.filter(Boolean)));
+
+  if (ids.length === 0) {
+    return {};
+  }
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("models")
+    .select("id, main_image_path")
+    .in("id", ids)
+    .eq("status", "approved")
+    .eq("is_published", true);
+
+  if (error) {
+    throw error;
+  }
+
+  return createModelMainImageUrls((data ?? []) as ModelMainImageSource[]);
 }
 
 export async function createModelUpdateRequest(modelId: string) {

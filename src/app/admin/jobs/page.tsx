@@ -8,9 +8,10 @@ import {
   jobTitle,
   jobTypeLabel,
   listAdminJobs,
-  modelNames
+  modelDisplayName,
+  modelInitials
 } from "@/lib/jobs";
-import { listModels } from "@/lib/models";
+import { createModelMainImageUrls, listModels } from "@/lib/models";
 import type { JobStatus, JobType } from "@/types/database";
 
 type AdminJobsPageProps = {
@@ -60,6 +61,11 @@ export default async function AdminJobsPage({ searchParams }: AdminJobsPageProps
     const dateKey = dateKeyFromIso(job.start_at);
     return dateKey >= today && dateKey <= "2026-06-20";
   });
+  const modelImageUrls = await createModelMainImageUrls(
+    jobs
+      .flatMap((job) => job.job_models.map((jobModel) => jobModel.model))
+      .filter((model): model is NonNullable<typeof model> => Boolean(model))
+  );
 
   return (
     <div className="stack">
@@ -182,7 +188,31 @@ export default async function AdminJobsPage({ searchParams }: AdminJobsPageProps
                   </Link>
                 </td>
                 <td>{job.client?.company_name ?? "-"}</td>
-                <td>{modelNames(job) || "-"}</td>
+                <td>
+                  <div className="model-chip-list">
+                    {job.job_models.map((jobModel) => {
+                      const model = jobModel.model;
+                      const name = modelDisplayName(model) || "-";
+
+                      return (
+                        <span className="model-chip" key={jobModel.id}>
+                          {model && modelImageUrls[model.id] ? (
+                            <img alt={name} src={modelImageUrls[model.id]} />
+                          ) : (
+                            <span className="model-chip-placeholder">
+                              {modelInitials(model)}
+                            </span>
+                          )}
+                          <span>
+                            <strong>{name}</strong>
+                            <small>{jobModel.status}</small>
+                          </span>
+                        </span>
+                      );
+                    })}
+                    {job.job_models.length === 0 ? "-" : null}
+                  </div>
+                </td>
                 <td>
                   <span className="status">{job.status}</span>
                 </td>
@@ -230,6 +260,65 @@ export default async function AdminJobsPage({ searchParams }: AdminJobsPageProps
 
         .jobs-filter-form .actions {
           align-items: end;
+        }
+
+        .model-chip-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          min-width: 14rem;
+        }
+
+        .model-chip {
+          align-items: center;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          display: inline-flex;
+          gap: 0.5rem;
+          max-width: 15rem;
+          min-width: 0;
+          padding: 0.35rem 0.5rem 0.35rem 0.35rem;
+        }
+
+        .model-chip img,
+        .model-chip-placeholder {
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
+          border-radius: 7px;
+          flex: 0 0 auto;
+          height: 2.25rem;
+          width: 2.25rem;
+        }
+
+        .model-chip img {
+          object-fit: cover;
+        }
+
+        .model-chip-placeholder {
+          align-items: center;
+          background: rgba(255, 255, 255, 0.06);
+          color: var(--muted-strong);
+          display: inline-flex;
+          font-size: 0.72rem;
+          font-weight: 800;
+          justify-content: center;
+        }
+
+        .model-chip span:last-child {
+          display: grid;
+          gap: 0.12rem;
+          min-width: 0;
+        }
+
+        .model-chip strong,
+        .model-chip small {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .model-chip small {
+          color: var(--muted);
+          font-size: 0.68rem;
         }
 
         @media (max-width: 980px) {

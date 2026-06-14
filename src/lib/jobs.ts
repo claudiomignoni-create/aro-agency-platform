@@ -25,6 +25,7 @@ type ModelSummary = Pick<
   | "stage_name"
   | "current_city"
   | "current_country"
+  | "main_image_path"
   | "height_cm"
   | "bust_cm"
   | "waist_cm"
@@ -112,6 +113,7 @@ const jobSelect = `
       stage_name,
       current_city,
       current_country,
+      main_image_path,
       height_cm,
       bust_cm,
       waist_cm,
@@ -172,6 +174,7 @@ const clientSafeJobSelect = `
       stage_name,
       current_city,
       current_country,
+      main_image_path,
       height_cm,
       bust_cm,
       waist_cm,
@@ -925,9 +928,65 @@ export function publicAvailabilityStatus(
 
 export function modelNames(job: JobWithRelations | Pick<JobWithRelations, "job_models">) {
   return job.job_models
-    .map((jobModel) => jobModel.model?.stage_name || jobModel.model?.display_name)
+    .map((jobModel) => modelDisplayName(jobModel.model))
     .filter(Boolean)
     .join(", ");
+}
+
+export function modelDisplayName(
+  model: Pick<Model, "display_name" | "stage_name"> | ModelClientProfile | null
+) {
+  if (!model) {
+    return "";
+  }
+
+  return model.stage_name || model.display_name || "";
+}
+
+export function modelInitials(
+  model: Pick<Model, "display_name" | "stage_name"> | ModelClientProfile | null
+) {
+  return (
+    modelDisplayName(model)
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "AR"
+  );
+}
+
+export function modelLocation(
+  model:
+    | Pick<Model, "current_city" | "current_country">
+    | Pick<ModelClientProfile, "current_city" | "current_country">
+    | null
+) {
+  if (!model) {
+    return "";
+  }
+
+  return [model.current_city, model.current_country].filter(Boolean).join(", ");
+}
+
+export function modelMeasurements(
+  model:
+    | Pick<Model, "bust_cm" | "height_cm" | "hips_cm" | "waist_cm">
+    | Pick<ModelClientProfile, "bust_cm" | "height_cm" | "hips_cm" | "waist_cm">
+    | null
+) {
+  if (!model) {
+    return "";
+  }
+
+  const measures = [model.bust_cm, model.waist_cm, model.hips_cm]
+    .filter(Boolean)
+    .join(" / ");
+
+  return [model.height_cm ? `${model.height_cm} cm` : null, measures || null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function countJobsByStatus(jobs: JobWithRelations[], statuses: JobStatus[]) {

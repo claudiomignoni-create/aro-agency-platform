@@ -1,7 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
-import { formatMoney, getAdminJob, jobTitle, jobTypeLabel } from "@/lib/jobs";
+import {
+  formatMoney,
+  getAdminJob,
+  jobTitle,
+  jobTypeLabel,
+  modelDisplayName,
+  modelInitials,
+  modelLocation,
+  modelMeasurements
+} from "@/lib/jobs";
+import { createModelMainImageUrls } from "@/lib/models";
 import {
   approveJobForModelAction,
   updateJobStatusAction
@@ -32,6 +42,11 @@ export default async function AdminJobDetailPage({
     notFound();
   }
 
+  const modelImageUrls = await createModelMainImageUrls(
+    job.job_models
+      .map((jobModel) => jobModel.model)
+      .filter((model): model is NonNullable<typeof model> => Boolean(model))
+  );
   const rows = [
     ["Cliente", job.client?.company_name ?? "-"],
     ["Tipo", jobTypeLabel(job.type)],
@@ -107,7 +122,23 @@ export default async function AdminJobDetailPage({
               {job.job_models.map((jobModel) => (
                 <tr key={jobModel.id}>
                   <td>
-                    {jobModel.model?.stage_name || jobModel.model?.display_name || "-"}
+                    <div className="model-summary">
+                      {jobModel.model && modelImageUrls[jobModel.model.id] ? (
+                        <img
+                          alt={modelDisplayName(jobModel.model)}
+                          src={modelImageUrls[jobModel.model.id]}
+                        />
+                      ) : (
+                        <span className="model-summary-placeholder">
+                          {modelInitials(jobModel.model)}
+                        </span>
+                      )}
+                      <span>
+                        <strong>{modelDisplayName(jobModel.model) || "-"}</strong>
+                        <small>{modelLocation(jobModel.model) || "Praça não informada"}</small>
+                        <small>{modelMeasurements(jobModel.model) || "Medidas não informadas"}</small>
+                      </span>
+                    </div>
                   </td>
                   <td>
                     <span className="status">{jobModel.status}</span>
@@ -207,6 +238,54 @@ export default async function AdminJobDetailPage({
 
         .job-action-grid .button {
           width: 100%;
+        }
+
+        .model-summary {
+          align-items: center;
+          display: flex;
+          gap: 0.65rem;
+          min-width: 14rem;
+        }
+
+        .model-summary img,
+        .model-summary-placeholder {
+          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
+          border-radius: 8px;
+          flex: 0 0 auto;
+          height: 3rem;
+          width: 3rem;
+        }
+
+        .model-summary img {
+          object-fit: cover;
+        }
+
+        .model-summary-placeholder {
+          align-items: center;
+          background: rgba(255, 255, 255, 0.06);
+          color: var(--muted-strong);
+          display: inline-flex;
+          font-size: 0.78rem;
+          font-weight: 800;
+          justify-content: center;
+        }
+
+        .model-summary > span:last-child {
+          display: grid;
+          gap: 0.15rem;
+          min-width: 0;
+        }
+
+        .model-summary strong,
+        .model-summary small {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .model-summary small {
+          color: var(--muted);
+          font-size: 0.72rem;
         }
 
         @media (max-width: 780px) {
