@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import {
-  chooseToolForMessage,
-  executeTool,
+  AssistantRuntimeError,
+  runOpenAIAssistant,
+  type AssistantToolCallAudit
+} from "@/lib/ai/openai-runtime";
+import {
   getToolDefinitionsForRole,
-  inputFromMessage,
-  isToolName,
-  type JsonValue,
-  type ToolName
+  isToolName
 } from "@/lib/ai/tools";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/types/database";
+
+export const runtime = "nodejs";
 
 type AssistantRequestBody = {
   message?: unknown;
@@ -58,64 +60,56 @@ export async function POST(request: Request) {
     );
   }
 
+  const profileRecord = profile as Profile;
   const requestedTool = isToolName(body.toolName) ? body.toolName : undefined;
-  const selectedTool = chooseToolForMessage(
-    profile.role,
-    message,
-    requestedTool
-  );
-  const startedAt = Date.now();
+  const apiKey = process.env.OPENAI_API_KEY;
+  let assistantMessage =
+    "Não consegui acionar o assistente AI agora. Tente novamente em instantes.";
+  let responseStatus = 200;
+  let responseId: string | null = null;
+  let toolCalls: AssistantToolCallAudit[] = [];
 
-  let assistantMessage = "";
-  let toolCall:
-    | {
-        duration_ms: number;
-        error: string | null;
-        input: Record<string, JsonValue>;
-        output: JsonValue | null;
-        status: "error" | "success";
-        tool_name: ToolName;
+  if (!apiKey) {
+    assistantMessage =
+      "O assistente AI ainda não está configurado no servidor. Defina OPENAI_API_KEY para habilitar esta função.";
+    responseStatus = 500;
+  } else {
+    try {
+      const assistantResult = await runOpenAIAssistant({
+        apiKey,
+        message,
+        profile: profileRecord,
+        requestedTool,
+        supabase
+      });
+
+      assistantMessage = assistantResult.message;
+      responseId = assistantResult.responseId;
+      toolCalls = assistantResult.toolCalls;
+    } catch (error) {
+      responseStatus = 500;
+      console.error("AI assistant runtime error", error);
+
+      if (error instanceof AssistantRuntimeError) {
+        responseId = error.responseId;
+        toolCalls = error.toolCalls;
       }
-    | null = null;
 
-  try {
-    const toolInput = inputFromMessage(selectedTool, message);
-    const execution = await executeTool(
-      { profile: profile as Profile, supabase },
-      selectedTool,
-      toolInput
-    );
-    const summary = summarizeToolOutput(selectedTool, execution.output);
-
-    assistantMessage = summary.message;
-    toolCall = {
-      duration_ms: Date.now() - startedAt,
-      error: null,
-      input: execution.input,
-      output: execution.output,
-      status: "success",
-      tool_name: selectedTool
-    };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Falha ao executar ferramenta.";
-
-    assistantMessage = buildToolErrorMessage(selectedTool, errorMessage);
-    toolCall = {
-      duration_ms: Date.now() - startedAt,
-      error: errorMessage,
-      input: inputFromMessage(selectedTool, message),
-      output: null,
-      status: "error",
-      tool_name: selectedTool
-    };
+      assistantMessage = getAssistantErrorMessage(error);
+    }
   }
 
   const auditResult = await writeAuditLog({
     assistantMessage,
-    profile: profile as Profile,
+    metadata: {
+      openai_response_id: responseId,
+      requested_tool: requestedTool ?? null,
+      runtime: "openai_responses",
+      version: 2
+    },
+    profile: profileRecord,
     supabase,
-    toolCall,
+    toolCalls,
     userMessage: message
   });
 
@@ -127,29 +121,25 @@ export async function POST(request: Request) {
     conversationId: auditResult.conversationId,
     message: assistantMessage,
     role: profile.role,
-    toolCall,
+    toolCall: toolCalls[0] ?? null,
+    toolCalls,
     tools: getToolDefinitionsForRole(profile.role)
-  });
+  }, { status: responseStatus });
 }
 
 async function writeAuditLog({
   assistantMessage,
+  metadata,
   profile,
   supabase,
-  toolCall,
+  toolCalls,
   userMessage
 }: {
   assistantMessage: string;
+  metadata: Record<string, unknown>;
   profile: Profile;
   supabase: Awaited<ReturnType<typeof createClient>>;
-  toolCall: {
-    duration_ms: number;
-    error: string | null;
-    input: Record<string, JsonValue>;
-    output: JsonValue | null;
-    status: "error" | "success";
-    tool_name: ToolName;
-  } | null;
+  toolCalls: AssistantToolCallAudit[];
   userMessage: string;
 }) {
   const { data: conversation, error: conversationError } = await supabase
@@ -158,7 +148,7 @@ async function writeAuditLog({
       actor_id: profile.id,
       actor_role: profile.role,
       assistant_message: assistantMessage,
-      metadata: { version: 1 },
+      metadata,
       user_message: userMessage
     })
     .select("id")
@@ -168,20 +158,22 @@ async function writeAuditLog({
     return { error: conversationError.message };
   }
 
-  if (!toolCall) {
+  if (toolCalls.length === 0) {
     return { conversationId: conversation.id as string, error: null };
   }
 
-  const { error: toolCallError } = await supabase.from("ai_tool_calls").insert({
-    actor_id: profile.id,
-    conversation_id: conversation.id,
-    duration_ms: toolCall.duration_ms,
-    error: toolCall.error,
-    input: toolCall.input,
-    output: toolCall.output,
-    status: toolCall.status,
-    tool_name: toolCall.tool_name
-  });
+  const { error: toolCallError } = await supabase.from("ai_tool_calls").insert(
+    toolCalls.map((toolCall) => ({
+      actor_id: profile.id,
+      conversation_id: conversation.id,
+      duration_ms: toolCall.duration_ms,
+      error: toolCall.error,
+      input: toolCall.input,
+      output: toolCall.output,
+      status: toolCall.status,
+      tool_name: toolCall.tool_name
+    }))
+  );
 
   if (toolCallError) {
     return { error: toolCallError.message };
@@ -190,68 +182,16 @@ async function writeAuditLog({
   return { conversationId: conversation.id as string, error: null };
 }
 
-function summarizeToolOutput(toolName: ToolName, output: JsonValue) {
-  const count = getPrimaryCount(output);
-
-  if (toolName === "get_casting_guidelines") {
-    return { message: "Encontrei as orientações de casting atuais." };
-  }
-
-  if (toolName === "get_my_profile") {
-    return { message: "Consultei o seu perfil de modelo." };
-  }
-
-  if (toolName === "get_client_contacts") {
-    return { message: "Consultei os contatos e canais desse cliente." };
-  }
-
-  if (toolName === "get_model_profile") {
-    return { message: "Consultei o perfil interno desse modelo." };
-  }
-
-  if (toolName === "recommend_models_for_brief") {
-    return {
-      message:
-        count > 0
-          ? `Encontrei ${count} recomendações públicas para esse brief.`
-          : "Não encontrei recomendações claras para esse brief com os dados públicos atuais."
-    };
-  }
-
-  return {
-    message:
-      count > 0
-        ? `Encontrei ${count} resultado${count === 1 ? "" : "s"} para a busca.`
-        : "Não encontrei resultados para essa busca."
-  };
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Erro inesperado.";
 }
 
-function buildToolErrorMessage(toolName: ToolName, errorMessage: string) {
-  if (toolName === "get_client_contacts") {
-    return `Não consegui consultar os contatos. Envie o UUID do cliente. Detalhe: ${errorMessage}`;
+function getAssistantErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+
+  if (/invalid schema|schema|tool|function/i.test(message)) {
+    return "Não consegui iniciar o assistente AI por uma configuração de ferramentas. O detalhe foi registrado no servidor.";
   }
 
-  if (toolName === "get_model_profile") {
-    return `Não consegui consultar o perfil. Envie o UUID do modelo. Detalhe: ${errorMessage}`;
-  }
-
-  return `Não consegui concluir a consulta. Detalhe: ${errorMessage}`;
-}
-
-function getPrimaryCount(output: JsonValue) {
-  if (!output || typeof output !== "object" || Array.isArray(output)) {
-    return 0;
-  }
-
-  const record = output as Record<string, JsonValue>;
-
-  for (const key of ["models", "clients", "contacts", "recommendations"]) {
-    const value = record[key];
-
-    if (Array.isArray(value)) {
-      return value.length;
-    }
-  }
-
-  return 0;
+  return `Não consegui concluir a consulta com o assistente AI. ${message}`;
 }
