@@ -78,19 +78,19 @@ export const adminNavItems = [
   { href: "/admin/models", label: "Modelos" },
   { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
-  { href: "/admin/requests", label: "Pedidos" }
+  { href: "/admin/jobs", label: "Trabalhos" }
 ];
 
 export const modelNavItems = [
   { href: "/model", label: "Dashboard" },
   { href: "/model/profile", label: "Perfil" },
   { href: "/model/media", label: "Mídias" },
-  { href: "/model/availability", label: "Disponibilidade" }
+  { href: "/model/availability", label: "Agenda" }
 ];
 
 export const clientNavItems = [
   { href: "/client", label: "Dashboard" },
   { href: "/client/models", label: "Buscar modelos" },
   { href: "/client/shortlists", label: "Shortlists" },
-  { href: "/client/requests", label: "Pedidos" }
+  { href: "/client/jobs", label: "Trabalhos" }
 ];

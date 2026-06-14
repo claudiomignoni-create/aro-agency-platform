@@ -43,6 +43,23 @@ export default async function ClientModelsPage() {
               <span>{model.shoe_size_br ? `BR ${model.shoe_size_br}` : "-"}</span>
             </div>
             <p>{model.categories.join(", ") || "Sem categoria"}</p>
+            <div className="actions">
+              <Link className="button secondary" href={`/client/models/${model.id}`}>
+                Ver agenda
+              </Link>
+              <Link
+                className="button secondary"
+                href={`/client/jobs/new?modelId=${model.id}`}
+              >
+                Solicitar trabalho
+              </Link>
+              <Link
+                className="button secondary"
+                href={`/client/jobs/new?modelId=${model.id}&quote=1`}
+              >
+                Solicitar orçamento
+              </Link>
+            </div>
           </article>
         ))}
         {models.length === 0 ? (

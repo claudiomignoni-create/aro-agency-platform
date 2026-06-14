@@ -61,6 +61,54 @@ export type BookingStatus =
   | "completed"
   | "canceled";
 
+export type JobType = "job" | "casting" | "shoot" | "option" | "manual_block";
+
+export type JobStatus =
+  | "draft"
+  | "client_requested"
+  | "booker_review"
+  | "quote_requested"
+  | "agency_approved"
+  | "waiting_model"
+  | "model_accepted"
+  | "confirmed"
+  | "declined"
+  | "canceled"
+  | "completed";
+
+export type JobModelStatus =
+  | "booker_review"
+  | "option"
+  | "agency_approved"
+  | "waiting_model"
+  | "accepted"
+  | "declined"
+  | "confirmed"
+  | "canceled"
+  | "completed";
+
+export type ModelResponseStatus =
+  | "not_released"
+  | "waiting"
+  | "accepted"
+  | "declined";
+
+export type CalendarBlockStatus =
+  | "booker_review"
+  | "option"
+  | "agency_approved"
+  | "waiting_model"
+  | "accepted"
+  | "confirmed"
+  | "declined"
+  | "canceled"
+  | "completed";
+
+export type CalendarBlockVisibility =
+  | "admin_only"
+  | "model_private"
+  | "client_limited";
+
 export type Profile = {
   id: string;
   role: UserRole;
@@ -383,6 +431,72 @@ export type Client = {
   internal_notes: string | null;
   last_contact_at: string | null;
   next_follow_up_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Job = {
+  id: string;
+  client_id: string | null;
+  created_by: string | null;
+  type: JobType;
+  status: JobStatus;
+  project_name: string | null;
+  brand_name: string | null;
+  brief: string | null;
+  start_at: string;
+  end_at: string | null;
+  call_time: string | null;
+  location_name: string | null;
+  address_line: string | null;
+  city: string | null;
+  country: string | null;
+  usage_term_months: number | null;
+  usage_description: string | null;
+  usage_scope: string | null;
+  usage_countries: string[];
+  client_budget: number | null;
+  agency_fee_percent: number;
+  final_amount: number | null;
+  quote_requested: boolean;
+  transport_notes: string | null;
+  food_notes: string | null;
+  model_recommendations: string | null;
+  model_must_bring: string | null;
+  styling_notes: string | null;
+  beauty_notes: string | null;
+  internal_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobModel = {
+  id: string;
+  job_id: string;
+  model_id: string;
+  status: JobModelStatus;
+  model_response_status: ModelResponseStatus;
+  agency_approved_at: string | null;
+  model_responded_at: string | null;
+  fee_amount: number | null;
+  final_amount: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ModelCalendarBlock = {
+  id: string;
+  model_id: string;
+  job_id: string | null;
+  type: JobType;
+  status: CalendarBlockStatus;
+  start_at: string;
+  end_at: string | null;
+  title: string;
+  visibility: CalendarBlockVisibility;
+  source: string;
   notes: string | null;
   created_at: string;
   updated_at: string;

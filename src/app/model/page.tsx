@@ -13,8 +13,8 @@ export default function ModelPortalPage() {
       </section>
       <section className="panel">
         <span className="eyebrow">Agenda</span>
-        <h2>Disponibilidade</h2>
-        <p>Marque períodos disponíveis, indisponíveis ou tentativos.</p>
+        <h2>Agenda</h2>
+        <p>Acompanhe castings, opções, ensaios e trabalhos confirmados.</p>
       </section>
     </div>
   );
