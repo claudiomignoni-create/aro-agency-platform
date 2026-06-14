@@ -1,29 +1,38 @@
-import { AIAssistantPanel } from "@/components/ai/ai-assistant-panel";
-import { requireRole } from "@/lib/auth";
+import Link from "next/link";
 
-export default async function ClientPortalPage() {
-  const profile = await requireRole(["client", "admin"]);
-
+export default function ClientPortalPage() {
   return (
-    <div className="stack">
-      <div className="grid">
-        <section className="panel">
-          <span className="eyebrow">Busca</span>
-          <h2>Encontrar modelos</h2>
-          <p>Filtros por categoria, localização, medidas e tags.</p>
-        </section>
-        <section className="panel">
-          <span className="eyebrow">Shortlists</span>
-          <h2>Criar seleção</h2>
-          <p>Organize modelos para enviar à agência.</p>
-        </section>
-        <section className="panel">
-          <span className="eyebrow">Pedidos</span>
-          <h2>Solicitar booking</h2>
-          <p>Envie brief, data e local para análise.</p>
-        </section>
-      </div>
-      <AIAssistantPanel role={profile.role} />
+    <div className="grid">
+      <section className="panel">
+        <span className="eyebrow">Casting</span>
+        <h2>Criar casting agora</h2>
+        <p>
+          Escolha uma data, veja modelos disponíveis e envie uma solicitação
+          para a agência.
+        </p>
+        <Link className="button" href="/client/jobs/new">
+          Criar casting agora
+        </Link>
+      </section>
+      <section className="panel">
+        <span className="eyebrow">Busca</span>
+        <h2>Buscar modelos</h2>
+        <p>
+          Escolha um modelo específico, veja a agenda e solicite trabalho ou
+          orçamento.
+        </p>
+        <Link className="button secondary" href="/client/models">
+          Buscar modelos
+        </Link>
+      </section>
+      <section className="panel">
+        <span className="eyebrow">Trabalhos</span>
+        <h2>Meus trabalhos</h2>
+        <p>Acompanhe solicitações, propostas e confirmações.</p>
+        <Link className="button secondary" href="/client/jobs">
+          Ver solicitações
+        </Link>
+      </section>
     </div>
   );
 }
