@@ -1,8 +1,8 @@
-import { AIAssistantPanel } from "@/components/ai/ai-assistant-panel";
+import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 
 export default async function ModelPortalPage() {
-  const profile = await requireRole(["model", "admin"]);
+  await requireRole(["model", "admin"]);
 
   return (
     <div className="stack">
@@ -23,7 +23,19 @@ export default async function ModelPortalPage() {
           <p>Acompanhe castings, opções, ensaios e trabalhos confirmados.</p>
         </section>
       </div>
-      <AIAssistantPanel role={profile.role} />
+      <section className="panel assistant-entry-panel">
+        <div>
+          <span className="eyebrow">AI Assistant</span>
+          <h2>Orientacoes e perfil</h2>
+          <p>
+            Abra uma conversa dedicada para consultar orientacoes de casting e
+            revisar somente os dados do seu proprio perfil.
+          </p>
+        </div>
+        <Link className="button" href="/model/assistant">
+          Abrir AI Assistant
+        </Link>
+      </section>
     </div>
   );
 }

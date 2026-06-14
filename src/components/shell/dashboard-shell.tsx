@@ -75,6 +75,7 @@ export function DashboardShell({
 
 export const adminNavItems = [
   { href: "/admin", label: "Dashboard" },
+  { href: "/admin/assistant", label: "AI Assistant" },
   { href: "/admin/models", label: "Modelos" },
   { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
@@ -83,6 +84,7 @@ export const adminNavItems = [
 
 export const modelNavItems = [
   { href: "/model", label: "Dashboard" },
+  { href: "/model/assistant", label: "AI Assistant" },
   { href: "/model/profile", label: "Perfil" },
   { href: "/model/media", label: "Mídias" },
   { href: "/model/availability", label: "Agenda" }
@@ -90,6 +92,7 @@ export const modelNavItems = [
 
 export const clientNavItems = [
   { href: "/client", label: "Dashboard" },
+  { href: "/client/assistant", label: "AI Assistant" },
   { href: "/client/models", label: "Buscar modelos" },
   { href: "/client/shortlists", label: "Shortlists" },
   { href: "/client/jobs", label: "Trabalhos" }

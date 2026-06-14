@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { AIAssistantPanel } from "@/components/ai/ai-assistant-panel";
 import { requireRole } from "@/lib/auth";
 
 export default async function ClientPortalPage() {
-  const profile = await requireRole(["client", "admin"]);
+  await requireRole(["client", "admin"]);
 
   return (
     <div className="stack">
@@ -39,7 +38,19 @@ export default async function ClientPortalPage() {
           </Link>
         </section>
       </div>
-      <AIAssistantPanel role={profile.role} />
+      <section className="panel assistant-entry-panel">
+        <div>
+          <span className="eyebrow">AI Assistant</span>
+          <h2>Recomendar modelos com AI</h2>
+          <p>
+            Abra uma conversa dedicada para buscar modelos publicados e refinar
+            campanhas com dados disponiveis para clientes.
+          </p>
+        </div>
+        <Link className="button" href="/client/assistant">
+          Abrir AI Assistant
+        </Link>
+      </section>
     </div>
   );
 }
