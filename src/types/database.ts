@@ -360,6 +360,29 @@ export type ModelClientProfile = {
   updated_at: string;
 };
 
+export type AIConversation = {
+  id: string;
+  actor_id: string;
+  actor_role: UserRole;
+  user_message: string;
+  assistant_message: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AIToolCall = {
+  id: string;
+  conversation_id: string;
+  actor_id: string;
+  tool_name: string;
+  input: Record<string, unknown>;
+  output: unknown;
+  status: "success" | "error";
+  error: string | null;
+  duration_ms: number;
+  created_at: string;
+};
+
 export type Client = {
   id: string;
   user_id: string | null;
