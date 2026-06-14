@@ -20,6 +20,7 @@ import {
   deleteModel,
   deleteModelMedia,
   deleteModelWorkHistory,
+  getModel,
   touchModelMeasurementsUpdated,
   touchModelMediaUpdated,
   touchModelProfileReviewed,
@@ -49,6 +50,12 @@ import {
   type ModelSocialLinksInput,
   type ModelWorkHistoryInput
 } from "@/lib/models";
+import { sendModelProfileUpdateRequestEmail } from "@/lib/email";
+import {
+  createMediaUpdateRequestNotification,
+  createMeasurementsUpdateRequestNotification,
+  createProfileUpdateRequestNotification
+} from "@/lib/notifications";
 import type {
   MediaStatus,
   MediaType,
@@ -243,6 +250,30 @@ function revalidateModelPaths(id: string) {
 function redirectToTab(id: string, tab: string) {
   redirect(`/admin/models/${id}/edit?tab=${tab}&saved=1`);
 }
+
+function displayNameFromModel(model: { display_name: string; stage_name: string | null; legal_name: string | null }) {
+  return model.stage_name ?? model.display_name ?? model.legal_name ?? "Modelo";
+}
+
+type ModelUpdateRequestKind = "profile" | "measurements" | "media";
+
+const modelUpdateRequestConfig = {
+  media: {
+    actionUrl: "/model/media",
+    notice: "media_update_requested",
+    templateKey: "model_media_update_request" as const
+  },
+  measurements: {
+    actionUrl: "/model/profile",
+    notice: "measurements_update_requested",
+    templateKey: "model_measurements_update_request" as const
+  },
+  profile: {
+    actionUrl: "/model/profile",
+    notice: "profile_update_requested",
+    templateKey: "model_profile_update_request" as const
+  }
+};
 
 function modelInputFromFormData(formData: FormData): ModelInput {
   const status = statusFromFormData(formData);
@@ -859,6 +890,88 @@ export async function sendModelUpdateRequestAction(id: string) {
   await createModelUpdateRequest(id);
   revalidateModelPaths(id);
   redirectToTab(id, "history");
+}
+
+async function requestModelUpdateByKind(
+  id: string,
+  kind: ModelUpdateRequestKind
+) {
+  await requireRole(["admin"]);
+  const model = await getModel(id);
+
+  if (!model) {
+    throw new Error("Modelo não encontrado.");
+  }
+
+  const config = modelUpdateRequestConfig[kind];
+  const modelName = displayNameFromModel(model);
+  let queuedSomething = false;
+
+  if (model.user_id) {
+    if (kind === "profile") {
+      await createProfileUpdateRequestNotification({
+        actionUrl: config.actionUrl,
+        modelId: id,
+        modelName,
+        recipientProfileId: model.user_id
+      });
+    }
+
+    if (kind === "measurements") {
+      await createMeasurementsUpdateRequestNotification({
+        actionUrl: config.actionUrl,
+        modelId: id,
+        modelName,
+        recipientProfileId: model.user_id
+      });
+    }
+
+    if (kind === "media") {
+      await createMediaUpdateRequestNotification({
+        actionUrl: config.actionUrl,
+        modelId: id,
+        modelName,
+        recipientProfileId: model.user_id
+      });
+    }
+
+    queuedSomething = true;
+  }
+
+  if (model.email) {
+    await sendModelProfileUpdateRequestEmail({
+      actionUrl: config.actionUrl,
+      modelId: id,
+      modelName,
+      recipientEmail: model.email,
+      recipientProfileId: model.user_id,
+      templateKey: config.templateKey
+    });
+    queuedSomething = true;
+  }
+
+  if (!queuedSomething) {
+    redirect(`/admin/models/${id}/edit?notice=missing_model_contact`);
+  }
+
+  await updateModel(id, {
+    last_update_request_sent_at: new Date().toISOString()
+  });
+  revalidateModelPaths(id);
+  revalidatePath("/admin/notifications");
+  redirect(`/admin/models/${id}/edit?notice=${config.notice}`);
+}
+
+export async function requestModelProfileUpdateAction(id: string) {
+  await requestModelUpdateByKind(id, "profile");
+}
+
+export async function requestModelMeasurementsUpdateAction(id: string) {
+  await requestModelUpdateByKind(id, "measurements");
+}
+
+export async function requestModelMediaUpdateAction(id: string) {
+  await requestModelUpdateByKind(id, "media");
 }
 
 export async function markProfileReviewedAction(id: string) {
