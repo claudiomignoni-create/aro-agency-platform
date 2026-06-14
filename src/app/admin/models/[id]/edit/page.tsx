@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
+import { jobTypeLabel, listModelCalendar } from "@/lib/jobs";
 import { createModelMainImageUrls, getModelProfile } from "@/lib/models";
 import type { Model } from "@/types/database";
 import {
@@ -82,6 +84,7 @@ export default async function EditModelPage({
   const activeTab: ModelProfileTab =
     tab && isModelProfileTab(tab) ? tab : "basic";
   const profile = await getModelProfile(id);
+  const calendarBlocks = await listModelCalendar(id);
 
   if (!profile) {
     notFound();
@@ -122,6 +125,19 @@ export default async function EditModelPage({
     { href: `/admin/models/${model.id}/edit?tab=history`, label: "Histórico" },
     { href: "/admin/models", label: "Voltar para modelos" }
   ];
+  const agendaActions = [
+    [
+      "Criar trabalho para este modelo",
+      `/admin/jobs/new?modelId=${model.id}&type=job`
+    ],
+    ["Criar casting", `/admin/jobs/new?modelId=${model.id}&type=casting`],
+    ["Criar ensaio", `/admin/jobs/new?modelId=${model.id}&type=shoot`],
+    ["Colocar em opção", `/admin/jobs/new?modelId=${model.id}&type=option`],
+    ["Bloquear agenda", `/admin/jobs/new?modelId=${model.id}&type=manual_block`]
+  ] as const;
+  const upcomingAgenda = calendarBlocks
+    .filter((block) => dateKeyFromIso(block.start_at) >= "2026-06-13")
+    .slice(0, 5);
 
   return (
     <div className="stack">
@@ -191,8 +207,82 @@ export default async function EditModelPage({
           </div>
         </div>
       </section>
+      <section className="model-agenda-panel">
+        <div className="model-agenda-copy">
+          <span className="eyebrow">Agenda</span>
+          <h3>Agenda do modelo</h3>
+          <p>Próximas atividades, histórico resumido e ações rápidas.</p>
+          <div className="model-profile-links">
+            {agendaActions.map(([label, href]) => (
+              <Link className="button secondary" href={href} key={href}>
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="model-agenda-list">
+          {upcomingAgenda.map((block) => (
+            <div className="model-agenda-row" key={block.id}>
+              <div>
+                <strong>{jobTypeLabel(block.type)}</strong>
+                <span>{formatDatePtBr(dateKeyFromIso(block.start_at))}</span>
+              </div>
+              <span className="status">{block.status}</span>
+            </div>
+          ))}
+          {upcomingAgenda.length === 0 ? (
+            <p>Nenhuma atividade futura na agenda.</p>
+          ) : null}
+          <p className="model-agenda-history">
+            Histórico resumido: {calendarBlocks.length} atividade(s) registradas.
+          </p>
+        </div>
+      </section>
       <ModelProfileEditor activeTab={activeTab} profile={profile} />
       <style>{`
+        .model-agenda-panel {
+          background:
+            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
+            color-mix(in srgb, #102a4a 86%, var(--panel));
+          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
+          border-radius: 8px;
+          display: grid;
+          gap: 1rem;
+          grid-template-columns: minmax(0, 0.9fr) minmax(18rem, 1fr);
+          padding: 1rem;
+        }
+
+        .model-agenda-copy,
+        .model-agenda-list {
+          min-width: 0;
+        }
+
+        .model-agenda-list {
+          display: grid;
+          gap: 0.55rem;
+        }
+
+        .model-agenda-row {
+          align-items: center;
+          border: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
+          border-radius: 8px;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+          padding: 0.7rem;
+        }
+
+        .model-agenda-row div {
+          display: grid;
+          gap: 0.2rem;
+        }
+
+        .model-agenda-row span:not(.status),
+        .model-agenda-history {
+          color: var(--muted);
+          font-size: 0.82rem;
+        }
+
         .model-profile-hero {
           align-items: stretch;
           background:
@@ -341,6 +431,7 @@ export default async function EditModelPage({
         }
 
         @media (max-width: 760px) {
+          .model-agenda-panel,
           .model-profile-hero {
             grid-template-columns: 1fr;
           }
