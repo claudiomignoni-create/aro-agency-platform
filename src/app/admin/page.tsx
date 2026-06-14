@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { AIAssistantPanel } from "@/components/ai/ai-assistant-panel";
+import { requireRole } from "@/lib/auth";
 import { listModels } from "@/lib/models";
 
 export default async function AdminPage() {
+  const profile = await requireRole(["admin"]);
   const models = await listModels();
   const pendingModels = models.filter(
     (model) => model.status === "pending_review"
@@ -46,6 +49,7 @@ export default async function AdminPage() {
           </Link>
         </div>
       </section>
+      <AIAssistantPanel role={profile.role} />
       <style>{`
         .stack {
           max-width: 100%;
