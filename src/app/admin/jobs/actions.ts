@@ -42,9 +42,17 @@ function readableError(error: unknown) {
 }
 
 export async function updateJobStatusAction(jobId: string, status: JobStatus) {
-  await updateJobStatus(jobId, status);
+  try {
+    await updateJobStatus(jobId, status);
+  } catch {
+    revalidatePath("/admin/jobs");
+    revalidatePath(`/admin/jobs/${jobId}`);
+    redirect(`/admin/jobs/${jobId}?error=job_status_failed`);
+  }
+
   revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
+  redirect(`/admin/jobs/${jobId}?notice=status_${status}`);
 }
 
 export async function approveJobForModelAction(jobId: string, modelId: string) {

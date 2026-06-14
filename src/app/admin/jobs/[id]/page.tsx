@@ -17,6 +17,7 @@ import {
   approveJobForModelAction,
   updateJobStatusAction
 } from "../actions";
+import type { JobModelStatus, JobStatus } from "@/types/database";
 
 type AdminJobDetailPageProps = {
   params: Promise<{
@@ -37,15 +38,76 @@ const statusActions = [
 ] as const;
 
 const noticeMessages: Record<string, string> = {
-  model_sent: "Trabalho enviado para a modelo. Aguardando resposta."
+  model_sent: "Trabalho enviado para a modelo. Aguardando resposta.",
+  status_agency_approved: "Solicitação aprovada.",
+  status_canceled: "Trabalho cancelado.",
+  status_completed: "Trabalho finalizado.",
+  status_confirmed: "Trabalho confirmado.",
+  status_declined: "Solicitação recusada."
 };
 
 const errorMessages: Record<string, string> = {
+  job_status_failed:
+    "Não foi possível atualizar o status do trabalho. Tente novamente.",
   model_send_failed:
     "Não foi possível enviar o trabalho para a modelo. Tente novamente."
 };
 
+const jobStatusLabels: Record<JobStatus, string> = {
+  agency_approved: "Aprovado pela agência",
+  booker_review: "Em revisão",
+  canceled: "Cancelado",
+  client_requested: "Solicitado pelo cliente",
+  completed: "Finalizado",
+  confirmed: "Confirmado",
+  declined: "Recusado",
+  draft: "Rascunho",
+  model_accepted: "Aceito pela modelo",
+  quote_requested: "Orçamento solicitado",
+  waiting_model: "Aguardando modelo"
+};
+
+const jobModelStatusLabels: Record<JobModelStatus, string> = {
+  agency_approved: "Aprovado pela agência",
+  booker_review: "Em revisão",
+  canceled: "Cancelado",
+  completed: "Finalizado",
+  confirmed: "Confirmado",
+  declined: "Recusado",
+  accepted: "Aceito",
+  option: "Opção",
+  waiting_model: "Aguardando modelo"
+};
+
+function jobStatusLabel(status: JobStatus) {
+  return jobStatusLabels[status] ?? status;
+}
+
+function jobModelStatusLabel(status: JobModelStatus) {
+  return jobModelStatusLabels[status] ?? status;
+}
+
+function statusActionState(currentStatus: JobStatus, nextStatus: JobStatus) {
+  if (currentStatus === "canceled" || currentStatus === "completed") {
+    return { disabled: true, label: null };
+  }
+
+  if (currentStatus === nextStatus) {
+    return { disabled: true, label: jobStatusLabel(nextStatus) };
+  }
+
+  return { disabled: false, label: null };
+}
+
 function modelResponseLabel(jobModel: JobModelWithModel) {
+  if (jobModel.status === "canceled") {
+    return "Cancelado";
+  }
+
+  if (jobModel.status === "completed") {
+    return "Finalizado";
+  }
+
   if (jobModel.status === "confirmed") {
     return "Confirmado";
   }
@@ -65,7 +127,15 @@ function modelResponseLabel(jobModel: JobModelWithModel) {
   return "Não enviado";
 }
 
-function modelActionState(jobModel: JobModelWithModel) {
+function modelActionState(jobStatus: JobStatus, jobModel: JobModelWithModel) {
+  if (jobStatus === "canceled" || jobModel.status === "canceled") {
+    return { disabled: true, label: "Trabalho cancelado" };
+  }
+
+  if (jobStatus === "completed" || jobModel.status === "completed") {
+    return { disabled: true, label: "Trabalho finalizado" };
+  }
+
   if (jobModel.status === "confirmed") {
     return { disabled: true, label: "Confirmado" };
   }
@@ -102,10 +172,12 @@ export default async function AdminJobDetailPage({
       .map((jobModel) => jobModel.model)
       .filter((model): model is NonNullable<typeof model> => Boolean(model))
   );
+  const jobActionsDisabled =
+    job.status === "canceled" || job.status === "completed";
   const rows = [
     ["Cliente", job.client?.company_name ?? "-"],
     ["Tipo", jobTypeLabel(job.type)],
-    ["Status geral", job.status],
+    ["Status geral", jobStatusLabel(job.status)],
     ["Data", formatDatePtBr(dateKeyFromIso(job.start_at))],
     [
       "Chegada",
@@ -195,16 +267,24 @@ export default async function AdminJobDetailPage({
             tabela de modelos vinculados.
           </p>
           <div className="job-action-grid">
-            {statusActions.map(([label, status]) => (
-              <form
-                action={updateJobStatusAction.bind(null, job.id, status)}
-                key={status}
-              >
-                <button className="button secondary" type="submit">
-                  {label}
-                </button>
-              </form>
-            ))}
+            {statusActions.map(([label, status]) => {
+              const actionState = statusActionState(job.status, status);
+
+              return (
+                <form
+                  action={updateJobStatusAction.bind(null, job.id, status)}
+                  key={status}
+                >
+                  <button
+                    className="button secondary"
+                    disabled={actionState.disabled}
+                    type="submit"
+                  >
+                    {actionState.label ?? label}
+                  </button>
+                </form>
+              );
+            })}
           </div>
         </article>
       </section>
@@ -224,7 +304,7 @@ export default async function AdminJobDetailPage({
             </thead>
             <tbody>
               {job.job_models.map((jobModel) => {
-                const actionState = modelActionState(jobModel);
+                const actionState = modelActionState(job.status, jobModel);
 
                 return (
                   <tr key={jobModel.id}>
@@ -256,7 +336,9 @@ export default async function AdminJobDetailPage({
                       </div>
                     </td>
                     <td>
-                      <span className="status">{jobModel.status}</span>
+                      <span className="status">
+                        {jobModelStatusLabel(jobModel.status)}
+                      </span>
                     </td>
                     <td>{modelResponseLabel(jobModel)}</td>
                     <td>
@@ -281,12 +363,18 @@ export default async function AdminJobDetailPage({
                             {actionState.label}
                           </button>
                         </form>
-                        <Link
-                          className="button secondary"
-                          href={`/admin/jobs/new?modelId=${jobModel.model_id}&type=option`}
-                        >
-                          Colocar em opção
-                        </Link>
+                        {jobActionsDisabled ? (
+                          <button className="button secondary" disabled type="button">
+                            Colocar em opção
+                          </button>
+                        ) : (
+                          <Link
+                            className="button secondary"
+                            href={`/admin/jobs/new?modelId=${jobModel.model_id}&type=option`}
+                          >
+                            Colocar em opção
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -104,7 +104,9 @@ export default async function ModelAvailabilityPage() {
             return null;
           }
 
-          const canRespond = assignment.model_response_status === "waiting";
+          const canRespond =
+            assignment.status === "waiting_model" &&
+            assignment.model_response_status === "waiting";
 
           return (
             <article className="agenda-row" key={assignment.id}>

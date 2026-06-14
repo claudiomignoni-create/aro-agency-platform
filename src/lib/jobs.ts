@@ -846,6 +846,15 @@ export async function updateJobStatus(jobId: string, status: JobStatus) {
   if (blockError) {
     throw blockError;
   }
+
+  const { error: jobModelsError } = await supabase
+    .from("job_models")
+    .update({ status: jobStatusToJobModelStatus(status) })
+    .eq("job_id", jobId);
+
+  if (jobModelsError) {
+    throw jobModelsError;
+  }
 }
 
 export async function modelAcceptJob(jobModelId: string) {
