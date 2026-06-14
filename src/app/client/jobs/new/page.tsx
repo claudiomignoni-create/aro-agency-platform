@@ -122,6 +122,7 @@ export default async function ClientNewJobPage({
                   value={model.id}
                 />
                 <span className="model-card-frame">
+                  <span className="model-card-check" aria-hidden="true" />
                   {modelImageUrls[model.id] ? (
                     <img
                       alt={modelDisplayName(model)}
@@ -301,33 +302,16 @@ export default async function ClientNewJobPage({
         }
 
         .model-card-checkbox {
-          appearance: none;
-          background: rgba(255, 255, 255, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.9);
-          border-radius: 4px;
-          height: 1.25rem;
-          min-height: auto;
+          height: 1px;
+          left: 0;
+          margin: 0;
+          min-height: 0;
+          opacity: 0;
+          padding: 0;
+          pointer-events: none;
           position: absolute;
-          right: 0.6rem;
-          top: 0.6rem;
-          width: 1.25rem;
-          z-index: 2;
-        }
-
-        .model-card-checkbox:checked {
-          background: #86c8ff;
-          border-color: #ffffff;
-          box-shadow: 0 0 0 3px rgba(134, 200, 255, 0.24);
-        }
-
-        .model-card-checkbox:checked::after {
-          color: #05214f;
-          content: "✓";
-          display: block;
-          font-size: 0.9rem;
-          font-weight: 800;
-          line-height: 1.1rem;
-          text-align: center;
+          top: 0;
+          width: 1px;
         }
 
         .model-card-frame {
@@ -356,6 +340,37 @@ export default async function ClientNewJobPage({
 
         .model-card-frame img {
           object-fit: cover;
+        }
+
+        .model-card-check {
+          background: #ffffff;
+          border: 1px solid rgba(255, 255, 255, 0.88);
+          border-radius: 6px;
+          box-shadow: 0 8px 22px rgba(0, 8, 24, 0.26);
+          height: 22px;
+          position: absolute;
+          right: 12px;
+          top: 12px;
+          width: 22px;
+          z-index: 3;
+        }
+
+        .model-card-checkbox:checked + .model-card-frame .model-card-check {
+          background: #86c8ff;
+          border-color: #ffffff;
+          box-shadow:
+            0 0 0 3px rgba(134, 200, 255, 0.22),
+            0 8px 22px rgba(0, 8, 24, 0.28);
+        }
+
+        .model-card-checkbox:checked + .model-card-frame .model-card-check::after {
+          color: #05214f;
+          content: "✓";
+          display: block;
+          font-size: 14px;
+          font-weight: 800;
+          line-height: 20px;
+          text-align: center;
         }
 
         .model-card-placeholder {
