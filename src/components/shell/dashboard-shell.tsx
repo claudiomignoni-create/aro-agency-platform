@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/app/(auth)/login/actions";
+import { MobileNav } from "./mobile-nav";
 
 type NavItem = {
   href: string;
@@ -10,6 +11,7 @@ type NavItem = {
 type DashboardShellProps = {
   children: ReactNode;
   eyebrow: string;
+  focusTone?: "admin";
   navItems: NavItem[];
   title: string;
 };
@@ -17,6 +19,7 @@ type DashboardShellProps = {
 export function DashboardShell({
   children,
   eyebrow,
+  focusTone,
   navItems,
   title
 }: DashboardShellProps) {
@@ -40,18 +43,7 @@ export function DashboardShell({
 
   return (
     <main className="dashboard">
-      <details className="mobile-nav">
-        <summary>
-          <Link className="brand" href="/">
-            <strong>ARO</strong>LAB
-          </Link>
-          <span className="badge">Menu</span>
-        </summary>
-        <div className="mobile-nav-panel">
-          {renderNav()}
-          {renderSignOutForm()}
-        </div>
-      </details>
+      <MobileNav navItems={navItems} signOutForm={renderSignOutForm()} />
       <aside className="sidebar">
         <Link className="brand" href="/">
           <strong>ARO</strong>LAB
@@ -69,6 +61,18 @@ export function DashboardShell({
         </header>
         {children}
       </section>
+      {focusTone === "admin" ? (
+        <style>{`
+          .dashboard :where(input, select, textarea):focus,
+          .dashboard :where(input, select, textarea):focus-visible {
+            border-color: color-mix(in srgb, #6eb6ff 62%, transparent);
+            box-shadow:
+              0 0 0 1px color-mix(in srgb, #6eb6ff 26%, transparent),
+              0 0 0 4px rgba(54, 116, 178, 0.18);
+            outline: none;
+          }
+        `}</style>
+      ) : null}
     </main>
   );
 }

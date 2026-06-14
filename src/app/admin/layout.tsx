@@ -15,6 +15,7 @@ export default async function AdminLayout({
   return (
     <DashboardShell
       eyebrow="Cadastro360"
+      focusTone="admin"
       navItems={adminNavItems}
       title="AROLAB"
     >

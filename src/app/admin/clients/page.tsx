@@ -126,6 +126,13 @@ export default async function AdminClientsPage({
   });
 
   const hasClients = clients.length > 0;
+  const hasActiveFilters = Boolean(
+    query ||
+      countryFilter !== "all" ||
+      cityFilter !== "all" ||
+      typeFilter !== "all" ||
+      statusFilter !== "all"
+  );
 
   return (
     <div className="clients-shell">
@@ -147,8 +154,25 @@ export default async function AdminClientsPage({
         </div>
       </section>
 
-      <section className="clients-filter-panel" aria-label="Filtros de clientes">
-        <form className="clients-filter-form" method="get">
+      <details
+        className="clients-filter-panel"
+        open={hasActiveFilters}
+      >
+        <summary
+          aria-label="Abrir busca e filtros de clientes"
+          className="clients-filter-toggle"
+        >
+          <span className="clients-search-icon" aria-hidden="true" />
+          <span>{hasActiveFilters ? "Pesquisa ativa" : "Pesquisar clientes"}</span>
+          {hasActiveFilters ? (
+            <span className="clients-active-filter-badge">Filtros ativos</span>
+          ) : null}
+        </summary>
+        <form
+          aria-label="Filtros de clientes"
+          className="clients-filter-form"
+          method="get"
+        >
           <label>
             Busca
             <input
@@ -208,7 +232,7 @@ export default async function AdminClientsPage({
             </Link>
           </div>
         </form>
-      </section>
+      </details>
 
       {hasClients ? (
         <section className="clients-table-panel" aria-label="Lista de clientes">
@@ -344,10 +368,81 @@ export default async function AdminClientsPage({
           padding: 1rem;
         }
 
+        .clients-filter-panel {
+          padding: 0.75rem;
+        }
+
+        .clients-filter-panel summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .clients-filter-toggle {
+          align-items: center;
+          cursor: pointer;
+          display: flex;
+          gap: 0.65rem;
+          justify-content: flex-start;
+          list-style: none;
+          min-height: 2.5rem;
+          width: 100%;
+        }
+
+        .clients-filter-toggle span:nth-child(2) {
+          color: color-mix(in srgb, #e8f4ff 92%, white);
+          font-size: 0.88rem;
+          font-weight: 750;
+        }
+
+        .clients-search-icon {
+          border: 1px solid color-mix(in srgb, #86c8ff 28%, transparent);
+          border-radius: 999px;
+          display: inline-flex;
+          height: 2rem;
+          position: relative;
+          width: 2rem;
+        }
+
+        .clients-search-icon::before {
+          border: 2px solid color-mix(in srgb, #d5edff 84%, transparent);
+          border-radius: 999px;
+          content: "";
+          height: 0.56rem;
+          left: 0.5rem;
+          position: absolute;
+          top: 0.45rem;
+          width: 0.56rem;
+        }
+
+        .clients-search-icon::after {
+          background: color-mix(in srgb, #d5edff 84%, transparent);
+          border-radius: 999px;
+          content: "";
+          height: 0.45rem;
+          left: 1.12rem;
+          position: absolute;
+          top: 1.13rem;
+          transform: rotate(-45deg);
+          width: 2px;
+        }
+
+        .clients-active-filter-badge {
+          border: 1px solid color-mix(in srgb, #86c8ff 28%, transparent);
+          border-radius: 999px;
+          color: color-mix(in srgb, #cdeaff 90%, white);
+          font-size: 0.7rem;
+          font-weight: 800;
+          margin-left: auto;
+          padding: 0.28rem 0.52rem;
+          white-space: nowrap;
+        }
+
         .clients-filter-form {
           display: grid;
           gap: 0.75rem;
           grid-template-columns: minmax(14rem, 1.4fr) repeat(4, minmax(9rem, 1fr));
+          margin-top: 0.75rem;
+          padding-top: 0.75rem;
+          border-top: 1px solid color-mix(in srgb, #86c8ff 14%, transparent);
         }
 
         .clients-filter-form label {
@@ -493,6 +588,10 @@ export default async function AdminClientsPage({
             grid-template-columns: 1fr;
           }
 
+          .clients-filter-panel {
+            padding: 0.65rem;
+          }
+
           .clients-filter-actions {
             align-items: stretch;
             flex-direction: column;
@@ -558,6 +657,15 @@ export default async function AdminClientsPage({
           .clients-filter-panel,
           .clients-empty-state {
             padding: 0.75rem;
+          }
+
+          .clients-filter-toggle {
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+
+          .clients-active-filter-badge {
+            margin-left: 0;
           }
 
           .clients-table td {
