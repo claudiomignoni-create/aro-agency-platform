@@ -1559,6 +1559,100 @@ p {
   box-shadow: 0 0 24px rgba(45, 133, 255, 0.18);
 }
 
+.admin-v2 .admin-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 8, 22, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.admin-v2 .admin-dialog {
+  width: min(420px, 100%);
+  border: 1px solid var(--admin-border-strong);
+  border-radius: 16px;
+  background: rgba(5, 31, 76, 0.92);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  color: var(--admin-text);
+  padding: 18px;
+}
+
+.admin-v2 .admin-dialog h2 {
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.admin-v2 .admin-dialog p {
+  color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.admin-v2 .admin-presentation-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-v2 .presentation-model-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-v2 .admin-selection-card {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  border: 1px solid var(--admin-border);
+  border-radius: 14px;
+  background: rgba(4, 24, 60, 0.42);
+  padding: 12px;
+}
+
+.admin-v2 .admin-selection-card img,
+.admin-v2 .admin-selection-placeholder {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.admin-v2 .admin-selection-placeholder {
+  display: grid;
+  place-items: center;
+  background: rgba(112, 178, 255, 0.16);
+  color: var(--admin-text);
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.admin-v2 .admin-media-select-list {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--admin-border);
+  padding-top: 8px;
+}
+
+.admin-v2 .admin-media-select-list > span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-v2 .admin-public-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.admin-v2 .admin-kv-grid.compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
 @media (max-width: 1180px) {
   .admin-v2 .admin-filter-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
