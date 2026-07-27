@@ -1,5 +1,5 @@
 import { getCurrentProfile, requireRole } from "@/lib/auth";
-import { addDays } from "@/lib/calendar";
+import { addDays, isValidDateKey } from "@/lib/calendar";
 import { listClientModelProfiles } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -257,6 +257,7 @@ export function jobInputFromFormData(formData: FormData): JobInput {
   const type = readString(formData, "type") as JobType;
   const quoteRequested = formData.get("quote_requested") === "on";
   const clientBudget = readNumber(formData, "client_budget");
+  const date = readRequiredDate(formData, "date");
 
   return {
     address_line: readNullableString(formData, "address_line"),
@@ -268,7 +269,7 @@ export function jobInputFromFormData(formData: FormData): JobInput {
     client_budget: clientBudget,
     client_id: readNullableString(formData, "client_id"),
     country: readNullableString(formData, "country"),
-    date: readString(formData, "date") || "2026-06-13",
+    date,
     end_time: readNullableString(formData, "end_time"),
     final_amount:
       quoteRequested || clientBudget === null
@@ -300,6 +301,16 @@ function readString(formData: FormData, name: string) {
 function readNullableString(formData: FormData, name: string) {
   const value = readString(formData, name);
   return value.length ? value : null;
+}
+
+function readRequiredDate(formData: FormData, name: string) {
+  const value = readString(formData, name);
+
+  if (!isValidDateKey(value)) {
+    throw new Error("Informe uma data valida no formato AAAA-MM-DD.");
+  }
+
+  return value;
 }
 
 function readNumber(formData: FormData, name: string) {
@@ -372,10 +383,12 @@ export async function listAdminJobs(filters: JobFilters = {}) {
     query = query.eq("type", filters.type);
   }
 
-  if (filters.date) {
+  const filterDate = isValidDateKey(filters.date) ? String(filters.date) : null;
+
+  if (filterDate) {
     query = query
-      .gte("start_at", combineDateAndTime(filters.date, "00:00"))
-      .lt("start_at", combineDateAndTime(addDays(filters.date, 1), "00:00"));
+      .gte("start_at", combineDateAndTime(filterDate, "00:00"))
+      .lt("start_at", combineDateAndTime(addDays(filterDate, 1), "00:00"));
   }
 
   const { data, error } = await query;
@@ -579,6 +592,10 @@ export async function listClientVisibleModelCalendar(modelId: string) {
 }
 
 export async function listAvailableModelsByDate(date: string) {
+  if (!isValidDateKey(date)) {
+    throw new Error("Informe uma data valida no formato AAAA-MM-DD.");
+  }
+
   const models = await listClientModelProfiles();
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
