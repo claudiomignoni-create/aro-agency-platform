@@ -8,6 +8,7 @@ import {
   exchangeGoogleCode,
   fetchGoogleUserInfo,
   googleScopes,
+  revokeGoogleToken,
   safeGoogleError
 } from "@/lib/communications/google-workspace";
 import { verifyOAuthState } from "@/lib/communications/security";
@@ -36,18 +37,28 @@ export async function GET(request: Request) {
     const token = await exchangeGoogleCode(code, verifier);
     const userInfo = await fetchGoogleUserInfo(token.access_token);
     const connectedEmail = userInfo.email.toLowerCase();
+    const supabase = await createClient();
 
     if (connectedEmail !== aroGoogleEmail) {
+      await revokeGoogleToken(token.access_token);
       return NextResponse.redirect(new URL("/admin/settings?tab=integrations&google=wrong-account", appUrl));
     }
 
     const encrypted = encryptedGoogleTokenPayload(token);
-    const supabase = await createClient();
+    const { data: existingConnection, error: existingError } = await supabase
+      .from("google_workspace_connections")
+      .select("encrypted_refresh_token")
+      .eq("profile_id", profile.id)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
     const { error } = await supabase.from("google_workspace_connections").upsert(
       {
         connected_email: connectedEmail,
         encrypted_access_token: encrypted.encrypted_access_token,
-        encrypted_refresh_token: encrypted.encrypted_refresh_token,
+        encrypted_refresh_token:
+          encrypted.encrypted_refresh_token ?? existingConnection?.encrypted_refresh_token ?? null,
         last_error: null,
         profile_id: profile.id,
         scopes: token.scope?.split(" ") ?? [...googleScopes],

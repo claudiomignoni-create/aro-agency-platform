@@ -98,6 +98,14 @@ export async function refreshGoogleAccessToken(encryptedRefreshToken: string) {
   return (await response.json()) as GoogleTokenResponse;
 }
 
+export async function revokeGoogleToken(token: string) {
+  await fetch("https://oauth2.googleapis.com/revoke", {
+    body: new URLSearchParams({ token }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    method: "POST"
+  });
+}
+
 export async function fetchGoogleUserInfo(accessToken: string) {
   const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` }
@@ -208,6 +216,11 @@ export function encryptedGoogleTokenPayload(token: GoogleTokenResponse) {
       ? new Date(Date.now() + token.expires_in * 1000).toISOString()
       : null
   };
+}
+
+export function shouldRefreshGoogleToken(tokenExpiresAt: string | null) {
+  if (!tokenExpiresAt) return true;
+  return new Date(tokenExpiresAt).getTime() - Date.now() < 5 * 60 * 1000;
 }
 
 export function safeGoogleError(error: unknown) {

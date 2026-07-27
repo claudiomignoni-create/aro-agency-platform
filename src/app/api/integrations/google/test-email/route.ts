@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { aroGoogleEmail, sendGmailMessage } from "@/lib/communications/google-workspace";
-import { decryptSecret, randomToken, sanitizeError } from "@/lib/communications/security";
+import { getUsableGoogleAccessToken } from "@/lib/communications/google-server";
+import { randomToken, sanitizeError } from "@/lib/communications/security";
 
 export async function POST(request: Request) {
   const profile = await requireRole(["admin"]);
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: connection, error } = await supabase
     .from("google_workspace_connections")
-    .select("id, encrypted_access_token, connected_email, status")
+    .select("id, connected_email, status")
     .eq("profile_id", profile.id)
     .eq("status", "connected")
     .maybeSingle();
@@ -21,10 +22,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const accessToken = decryptSecret(connection.encrypted_access_token);
-    if (!accessToken) throw new Error("Missing Google access token");
+    const google = await getUsableGoogleAccessToken(profile.id);
 
-    const sent = await sendGmailMessage(accessToken, {
+    const sent = await sendGmailMessage(google.accessToken, {
       bodyHtml: "<p>Teste de envio do ARO Email Center.</p><p>Claudio Mignoni<br>ARO</p>",
       bodyText: "Teste de envio do ARO Email Center.\n\nClaudio Mignoni\nARO",
       subject: "ARO — Teste de envio",
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       mode: "send_now",
       recipient_email: aroGoogleEmail,
       recipient_name: "Claudio Mignoni",
-      sender_connection_id: connection.id,
+      sender_connection_id: google.connectionId,
       sent_at: new Date().toISOString(),
       status: "sent",
       subject: "ARO — Teste de envio"
