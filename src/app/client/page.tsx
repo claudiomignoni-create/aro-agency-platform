@@ -26,11 +26,11 @@ export default function ClientPortalPage() {
         </Link>
       </section>
       <section className="panel">
-        <span className="eyebrow">Trabalhos</span>
-        <h2>Meus trabalhos</h2>
+        <span className="eyebrow">Agenda</span>
+        <h2>Minha agenda</h2>
         <p>Acompanhe solicitações, propostas e confirmações.</p>
         <Link className="button secondary" href="/client/jobs">
-          Ver solicitações
+          Ver agenda
         </Link>
       </section>
     </div>

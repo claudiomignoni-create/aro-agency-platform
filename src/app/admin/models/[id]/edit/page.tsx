@@ -128,12 +128,12 @@ export default async function EditModelPage({
   const agendaActions = [
     [
       "Criar trabalho para este modelo",
-      `/admin/jobs/new?modelId=${model.id}&type=job`
+      `/admin/calendar/new?modelId=${model.id}&type=job`
     ],
-    ["Criar casting", `/admin/jobs/new?modelId=${model.id}&type=casting`],
-    ["Criar ensaio", `/admin/jobs/new?modelId=${model.id}&type=shoot`],
-    ["Colocar em opção", `/admin/jobs/new?modelId=${model.id}&type=option`],
-    ["Bloquear agenda", `/admin/jobs/new?modelId=${model.id}&type=manual_block`]
+    ["Criar casting", `/admin/calendar/new?modelId=${model.id}&type=casting`],
+    ["Criar ensaio", `/admin/calendar/new?modelId=${model.id}&type=shoot`],
+    ["Colocar em opção", `/admin/calendar/new?modelId=${model.id}&type=option`],
+    ["Bloquear agenda", `/admin/calendar/new?modelId=${model.id}&type=manual_block`]
   ] as const;
   const today = currentDateKey();
   const upcomingAgenda = calendarBlocks

@@ -6,6 +6,7 @@ import {
   approveJobForModel,
   createAdminJob,
   jobInputFromFormData,
+  updateAdminJob,
   updateJobStatus
 } from "@/lib/jobs";
 import type { JobStatus } from "@/types/database";
@@ -26,11 +27,30 @@ export async function createAdminJobAction(formData: FormData) {
       params.set("modelId", modelId);
     }
 
-    redirect(`/admin/jobs/new?${params.toString()}`);
+    redirect(`/admin/calendar/new?${params.toString()}`);
   }
 
+  revalidatePath("/admin/calendar");
   revalidatePath("/admin/jobs");
-  redirect(`/admin/jobs/${job.id}`);
+  redirect(`/admin/calendar/${job.id}`);
+}
+
+export async function updateAdminJobAction(jobId: string, formData: FormData) {
+  try {
+    await updateAdminJob(jobId, jobInputFromFormData(formData));
+  } catch (error) {
+    const params = new URLSearchParams({
+      error: readableError(error)
+    });
+
+    redirect(`/admin/calendar/${jobId}/edit?${params.toString()}`);
+  }
+
+  revalidatePath("/admin/calendar");
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/calendar/${jobId}`);
+  revalidatePath(`/admin/jobs/${jobId}`);
+  redirect(`/admin/calendar/${jobId}?notice=updated`);
 }
 
 function readableError(error: unknown) {
@@ -45,26 +65,34 @@ export async function updateJobStatusAction(jobId: string, status: JobStatus) {
   try {
     await updateJobStatus(jobId, status);
   } catch {
+    revalidatePath("/admin/calendar");
     revalidatePath("/admin/jobs");
+    revalidatePath(`/admin/calendar/${jobId}`);
     revalidatePath(`/admin/jobs/${jobId}`);
-    redirect(`/admin/jobs/${jobId}?error=job_status_failed`);
+    redirect(`/admin/calendar/${jobId}?error=job_status_failed`);
   }
 
+  revalidatePath("/admin/calendar");
   revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/calendar/${jobId}`);
   revalidatePath(`/admin/jobs/${jobId}`);
-  redirect(`/admin/jobs/${jobId}?notice=status_${status}`);
+  redirect(`/admin/calendar/${jobId}?notice=status_${status}`);
 }
 
 export async function approveJobForModelAction(jobId: string, modelId: string) {
   try {
     await approveJobForModel(jobId, modelId);
   } catch {
+    revalidatePath("/admin/calendar");
     revalidatePath("/admin/jobs");
+    revalidatePath(`/admin/calendar/${jobId}`);
     revalidatePath(`/admin/jobs/${jobId}`);
-    redirect(`/admin/jobs/${jobId}?error=model_send_failed`);
+    redirect(`/admin/calendar/${jobId}?error=model_send_failed`);
   }
 
+  revalidatePath("/admin/calendar");
   revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/calendar/${jobId}`);
   revalidatePath(`/admin/jobs/${jobId}`);
-  redirect(`/admin/jobs/${jobId}?notice=model_sent`);
+  redirect(`/admin/calendar/${jobId}?notice=model_sent`);
 }
