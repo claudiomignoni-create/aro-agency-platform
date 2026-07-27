@@ -1,4 +1,17 @@
+/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import {
+  AdminEmptyState,
+  AdminFilterActions,
+  AdminFilterBar,
+  AdminPage,
+  AdminPageHeader,
+  AdminSearchField,
+  AdminSection,
+  AdminSelectField,
+  AdminStatusPill,
+  AdminToolbar
+} from "@/components/admin/admin-ui";
 import { createModelMainImageUrls, listModels } from "@/lib/models";
 import type { Model, ModelStatus } from "@/types/database";
 
@@ -19,29 +32,33 @@ const statusOptions: Array<{ label: string; value: ModelStatus | "all" }> = [
   { label: "Arquivado", value: "archived" }
 ];
 
+const publishedOptions = [
+  { label: "Todos", value: "all" },
+  { label: "Publicado", value: "published" },
+  { label: "Não publicado", value: "unpublished" }
+];
+
+const incompleteOptions = [
+  { label: "Todos", value: "all" },
+  { label: "Incompleto", value: "incomplete" },
+  { label: "Completo", value: "complete" }
+];
+
 function normalize(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
 function isRecent(value: string | null | undefined) {
-  if (!value) {
-    return false;
-  }
-
+  if (!value) return false;
   const updatedAt = new Date(value).getTime();
   const fourteenDays = 14 * 24 * 60 * 60 * 1000;
-
   return Number.isFinite(updatedAt) && Date.now() - updatedAt <= fourteenDays;
 }
 
 function isStale(value: string | null | undefined) {
-  if (!value) {
-    return true;
-  }
-
+  if (!value) return true;
   const updatedAt = new Date(value).getTime();
   const sixMonths = 180 * 24 * 60 * 60 * 1000;
-
   return Number.isFinite(updatedAt) && Date.now() - updatedAt > sixMonths;
 }
 
@@ -80,9 +97,7 @@ function getModelIndicators(model: Model) {
 }
 
 function matchesSearch(model: Model, query: string) {
-  if (!query) {
-    return true;
-  }
+  if (!query) return true;
 
   return [
     model.stage_name,
@@ -96,11 +111,7 @@ function matchesSearch(model: Model, query: string) {
 }
 
 function getLocation(model: Model) {
-  return (
-    [model.current_city, model.current_country].filter(Boolean).join(", ") ||
-    model.location ||
-    "-"
-  );
+  return [model.current_city, model.current_country].filter(Boolean).join(", ") || model.location || "—";
 }
 
 function getDisplayName(model: Model) {
@@ -108,26 +119,35 @@ function getDisplayName(model: Model) {
 }
 
 function getInitials(model: Model) {
-  const initials = getDisplayName(model)
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("");
-
-  return initials.toUpperCase() || "AR";
+  return (
+    getDisplayName(model)
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "AR"
+  );
 }
 
-export default async function AdminModelsPage({
-  searchParams
-}: AdminModelsPageProps) {
+function statusLabel(status: ModelStatus) {
+  return statusOptions.find((option) => option.value === status)?.label ?? status;
+}
+
+function statusTone(status: ModelStatus) {
+  if (status === "approved") return "success";
+  if (status === "archived") return "danger";
+  if (status === "pending_review") return "warning";
+  return "neutral";
+}
+
+export default async function AdminModelsPage({ searchParams }: AdminModelsPageProps) {
   const models = await listModels();
   const filters = (await searchParams) ?? {};
   const query = normalize(filters.q);
   const statusFilter = filters.status ?? "all";
   const publishedFilter = filters.published ?? "all";
   const incompleteFilter = filters.incomplete ?? "all";
-
   const modelsWithIndicators = models.map((model) => ({
     indicators: getModelIndicators(model),
     model
@@ -144,122 +164,82 @@ export default async function AdminModelsPage({
       (incompleteFilter === "incomplete" && indicators.incomplete) ||
       (incompleteFilter === "complete" && !indicators.incomplete);
 
-    return (
-      statusMatches &&
-      publishedMatches &&
-      incompleteMatches &&
-      matchesSearch(model, query)
-    );
+    return statusMatches && publishedMatches && incompleteMatches && matchesSearch(model, query);
   });
 
   const counters = {
     approved: models.filter((model) => model.status === "approved").length,
     archived: models.filter((model) => model.status === "archived").length,
     drafts: models.filter((model) => model.status === "draft").length,
-    incomplete: modelsWithIndicators.filter(({ indicators }) => indicators.incomplete)
-      .length,
+    incomplete: modelsWithIndicators.filter(({ indicators }) => indicators.incomplete).length,
     pending: models.filter((model) => model.status === "pending_review").length,
     total: models.length
   };
-  const mainImageUrls = await createModelMainImageUrls(
-    filteredModels.map(({ model }) => model)
-  );
+  const mainImageUrls = await createModelMainImageUrls(filteredModels.map(({ model }) => model));
 
   return (
-    <div className="models-gallery-shell">
-      <section className="models-gallery-header">
-        <div>
-          <span className="eyebrow">Admin</span>
-          <h2>Modelos</h2>
-          <p className="muted">
-            {filteredModels.length} de {models.length} modelos na visualização atual.
-          </p>
-        </div>
-        <div className="models-gallery-header-actions">
-          <details className="models-toolbar-panel">
-            <summary className="button secondary">Busca e filtros</summary>
-            <div className="models-filter-panel">
-              <form className="models-filter-form" method="get">
-                <label>
-                  Busca
-                  <input
-                    defaultValue={filters.q ?? ""}
-                    name="q"
-                    placeholder="Nome, e-mail, cidade ou nacionalidade"
-                  />
-                </label>
-                <label>
-                  Status
-                  <select defaultValue={statusFilter} name="status">
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Publicado
-                  <select defaultValue={publishedFilter} name="published">
-                    <option value="all">Todos</option>
-                    <option value="published">Publicado</option>
-                    <option value="unpublished">Não publicado</option>
-                  </select>
-                </label>
-                <label>
-                  Cadastro
-                  <select defaultValue={incompleteFilter} name="incomplete">
-                    <option value="all">Todos</option>
-                    <option value="incomplete">Incompleto</option>
-                    <option value="complete">Completo</option>
-                  </select>
-                </label>
-                <div className="models-filter-actions">
-                  <button className="button" type="submit">
-                    Aplicar
-                  </button>
-                  <Link className="button secondary" href="/admin/models">
-                    Limpar
-                  </Link>
-                </div>
-              </form>
-              <div className="models-planned-actions">
-                <label>
-                  <input aria-label="Selecionar todos os modelos" type="checkbox" /> Selecionar
-                </label>
-                <button className="button secondary" disabled type="button">
-                  Solicitar atualização
-                </button>
-                <button className="button secondary" disabled type="button">
-                  Exportar seleção
-                </button>
-                <button className="button secondary" disabled type="button">
-                  Criar shortlist
-                </button>
-              </div>
-            </div>
-          </details>
+    <AdminPage className="models-admin-page">
+      <AdminPageHeader
+        actions={<Link className="button" href="/admin/models/new">Criar modelo</Link>}
+        description={`${filteredModels.length} de ${models.length} modelos na visualização atual.`}
+        eyebrow="Admin"
+        title="Modelos"
+      />
 
-          <details className="models-toolbar-panel">
-            <summary className="button secondary">Resumo</summary>
-            <div className="models-summary-chips">
-              <span>Total {counters.total}</span>
-              <span>Aprovados {counters.approved}</span>
-              <span>Pendentes {counters.pending}</span>
-              <span>Drafts {counters.drafts}</span>
-              <span>Arquivados {counters.archived}</span>
-              <span>Incompletos {counters.incomplete}</span>
-            </div>
-          </details>
-
-          <Link className="button" href="/admin/models/new">
-            Criar modelo
-          </Link>
+      <AdminSection className="models-count-section">
+        <div className="models-count-strip">
+          <AdminStatusPill>Total {counters.total}</AdminStatusPill>
+          <AdminStatusPill tone="success">Aprovados {counters.approved}</AdminStatusPill>
+          <AdminStatusPill tone="warning">Pendentes {counters.pending}</AdminStatusPill>
+          <AdminStatusPill>Drafts {counters.drafts}</AdminStatusPill>
+          <AdminStatusPill tone="danger">Arquivados {counters.archived}</AdminStatusPill>
+          <AdminStatusPill tone={counters.incomplete ? "warning" : "success"}>
+            Incompletos {counters.incomplete}
+          </AdminStatusPill>
         </div>
-      </section>
+      </AdminSection>
+
+      <AdminToolbar>
+        <AdminFilterBar>
+          <AdminSearchField
+            defaultValue={filters.q}
+            placeholder="Nome, e-mail, cidade ou nacionalidade"
+          />
+          <AdminSelectField
+            defaultValue={statusFilter}
+            label="Status"
+            name="status"
+            options={statusOptions.map((option) => ({ label: option.label, value: option.value }))}
+          />
+          <AdminSelectField
+            defaultValue={publishedFilter}
+            label="Publicado"
+            name="published"
+            options={publishedOptions}
+          />
+          <AdminSelectField
+            defaultValue={incompleteFilter}
+            label="Cadastro"
+            name="incomplete"
+            options={incompleteOptions}
+          />
+          <AdminFilterActions resetHref="/admin/models" />
+        </AdminFilterBar>
+      </AdminToolbar>
+
+      <AdminSection className="models-planned-section" title="Ações planejadas" meta="Em breve">
+        <div className="models-planned-actions">
+          <label>
+            <input aria-label="Selecionar todos os modelos" type="checkbox" /> Selecionar visualmente
+          </label>
+          <button className="button secondary" disabled type="button">Solicitar atualização</button>
+          <button className="button secondary" disabled type="button">Exportar seleção</button>
+          <button className="button secondary" disabled type="button">Criar shortlist</button>
+        </div>
+      </AdminSection>
 
       <section className="models-gallery-grid" aria-label="Galeria de modelos">
-        {filteredModels.map(({ model }) => (
+        {filteredModels.map(({ indicators, model }) => (
           <article className="model-gallery-card" key={model.id}>
             <input
               aria-label={`Selecionar ${getDisplayName(model)}`}
@@ -273,11 +253,7 @@ export default async function AdminModelsPage({
               href={`/admin/models/${model.id}/edit`}
             >
               {mainImageUrls[model.id] ? (
-                <img
-                  alt={getDisplayName(model)}
-                  className="model-card-image"
-                  src={mainImageUrls[model.id]}
-                />
+                <img alt={getDisplayName(model)} className="model-card-image" src={mainImageUrls[model.id]} />
               ) : (
                 <div className="model-card-placeholder">
                   <span>{getInitials(model)}</span>
@@ -286,7 +262,11 @@ export default async function AdminModelsPage({
               <div className="model-card-caption">
                 <strong>{getDisplayName(model)}</strong>
                 <span>{getLocation(model)}</span>
-                <small>{model.status}</small>
+                <div className="model-card-badges">
+                  <AdminStatusPill tone={statusTone(model.status)}>{statusLabel(model.status)}</AdminStatusPill>
+                  {indicators.incomplete ? <AdminStatusPill tone="warning">Incompleto</AdminStatusPill> : null}
+                  {indicators.recentlyUpdated ? <AdminStatusPill tone="success">Atualizado</AdminStatusPill> : null}
+                </div>
               </div>
             </Link>
           </article>
@@ -294,246 +274,132 @@ export default async function AdminModelsPage({
       </section>
 
       {filteredModels.length === 0 ? (
-        <section className="panel">
-          <p>Nenhum modelo encontrado com os filtros atuais.</p>
-        </section>
+        <AdminEmptyState
+          description="Ajuste os filtros ou cadastre um novo modelo para continuar."
+          title="Nenhum modelo encontrado."
+        />
       ) : null}
 
       <style>{`
-        .models-gallery-shell {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          max-width: 100%;
-          min-width: 0;
+        .models-count-section {
+          padding: 9px 10px;
         }
 
-        .models-gallery-header {
-          align-items: flex-start;
-          background:
-            linear-gradient(180deg, rgba(10, 30, 55, 0.88), rgba(13, 38, 68, 0.72)),
-            color-mix(in srgb, #102a4a 86%, var(--panel));
-          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
-          border-radius: 8px;
-          display: flex;
-          gap: 1rem;
-          justify-content: space-between;
-          max-width: 100%;
-          min-width: 0;
-          padding: 1rem;
-        }
-
-        .models-gallery-header h2 {
-          font-size: 1.35rem;
-          line-height: 1.2;
-          margin: 0;
-        }
-
-        .models-gallery-header p {
-          font-size: 0.875rem;
-          line-height: 1.45;
-          margin: 0.35rem 0 0;
-        }
-
-        .models-gallery-header-actions,
-        .models-filter-actions,
+        .models-count-strip,
         .models-planned-actions,
-        .models-summary-chips {
-          align-items: center;
+        .model-card-badges {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.5rem;
+          gap: 7px;
+          align-items: center;
         }
 
-        .models-toolbar-panel {
-          max-width: 100%;
-          min-width: 0;
-        }
-
-        .models-toolbar-panel summary {
-          list-style: none;
-        }
-
-        .models-toolbar-panel summary::-webkit-details-marker {
-          display: none;
-        }
-
-        .models-filter-panel,
-        .models-summary-chips {
-          background:
-            linear-gradient(180deg, rgba(10, 30, 55, 0.94), rgba(13, 38, 68, 0.84)),
-            color-mix(in srgb, #102a4a 86%, var(--panel));
-          border: 1px solid color-mix(in srgb, #6eb6ff 20%, transparent);
-          border-radius: 8px;
-          box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
-          display: grid;
-          gap: 0.85rem;
-          margin-top: 0.65rem;
-          max-width: calc(100vw - 2rem);
-          min-width: min(40rem, calc(100vw - 2rem));
-          padding: 1rem;
-          z-index: 10;
-        }
-
-        .models-filter-form {
-          display: grid;
-          gap: 0.75rem;
-          grid-template-columns: repeat(4, minmax(8rem, 1fr));
-        }
-
-        .models-filter-form label {
-          color: color-mix(in srgb, #aacfe8 88%, white);
-          font-size: 0.82rem;
-          font-weight: 650;
-          line-height: 1.35;
-          min-width: 0;
-        }
-
-        .models-filter-form input,
-        .models-filter-form select {
-          margin-top: 0.3rem;
-        }
-
-        .models-filter-actions {
-          align-self: end;
-          grid-column: 1 / -1;
-          justify-content: flex-end;
-        }
-
-        .models-filter-actions .button,
-        .models-planned-actions .button {
-          font-size: 0.72rem;
-          min-height: 2rem;
-          padding: 0.35rem 0.65rem;
-        }
-
-        .models-planned-actions {
-          border-top: 1px solid color-mix(in srgb, #86c8ff 16%, var(--line));
-          font-size: 0.72rem;
-          padding-top: 0.75rem;
+        .models-planned-section {
+          padding: 10px;
         }
 
         .models-planned-actions label {
-          align-items: center;
           display: inline-flex;
-          gap: 0.35rem;
-          white-space: nowrap;
-        }
-
-        .models-summary-chips {
-          display: flex;
-          min-width: min(34rem, calc(100vw - 2rem));
-        }
-
-        .models-summary-chips span {
-          border: 1px solid color-mix(in srgb, #86c8ff 20%, transparent);
-          border-radius: 999px;
-          font-size: 0.72rem;
-          line-height: 1;
-          padding: 0.35rem 0.55rem;
-          white-space: nowrap;
+          align-items: center;
+          gap: 7px;
+          color: var(--admin-muted);
+          font-size: var(--admin-font-label);
+          font-weight: 800;
         }
 
         .models-gallery-grid {
           display: grid;
-          gap: 0.85rem;
+          gap: 10px;
           grid-template-columns: repeat(5, minmax(0, 1fr));
           min-width: 0;
         }
 
         .model-gallery-card {
           aspect-ratio: 2 / 3;
-          border-radius: 8px;
           overflow: hidden;
           position: relative;
+          border: 1px solid rgba(153, 202, 255, 0.18);
+          border-radius: 10px;
+          background: rgba(2, 18, 50, 0.38);
         }
 
         .model-card-link {
-          color: inherit;
           display: block;
           height: 100%;
-          position: relative;
+          color: inherit;
           text-decoration: none;
         }
 
         .model-card-placeholder {
-          align-items: center;
-          background:
-            linear-gradient(145deg, color-mix(in srgb, var(--panel) 70%, transparent), color-mix(in srgb, var(--muted) 14%, var(--panel))),
-            radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--foreground) 16%, transparent), transparent 34%);
-          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
-          border-radius: 8px;
           display: flex;
           height: 100%;
+          align-items: center;
           justify-content: center;
-        }
-
-        .model-card-image {
-          border: 1px solid color-mix(in srgb, #86c8ff 18%, var(--line));
-          border-radius: 8px;
-          display: block;
-          height: 100%;
-          object-fit: cover;
-          width: 100%;
+          background:
+            radial-gradient(circle at 30% 18%, rgba(105, 180, 255, 0.22), transparent 36%),
+            linear-gradient(145deg, rgba(8, 38, 87, 0.76), rgba(3, 18, 47, 0.92));
         }
 
         .model-card-placeholder span {
-          align-items: center;
-          backdrop-filter: blur(14px);
-          background: color-mix(in srgb, var(--panel) 76%, transparent);
-          border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-          border-radius: 999px;
           display: inline-flex;
-          font-size: clamp(1.6rem, 4vw, 2.6rem);
-          font-weight: 800;
-          height: 5rem;
+          width: 4.2rem;
+          height: 4.2rem;
+          align-items: center;
           justify-content: center;
-          line-height: 1;
-          width: 5rem;
+          border: 1px solid var(--admin-border);
+          border-radius: 999px;
+          background: rgba(2, 18, 50, 0.42);
+          font-size: 1.5rem;
+          font-weight: 800;
+          backdrop-filter: blur(14px);
+        }
+
+        .model-card-image {
+          display: block;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         .model-card-caption {
-          background: linear-gradient(to top, rgba(0, 0, 0, 0.58), transparent);
-          bottom: 0;
-          color: #fff;
-          display: grid;
-          gap: 0.2rem;
-          left: 0;
-          padding: 3.25rem 0.8rem 0.8rem;
           position: absolute;
           right: 0;
+          bottom: 0;
+          left: 0;
+          display: grid;
+          gap: 5px;
+          padding: 3rem 10px 10px;
+          background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+          color: #fff;
         }
 
         .model-card-caption strong {
-          font-size: 1rem;
-          line-height: 1.15;
           overflow-wrap: anywhere;
+          font-size: 13px;
+          line-height: 1.15;
         }
 
         .model-card-caption span {
-          font-size: 0.875rem;
-          line-height: 1.25;
-          opacity: 0.9;
           overflow: hidden;
+          color: rgba(255, 255, 255, 0.82);
+          font-size: 11px;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .model-card-caption small {
-          border: 1px solid rgba(255, 255, 255, 0.46);
-          border-radius: 999px;
-          font-size: 0.68rem;
-          line-height: 1;
-          opacity: 0.92;
-          padding: 0.28rem 0.45rem;
-          width: fit-content;
+        .model-card-badges .admin-status-pill {
+          border-color: rgba(255, 255, 255, 0.26);
+          background: rgba(2, 18, 50, 0.24);
+          color: rgba(255, 255, 255, 0.88);
         }
 
         .model-card-checkbox {
-          left: 0.65rem;
           position: absolute;
-          top: 0.65rem;
+          top: 8px;
+          left: 8px;
           z-index: 3;
+          width: 16px;
+          height: 16px;
         }
 
         @media (max-width: 1180px) {
@@ -542,58 +408,9 @@ export default async function AdminModelsPage({
           }
         }
 
-        @media (max-width: 820px) {
-          .models-gallery-header {
-            flex-direction: column;
-          }
-
-          .models-gallery-header-actions {
-            align-items: flex-start;
-            width: 100%;
-          }
-
-          .models-filter-form {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
+        @media (max-width: 760px) {
           .models-gallery-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 520px) {
-          .models-gallery-grid {
-            gap: 0.7rem;
-          }
-
-          .model-card-caption {
-            padding: 2.75rem 0.65rem 0.65rem;
-          }
-
-          .model-card-caption strong {
-            font-size: 0.92rem;
-          }
-
-          .model-card-caption span {
-            font-size: 0.78rem;
-          }
-
-          .models-filter-panel,
-          .models-filter-form {
-            grid-template-columns: 1fr;
-            min-width: min(100%, calc(100vw - 2rem));
-            width: 100%;
-          }
-
-          .models-filter-actions {
-            align-items: stretch;
-            flex-direction: column;
-            justify-content: flex-start;
-          }
-
-          .models-planned-actions {
-            align-items: stretch;
-            flex-direction: column;
           }
         }
 
@@ -603,6 +420,6 @@ export default async function AdminModelsPage({
           }
         }
       `}</style>
-    </div>
+    </AdminPage>
   );
 }

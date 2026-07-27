@@ -1,5 +1,14 @@
 import Link from "next/link";
 import {
+  AdminDataTable,
+  AdminPage,
+  AdminPageHeader,
+  AdminSection,
+  AdminSelectField,
+  AdminStat,
+  AdminStatusPill
+} from "@/components/admin/admin-ui";
+import {
   categoryLabel,
   entryTypeLabel,
   formatMoney,
@@ -24,140 +33,163 @@ export default async function ModelStatementPage({ params, searchParams }: Model
   const modelLabel = statement.model?.stage_name || statement.model?.display_name || "Modelo";
 
   return (
-    <div className="stack">
-      <section className="panel stack">
-        <div className="actions spread">
-          <div>
-            <span className="eyebrow">Conta do modelo</span>
-            <h2>{modelLabel}</h2>
-          </div>
-          <div className="actions">
+    <AdminPage className="accounting-model-page">
+      <AdminPageHeader
+        actions={
+          <>
             <Link className="button secondary" href={`/admin/accounting/models/${id}/pdf`} target="_blank">
-              Open PDF
+              Abrir PDF
             </Link>
             <Link className="button secondary" href={`/admin/accounting/models/${id}/pdf?download=1`}>
-              Download PDF
+              Baixar PDF
             </Link>
             <Link className="button secondary" href="/admin/accounting/model-accounts">Voltar</Link>
-          </div>
-        </div>
-        <div className="grid">
-          <article>
-            <span className="eyebrow">Disponível para pagar</span>
-            <h3>{formatMoney(statement.summary?.available, statement.currency)}</h3>
-          </article>
-          <article>
-            <span className="eyebrow">Pendente de clientes</span>
-            <h3>{formatMoney(statement.summary?.pendingClient, statement.currency)}</h3>
-          </article>
-          <article>
-            <span className="eyebrow">Pagamentos realizados</span>
-            <h3>{formatMoney(statement.summary?.payouts, statement.currency)}</h3>
-          </article>
-        </div>
+          </>
+        }
+        description={`Extrato individual em ${statement.currency}, sem conversão automática de moedas.`}
+        eyebrow="Conta do modelo"
+        title={modelLabel}
+      />
+
+      <section className="admin-stat-grid model-accounting-stats">
+        <AdminStat label="Disponível para pagar" value={formatMoney(statement.summary?.available, statement.currency)} />
+        <AdminStat label="Pendente de clientes" value={formatMoney(statement.summary?.pendingClient, statement.currency)} />
+        <AdminStat label="Pagamentos realizados" value={formatMoney(statement.summary?.payouts, statement.currency)} />
       </section>
 
-      <section className="panel stack">
-        <h3>Registrar pagamento ou ajuste</h3>
-        <form action={createModelAccountingEntry} className="grid">
+      <AdminSection title="Registrar pagamento ou ajuste">
+        <form action={createModelAccountingEntry} className="accounting-entry-form">
           <input name="model_id" type="hidden" value={id} />
-          <label>
-            Tipo
-            <select name="entry_type" required>
-              <option value="model_payout">Pagamento ao modelo</option>
-              <option value="credit_adjustment">Ajuste de crédito</option>
-              <option value="debit_adjustment">Ajuste de débito</option>
-            </select>
-          </label>
-          <label>
-            Título
+          <AdminSelectField
+            label="Tipo"
+            name="entry_type"
+            options={[
+              { label: "Pagamento ao modelo", value: "model_payout" },
+              { label: "Ajuste de crédito", value: "credit_adjustment" },
+              { label: "Ajuste de débito", value: "debit_adjustment" }
+            ]}
+          />
+          <label className="admin-field">
+            <span>Título</span>
             <input name="title" required />
           </label>
-          <label>
-            Valor
+          <label className="admin-field">
+            <span>Valor</span>
             <input name="amount" required />
           </label>
-          <label>
-            Moeda
-            <select defaultValue={statement.currency} name="currency">
-              <option>BRL</option>
-              <option>USD</option>
-              <option>EUR</option>
-            </select>
-          </label>
-          <label>
-            Data
+          <AdminSelectField
+            defaultValue={statement.currency}
+            label="Moeda"
+            name="currency"
+            options={[
+              { label: "BRL", value: "BRL" },
+              { label: "USD", value: "USD" },
+              { label: "EUR", value: "EUR" }
+            ]}
+          />
+          <label className="admin-field">
+            <span>Data</span>
             <input name="occurred_on" required type="date" />
           </label>
-          <label>
-            Referência
+          <label className="admin-field">
+            <span>Referência</span>
             <input name="payment_reference" />
           </label>
-          <label className="span-2">
-            Justificativa / observação
+          <label className="admin-field span-2">
+            <span>Justificativa / observação</span>
             <textarea name="description" required />
           </label>
           <button className="button" type="submit">Registrar</button>
         </form>
-      </section>
+      </AdminSection>
 
-      <section className="panel stack">
-        <h3>Trabalhos pagos e pendentes</h3>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Trabalho</th>
-                <th>Cliente</th>
-                <th>Cliente deve</th>
-                <th>Modelo líquido</th>
+      <AdminSection title="Trabalhos pagos e pendentes" meta={`${statement.jobs.length} registro(s)`}>
+        <AdminDataTable>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Trabalho</th>
+              <th>Cliente</th>
+              <th>Cliente deve</th>
+              <th>Modelo líquido</th>
+            </tr>
+          </thead>
+          <tbody>
+            {statement.jobs.map((job) => (
+              <tr key={job.id}>
+                <td data-label="Data">{job.job_date}</td>
+                <td data-label="Trabalho">{financialJobTitle(job)}</td>
+                <td data-label="Cliente">{job.client?.company_name || "—"}</td>
+                <td data-label="Cliente deve">{formatMoney(job.client_amount_due, job.currency)}</td>
+                <td data-label="Modelo líquido">{formatMoney(job.model_net_amount, job.currency)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {statement.jobs.map((job) => (
-                <tr key={job.id}>
-                  <td>{job.job_date}</td>
-                  <td>{financialJobTitle(job)}</td>
-                  <td>{job.client?.company_name || "-"}</td>
-                  <td>{formatMoney(job.client_amount_due, job.currency)}</td>
-                  <td>{formatMoney(job.model_net_amount, job.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            ))}
+          </tbody>
+        </AdminDataTable>
+      </AdminSection>
 
-      <section className="panel stack">
-        <h3>Despesas, pagamentos e ajustes</h3>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Tipo</th>
-                <th>Categoria</th>
-                <th>Título</th>
-                <th>Valor</th>
-                <th>Status</th>
+      <AdminSection title="Despesas, pagamentos e ajustes" meta={`${statement.entries.length} lançamento(s)`}>
+        <AdminDataTable>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th>Categoria</th>
+              <th>Título</th>
+              <th>Valor</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {statement.entries.map((entry) => (
+              <tr key={entry.id}>
+                <td data-label="Data">{entry.occurred_on}</td>
+                <td data-label="Tipo">{entryTypeLabel(entry.entry_type)}</td>
+                <td data-label="Categoria">{categoryLabel(entry.category, entry.custom_category_label)}</td>
+                <td data-label="Título">{entry.title}</td>
+                <td data-label="Valor">{formatMoney(entry.amount, entry.currency)}</td>
+                <td data-label="Status">
+                  <AdminStatusPill tone={entry.status === "posted" ? "success" : entry.status === "void" ? "danger" : "warning"}>
+                    {entry.status}
+                  </AdminStatusPill>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {statement.entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td>{entry.occurred_on}</td>
-                  <td>{entryTypeLabel(entry.entry_type)}</td>
-                  <td>{categoryLabel(entry.category, entry.custom_category_label)}</td>
-                  <td>{entry.title}</td>
-                  <td>{formatMoney(entry.amount, entry.currency)}</td>
-                  <td><span className="status">{entry.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+            ))}
+          </tbody>
+        </AdminDataTable>
+      </AdminSection>
+
+      <style>{`
+        .model-accounting-stats {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .accounting-entry-form {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .accounting-entry-form .span-2 {
+          grid-column: span 2;
+        }
+
+        .accounting-entry-form button {
+          align-self: end;
+          min-height: 36px;
+        }
+
+        @media (max-width: 760px) {
+          .model-accounting-stats,
+          .accounting-entry-form {
+            grid-template-columns: 1fr;
+          }
+
+          .accounting-entry-form .span-2 {
+            grid-column: auto;
+          }
+        }
+      `}</style>
+    </AdminPage>
   );
 }
