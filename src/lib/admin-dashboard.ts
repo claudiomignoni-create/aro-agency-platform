@@ -21,7 +21,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   flightStatusLabel,
   getTravelSchemaStatus,
-  isMissingTravelSchemaError,
   listTravelTrips,
   tripStatusLabel
 } from "@/lib/travel";
@@ -214,7 +213,6 @@ export async function getDashboardCommandCenterData(monthKey = currentMonthKey()
   const supabase = await createClient();
   const today = currentDateKey();
   const nowIso = new Date().toISOString();
-  const in90Days = new Date(Date.now() + 90 * 86400000).toISOString();
   const last30Days = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const data = emptyDashboardData(monthKey);
 

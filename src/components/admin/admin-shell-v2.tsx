@@ -9,12 +9,10 @@ import {
   CalendarDays,
   ChevronDown,
   Command,
-  Globe2,
   Landmark,
   LayoutDashboard,
   Menu,
   MessageCircle,
-  Moon,
   Plane,
   Search,
   Settings,
@@ -76,18 +74,6 @@ const typeLabels: Record<SearchResult["type"], string> = {
   flight: "Voo",
   job: "Job",
   model: "Modelo",
-  travel: "Viagem"
-};
-
-const alertLabels: Record<AlertItem["type"], string> = {
-  casting: "Casting",
-  contract: "Contrato",
-  document: "Documento",
-  flight: "Voo",
-  job: "Job",
-  message: "Mensagem",
-  model_update: "Atualizacao",
-  payment: "Pagamento",
   travel: "Viagem"
 };
 
