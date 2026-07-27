@@ -1,0 +1,159 @@
+name: AROLAB Manual Database Backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Create logical database backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate secret
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "SUPABASE_DB_URL is not configured."
+            exit 1
+          fi
+
+          echo "Database connection secret is configured."
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Show CLI version
+        run: supabase --version
+
+      - name: Prepare backup directory
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BACKUP_TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
+          BACKUP_ID="AROLAB-${BACKUP_TIMESTAMP}"
+          BACKUP_DIR="${RUNNER_TEMP}/${BACKUP_ID}"
+
+          mkdir -p "${BACKUP_DIR}"
+
+          echo "timestamp=${BACKUP_TIMESTAMP}" >> "$GITHUB_OUTPUT"
+          echo "backup_id=${BACKUP_ID}" >> "$GITHUB_OUTPUT"
+          echo "backup_dir=${BACKUP_DIR}" >> "$GITHUB_OUTPUT"
+
+          echo "Backup identifier: ${BACKUP_ID}"
+
+      - name: Backup database roles
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          supabase db dump \
+            --db-url "${SUPABASE_DB_URL}" \
+            --role-only \
+            --file "${{ steps.backup.outputs.backup_dir }}/roles.sql"
+
+      - name: Backup database schema
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          supabase db dump \
+            --db-url "${SUPABASE_DB_URL}" \
+            --file "${{ steps.backup.outputs.backup_dir }}/schema.sql"
+
+      - name: Backup database data
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          supabase db dump \
+            --db-url "${SUPABASE_DB_URL}" \
+            --data-only \
+            --use-copy \
+            --exclude "storage.buckets_vectors" \
+            --exclude "storage.vector_indexes" \
+            --file "${{ steps.backup.outputs.backup_dir }}/data.sql"
+
+      - name: Validate backup files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BACKUP_DIR="${{ steps.backup.outputs.backup_dir }}"
+
+          test -s "${BACKUP_DIR}/roles.sql"
+          test -s "${BACKUP_DIR}/schema.sql"
+          test -s "${BACKUP_DIR}/data.sql"
+
+          find "${BACKUP_DIR}" \
+            -maxdepth 1 \
+            -type f \
+            -printf "%f %s bytes\n" \
+            | sort
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BACKUP_DIR="${{ steps.backup.outputs.backup_dir }}"
+
+          cd "${BACKUP_DIR}"
+
+          sha256sum \
+            roles.sql \
+            schema.sql \
+            data.sql \
+            > SHA256SUMS.txt
+
+          test -s SHA256SUMS.txt
+
+      - name: Create safe backup manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BACKUP_DIR="${{ steps.backup.outputs.backup_dir }}"
+
+          {
+            echo "Backup ID: ${{ steps.backup.outputs.backup_id }}"
+            echo "Project: aro-agency-platform"
+            echo "Created at UTC: ${{ steps.backup.outputs.timestamp }}"
+            echo "Tool: Supabase CLI"
+            echo "Git commit: ${GITHUB_SHA}"
+            echo "Git branch: ${GITHUB_REF_NAME}"
+            echo
+            echo "Files:"
+            find "${BACKUP_DIR}" \
+              -maxdepth 1 \
+              -type f \
+              -printf "%f %s bytes\n" \
+              | sort
+            echo
+            echo "Important:"
+            echo "This logical database backup does not include physical files stored in Supabase Storage."
+          } > "${BACKUP_DIR}/BACKUP-MANIFEST.txt"
+
+      - name: Upload private backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.backup.outputs.backup_id }}
+          path: ${{ steps.backup.outputs.backup_dir }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
