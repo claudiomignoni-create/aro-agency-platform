@@ -61,7 +61,17 @@ export type BookingStatus =
   | "completed"
   | "canceled";
 
-export type JobType = "job" | "casting" | "shoot" | "option" | "manual_block";
+export type JobType =
+  | "job"
+  | "casting"
+  | "shoot"
+  | "option"
+  | "fitting"
+  | "travel"
+  | "meeting"
+  | "agency_event"
+  | "manual_block"
+  | "other";
 
 export type JobStatus =
   | "draft"
