@@ -57,6 +57,70 @@ test("communication migration creates token hashes, queue states and RLS", async
   assert.doesNotMatch(sql, /TRUNCATE/i);
 });
 
+test("public presentation access uses restricted security definer RPCs", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const publicPage = await readFile("src/app/p/[token]/page.tsx", "utf8");
+  const data = await readFile("src/lib/communications/data.ts", "utf8");
+
+  assert.match(sql, /security definer/);
+  assert.match(sql, /set search_path = public/);
+  assert.match(sql, /get_public_presentation_by_token/);
+  assert.match(sql, /status in \('published', 'sent'\)/);
+  assert.match(sql, /expires_at is null or p\.expires_at > now\(\)/);
+  assert.match(sql, /grant execute on function public\.get_public_presentation_by_token\(text\) to anon, authenticated/);
+  assert.doesNotMatch(publicPage, /\.from\("presentations"\)/);
+  assert.match(data, /\.rpc\("get_public_presentation_by_token"/);
+});
+
+test("public model update access avoids direct table reads and supports draft submit RPCs", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const updatePage = await readFile("src/app/update/[token]/page.tsx", "utf8");
+  const data = await readFile("src/lib/communications/data.ts", "utf8");
+
+  assert.match(sql, /get_public_model_update_request_by_token/);
+  assert.match(sql, /save_model_update_request_draft/);
+  assert.match(sql, /submit_model_update_request/);
+  assert.match(sql, /r\.status not in \('expired', 'canceled', 'applied'\)/);
+  assert.match(sql, /r\.expires_at > now\(\)/);
+  assert.doesNotMatch(updatePage, /\.from\("model_update_requests"\)/);
+  assert.match(data, /\.rpc\("save_model_update_request_draft"/);
+  assert.match(data, /\.rpc\("submit_model_update_request"/);
+});
+
+test("communication migration preserves upgrade compatibility and history", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+
+  assert.match(sql, /alter table public\.model_update_requests\s+add column if not exists title/);
+  assert.match(sql, /presentation_recipients_outbound_email_fk/);
+  assert.match(sql, /outbound_emails_model_update_request_fk/);
+  assert.match(sql, /on delete set null/);
+  assert.match(sql, /model_update_audit_events/);
+  assert.match(sql, /set_model_update_submissions_updated_at/);
+  assert.match(sql, /model_update_reminders_status_remind_at_idx/);
+});
+
+test("Google refresh flow preserves refresh token and safe send mode", async () => {
+  const callback = await readFile("src/app/api/integrations/google/callback/route.ts", "utf8");
+  const googleServer = await readFile("src/lib/communications/google-server.ts", "utf8");
+  const queue = await readFile("src/app/api/communications/process-email-queue/route.ts", "utf8");
+
+  assert.match(callback, /existingConnection\?\.encrypted_refresh_token/);
+  assert.match(callback, /revokeGoogleToken\(token\.access_token\)/);
+  assert.match(googleServer, /shouldRefreshGoogleToken/);
+  assert.match(googleServer, /invalid_grant/i);
+  assert.match(googleServer, /EMAIL_EXTERNAL_SEND_ENABLED/);
+  assert.match(queue, /COMMUNICATIONS_CRON_SECRET/);
+  assert.match(queue, /retry_pending/);
+});
+
+test("admin email test uses ARO dialog instead of window confirm", async () => {
+  const dialog = await readFile("src/app/admin/settings/google-test-email-form.tsx", "utf8");
+
+  assert.match(dialog, /role="dialog"/);
+  assert.match(dialog, /Escape/);
+  assert.doesNotMatch(dialog, /window\.confirm/);
+});
+
 test("Google documentation does not contain committed secrets", async () => {
   const doc = await readFile("docs/ARO_COMMUNICATIONS_GOOGLE_WORKSPACE.md", "utf8");
 
