@@ -51,6 +51,7 @@ export type FlightSegmentInput = {
   arrival_country: string | null;
   arrival_iata: string | null;
   arrival_terminal: string | null;
+  arrival_timezone: string | null;
   baggage: string | null;
   cabin_class: string | null;
   check_in_url: string | null;
