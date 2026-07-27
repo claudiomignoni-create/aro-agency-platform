@@ -78,7 +78,7 @@ export const adminNavItems = [
   { href: "/admin/models", label: "Modelos" },
   { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
-  { href: "/admin/jobs", label: "Trabalhos" }
+  { href: "/admin/calendar", label: "Agenda" }
 ];
 
 export const modelNavItems = [
@@ -92,5 +92,5 @@ export const clientNavItems = [
   { href: "/client", label: "Dashboard" },
   { href: "/client/models", label: "Buscar modelos" },
   { href: "/client/shortlists", label: "Shortlists" },
-  { href: "/client/jobs", label: "Trabalhos" }
+  { href: "/client/jobs", label: "Agenda" }
 ];

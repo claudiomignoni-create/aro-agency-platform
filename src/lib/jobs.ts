@@ -68,6 +68,7 @@ export type JobInput = {
   project_name: string | null;
   quote_requested: boolean;
   start_time: string;
+  status: JobStatus;
   styling_notes: string | null;
   transport_notes: string | null;
   type: JobType;
@@ -80,7 +81,11 @@ export type JobInput = {
 export type JobFilters = {
   clientId?: string;
   date?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
   modelId?: string;
+  q?: string;
   status?: string;
   type?: string;
 };
@@ -207,12 +212,90 @@ const jobStatusToBlockStatus: Record<JobStatus, CalendarBlockStatus> = {
   waiting_model: "waiting_model"
 };
 
+export const jobTypeOptions: Array<{ label: string; value: JobType }> = [
+  { label: "Trabalho", value: "job" },
+  { label: "Casting", value: "casting" },
+  { label: "Opção", value: "option" },
+  { label: "Fitting", value: "fitting" },
+  { label: "Ensaio / Test Shoot", value: "shoot" },
+  { label: "Viagem", value: "travel" },
+  { label: "Reunião", value: "meeting" },
+  { label: "Evento da agência", value: "agency_event" },
+  { label: "Bloqueio de agenda", value: "manual_block" },
+  { label: "Outro", value: "other" }
+];
+
+export const jobStatusOptions: Array<{ label: string; value: JobStatus }> = [
+  { label: "Rascunho", value: "draft" },
+  { label: "Solicitado pelo cliente", value: "client_requested" },
+  { label: "Em revisão do booker", value: "booker_review" },
+  { label: "Orçamento solicitado", value: "quote_requested" },
+  { label: "Aprovado pela agência", value: "agency_approved" },
+  { label: "Aguardando modelo", value: "waiting_model" },
+  { label: "Aceito pelo modelo", value: "model_accepted" },
+  { label: "Confirmado", value: "confirmed" },
+  { label: "Recusado", value: "declined" },
+  { label: "Cancelado", value: "canceled" },
+  { label: "Finalizado", value: "completed" }
+];
+
+export const jobModelStatusOptions: Array<{
+  label: string;
+  value: JobModelStatus;
+}> = [
+  { label: "Em revisão", value: "booker_review" },
+  { label: "Opção", value: "option" },
+  { label: "Aprovado pela agência", value: "agency_approved" },
+  { label: "Aguardando modelo", value: "waiting_model" },
+  { label: "Aceito", value: "accepted" },
+  { label: "Recusado", value: "declined" },
+  { label: "Confirmado", value: "confirmed" },
+  { label: "Cancelado", value: "canceled" },
+  { label: "Finalizado", value: "completed" }
+];
+
+const validJobTypes = new Set<JobType>(jobTypeOptions.map((item) => item.value));
+const validJobStatuses = new Set<JobStatus>(
+  jobStatusOptions.map((item) => item.value)
+);
+
 const typeLabels: Record<JobType, string> = {
+  agency_event: "Evento da agência",
   casting: "Casting",
+  fitting: "Fitting",
   job: "Trabalho",
+  meeting: "Reunião",
   manual_block: "Bloqueio de agenda",
+  other: "Outro",
   option: "Opção",
-  shoot: "Ensaio fotográfico"
+  shoot: "Ensaio / Test Shoot",
+  travel: "Viagem"
+};
+
+const statusLabels: Record<JobStatus, string> = {
+  agency_approved: "Aprovado pela agência",
+  booker_review: "Em revisão do booker",
+  canceled: "Cancelado",
+  client_requested: "Solicitado pelo cliente",
+  completed: "Finalizado",
+  confirmed: "Confirmado",
+  declined: "Recusado",
+  draft: "Rascunho",
+  model_accepted: "Aceito pelo modelo",
+  quote_requested: "Orçamento solicitado",
+  waiting_model: "Aguardando modelo"
+};
+
+const modelStatusLabels: Record<JobModelStatus, string> = {
+  agency_approved: "Aprovado pela agência",
+  booker_review: "Em revisão",
+  canceled: "Cancelado",
+  completed: "Finalizado",
+  confirmed: "Confirmado",
+  declined: "Recusado",
+  accepted: "Aceito",
+  option: "Opção",
+  waiting_model: "Aguardando modelo"
 };
 
 const missingAgendaSchemaMessage =
@@ -220,6 +303,25 @@ const missingAgendaSchemaMessage =
 
 export function jobTypeLabel(type: JobType) {
   return typeLabels[type] ?? type;
+}
+
+export function jobStatusLabel(status: JobStatus) {
+  return statusLabels[status] ?? status;
+}
+
+export function jobModelStatusLabel(status: JobModelStatus) {
+  return modelStatusLabels[status] ?? status;
+}
+
+export function safeJobType(value: string | null | undefined): JobType {
+  return validJobTypes.has(value as JobType) ? (value as JobType) : "job";
+}
+
+export function safeJobStatus(
+  value: string | null | undefined,
+  fallback: JobStatus = "booker_review"
+): JobStatus {
+  return validJobStatuses.has(value as JobStatus) ? (value as JobStatus) : fallback;
 }
 
 export function jobTitle(job: Pick<Job, "brand_name" | "project_name" | "type">) {
@@ -254,7 +356,8 @@ export function splitCsv(value: string | null | undefined) {
 }
 
 export function jobInputFromFormData(formData: FormData): JobInput {
-  const type = readString(formData, "type") as JobType;
+  const type = safeJobType(readString(formData, "type"));
+  const status = safeJobStatus(readString(formData, "status"));
   const quoteRequested = formData.get("quote_requested") === "on";
   const clientBudget = readNumber(formData, "client_budget");
   const date = readRequiredDate(formData, "date");
@@ -284,9 +387,10 @@ export function jobInputFromFormData(formData: FormData): JobInput {
     project_name: readNullableString(formData, "project_name"),
     quote_requested: quoteRequested,
     start_time: readString(formData, "start_time") || "09:00",
+    status,
     styling_notes: readNullableString(formData, "styling_notes"),
     transport_notes: readNullableString(formData, "transport_notes"),
-    type: type || "job",
+    type,
     usage_countries: splitCsv(readNullableString(formData, "usage_countries")),
     usage_description: readNullableString(formData, "usage_description"),
     usage_scope: readNullableString(formData, "usage_scope"),
@@ -375,21 +479,33 @@ export async function listAdminJobs(filters: JobFilters = {}) {
     query = query.eq("client_id", filters.clientId);
   }
 
-  if (filters.status) {
+  if (validJobStatuses.has(filters.status as JobStatus)) {
     query = query.eq("status", filters.status);
   }
 
-  if (filters.type) {
+  if (validJobTypes.has(filters.type as JobType)) {
     query = query.eq("type", filters.type);
   }
 
   const filterDate = isValidDateKey(filters.date) ? String(filters.date) : null;
+  const dateFrom = isValidDateKey(filters.dateFrom) ? String(filters.dateFrom) : null;
+  const dateTo = isValidDateKey(filters.dateTo) ? String(filters.dateTo) : null;
 
   if (filterDate) {
     query = query
       .gte("start_at", combineDateAndTime(filterDate, "00:00"))
       .lt("start_at", combineDateAndTime(addDays(filterDate, 1), "00:00"));
+  } else {
+    if (dateFrom) {
+      query = query.gte("start_at", combineDateAndTime(dateFrom, "00:00"));
+    }
+
+    if (dateTo) {
+      query = query.lt("start_at", combineDateAndTime(addDays(dateTo, 1), "00:00"));
+    }
   }
+
+  query = query.limit(filters.limit ?? 250);
 
   const { data, error } = await query;
 
@@ -401,15 +517,38 @@ export async function listAdminJobs(filters: JobFilters = {}) {
     throw error;
   }
 
-  const jobs = ((data ?? []) as unknown[]).map(normalizeJob);
+  let jobs = ((data ?? []) as unknown[]).map(normalizeJob);
 
-  if (!filters.modelId) {
-    return jobs;
+  if (filters.modelId) {
+    jobs = jobs.filter((job) =>
+      job.job_models.some((jobModel) => jobModel.model_id === filters.modelId)
+    );
   }
 
-  return jobs.filter((job) =>
-    job.job_models.some((jobModel) => jobModel.model_id === filters.modelId)
-  );
+  const search = filters.q?.trim().toLowerCase();
+
+  if (search) {
+    jobs = jobs.filter((job) => {
+      const searchable = [
+        job.project_name,
+        job.brand_name,
+        job.brief,
+        job.location_name,
+        job.city,
+        job.country,
+        job.client?.company_name,
+        job.client?.contact_name,
+        ...job.job_models.map((jobModel) => modelDisplayName(jobModel.model))
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(search);
+    });
+  }
+
+  return jobs;
 }
 
 export async function getAdminJob(id: string) {
@@ -619,12 +758,39 @@ export async function listAvailableModelsByDate(date: string) {
   return models.filter((model) => !blockedIds.has(model.id));
 }
 
+export async function listModelCalendarConflictsByDate(date: string) {
+  await requireRole(["admin"]);
+
+  if (!isValidDateKey(date)) {
+    return [];
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("model_calendar_blocks")
+    .select("*")
+    .in("status", activeCalendarStatuses)
+    .lt("start_at", combineDateAndTime(addDays(date, 1), "00:00"))
+    .or(`end_at.is.null,end_at.gte.${combineDateAndTime(date, "00:00")}`);
+
+  if (isMissingSchemaError(error)) {
+    return [];
+  }
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ModelCalendarBlock[];
+}
+
 export async function createAdminJob(input: JobInput) {
   const profile = await requireRole(["admin"]);
   return createJobRecord({
     input,
     createdBy: profile.id,
-    status: input.type === "manual_block" ? "confirmed" : "booker_review",
+    requireModel: false,
+    status: input.type === "manual_block" ? "confirmed" : input.status,
     visibility: "model_private"
   });
 }
@@ -643,26 +809,180 @@ export async function createClientJobRequest(input: JobInput) {
       client_id: clientId
     },
     createdBy: profile.id,
+    requireModel: true,
     status: input.quote_requested ? "quote_requested" : "booker_review",
     visibility: "client_limited"
   });
 }
 
+export async function updateAdminJob(jobId: string, input: JobInput) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const modelIds = Array.from(new Set(input.model_ids.filter(Boolean)));
+  const clientBudget = input.quote_requested ? null : input.client_budget;
+  const finalAmount =
+    input.final_amount ??
+    (clientBudget === null ? null : Number((clientBudget * 1.2).toFixed(2)));
+  const startAt = combineDateAndTime(input.date, input.start_time);
+  const endAt = input.end_time ? combineDateAndTime(input.date, input.end_time) : null;
+  const title =
+    input.project_name ||
+    input.brand_name ||
+    (input.type === "job" ? "Trabalho sem título" : jobTypeLabel(input.type));
+
+  if (endAt && new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+    throw new Error(
+      "O horário previsto de término deve ser depois do horário de chegada."
+    );
+  }
+
+  const { error: jobError } = await supabase
+    .from("jobs")
+    .update({
+      address_line: input.address_line,
+      beauty_notes: input.beauty_notes,
+      brand_name: input.brand_name,
+      brief: input.brief,
+      call_time: startAt,
+      city: input.city,
+      client_budget: clientBudget,
+      client_id: input.client_id,
+      country: input.country,
+      end_at: endAt,
+      final_amount: finalAmount,
+      food_notes: input.food_notes,
+      internal_notes: input.internal_notes,
+      location_name: input.location_name,
+      model_must_bring: input.model_must_bring,
+      model_recommendations: input.model_recommendations,
+      project_name: input.project_name,
+      quote_requested: input.quote_requested,
+      start_at: startAt,
+      status: input.status,
+      styling_notes: input.styling_notes,
+      transport_notes: input.transport_notes,
+      type: input.type,
+      usage_countries: input.usage_countries,
+      usage_description: input.usage_description,
+      usage_scope: input.usage_scope,
+      usage_term_months: input.usage_term_months
+    })
+    .eq("id", jobId);
+
+  if (jobError) {
+    assertAgendaSchema(jobError);
+    throw jobError;
+  }
+
+  const { data: existingModels, error: existingError } = await supabase
+    .from("job_models")
+    .select("*")
+    .eq("job_id", jobId);
+
+  if (existingError) {
+    assertAgendaSchema(existingError);
+    throw existingError;
+  }
+
+  const existingByModelId = new Map(
+    ((existingModels ?? []) as JobModel[]).map((jobModel) => [
+      jobModel.model_id,
+      jobModel
+    ])
+  );
+  const selectedModelIds = new Set(modelIds);
+  const removedIds = [...existingByModelId.keys()].filter(
+    (modelId) => !selectedModelIds.has(modelId)
+  );
+  const addedIds = modelIds.filter((modelId) => !existingByModelId.has(modelId));
+
+  if (removedIds.length) {
+    const { error } = await supabase
+      .from("job_models")
+      .delete()
+      .eq("job_id", jobId)
+      .in("model_id", removedIds);
+
+    if (error) {
+      assertAgendaSchema(error);
+      throw error;
+    }
+  }
+
+  if (addedIds.length) {
+    const jobModelStatus: JobModelStatus =
+      input.type === "option" ? "option" : jobStatusToJobModelStatus(input.status);
+    const modelResponseStatus: ModelResponseStatus =
+      input.status === "waiting_model" ? "waiting" : "not_released";
+    const { error } = await supabase.from("job_models").insert(
+      addedIds.map((modelId) => ({
+        fee_amount: clientBudget,
+        final_amount: finalAmount,
+        job_id: jobId,
+        model_id: modelId,
+        model_response_status: modelResponseStatus,
+        status: jobModelStatus
+      }))
+    );
+
+    if (error) {
+      assertAgendaSchema(error);
+      throw error;
+    }
+  }
+
+  const { error: deleteBlocksError } = await supabase
+    .from("model_calendar_blocks")
+    .delete()
+    .eq("job_id", jobId);
+
+  if (deleteBlocksError) {
+    assertAgendaSchema(deleteBlocksError);
+    throw deleteBlocksError;
+  }
+
+  if (modelIds.length) {
+    const { error: blockError } = await supabase
+      .from("model_calendar_blocks")
+      .insert(
+        modelIds.map((modelId) => ({
+          end_at: endAt,
+          job_id: jobId,
+          model_id: modelId,
+          source: "jobs",
+          start_at: startAt,
+          status:
+            input.type === "option" ? "option" : jobStatusToBlockStatus[input.status],
+          title,
+          type: input.type,
+          visibility: "model_private"
+        }))
+      );
+
+    if (blockError) {
+      assertAgendaSchema(blockError);
+      throw blockError;
+    }
+  }
+}
+
 async function createJobRecord({
   createdBy,
   input,
+  requireModel,
   status,
   visibility
 }: {
   createdBy: string;
   input: JobInput;
+  requireModel: boolean;
   status: JobStatus;
   visibility: "client_limited" | "model_private";
 }) {
   const supabase = await createClient();
   const modelIds = Array.from(new Set(input.model_ids.filter(Boolean)));
 
-  if (modelIds.length === 0) {
+  if (requireModel && modelIds.length === 0) {
     throw new Error("Selecione pelo menos um modelo para criar este evento de agenda.");
   }
 
@@ -730,43 +1050,45 @@ async function createJobRecord({
   const modelResponseStatus: ModelResponseStatus =
     status === "waiting_model" ? "waiting" : "not_released";
 
-  const { error: modelError } = await supabase.from("job_models").insert(
-    modelIds.map((modelId) => ({
-      fee_amount: clientBudget,
-      final_amount: finalAmount,
-      job_id: jobId,
-      model_id: modelId,
-      model_response_status: modelResponseStatus,
-      status: jobModelStatus
-    }))
-  );
-
-  if (modelError) {
-    await supabase.from("jobs").delete().eq("id", jobId);
-    assertAgendaSchema(modelError);
-    throw modelError;
-  }
-
-  const { error: blockError } = await supabase
-    .from("model_calendar_blocks")
-    .insert(
+  if (modelIds.length) {
+    const { error: modelError } = await supabase.from("job_models").insert(
       modelIds.map((modelId) => ({
-        end_at: endAt,
+        fee_amount: clientBudget,
+        final_amount: finalAmount,
         job_id: jobId,
         model_id: modelId,
-        source: "jobs",
-        start_at: startAt,
-        status: input.type === "option" ? "option" : jobStatusToBlockStatus[status],
-        title,
-        type: input.type,
-        visibility
+        model_response_status: modelResponseStatus,
+        status: jobModelStatus
       }))
     );
 
-  if (blockError) {
-    await supabase.from("jobs").delete().eq("id", jobId);
-    assertAgendaSchema(blockError);
-    throw blockError;
+    if (modelError) {
+      await supabase.from("jobs").delete().eq("id", jobId);
+      assertAgendaSchema(modelError);
+      throw modelError;
+    }
+
+    const { error: blockError } = await supabase
+      .from("model_calendar_blocks")
+      .insert(
+        modelIds.map((modelId) => ({
+          end_at: endAt,
+          job_id: jobId,
+          model_id: modelId,
+          source: "jobs",
+          start_at: startAt,
+          status: input.type === "option" ? "option" : jobStatusToBlockStatus[status],
+          title,
+          type: input.type,
+          visibility
+        }))
+      );
+
+    if (blockError) {
+      await supabase.from("jobs").delete().eq("id", jobId);
+      assertAgendaSchema(blockError);
+      throw blockError;
+    }
   }
 
   return { id: jobId };

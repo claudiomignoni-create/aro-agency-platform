@@ -2,6 +2,7 @@ import Link from "next/link";
 import { dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
 import {
   formatMoney,
+  jobStatusLabel,
   jobTitle,
   jobTypeLabel,
   listClientJobs,
@@ -34,8 +35,8 @@ export default async function ClientJobsPage({ searchParams }: ClientJobsPagePro
         <div className="actions spread">
           <div>
             <span className="eyebrow">Cliente</span>
-            <h2>Meus trabalhos</h2>
-            <p>Solicitações, orçamentos e trabalhos vinculados ao seu perfil.</p>
+            <h2>Minha agenda</h2>
+            <p>Solicitações, orçamentos e eventos vinculados ao seu perfil.</p>
           </div>
           <Link className="button" href="/client/jobs/new">
             Nova solicitação
@@ -84,7 +85,7 @@ export default async function ClientJobsPage({ searchParams }: ClientJobsPagePro
                 </td>
                 <td>{jobTypeLabel(job.type)}</td>
                 <td>
-                  <span className="status">{job.status}</span>
+                  <span className="status">{jobStatusLabel(job.status)}</span>
                 </td>
                 <td>{formatMoney(job.final_amount ?? job.client_budget)}</td>
               </tr>
@@ -92,7 +93,7 @@ export default async function ClientJobsPage({ searchParams }: ClientJobsPagePro
           </tbody>
         </table>
         {jobs.length === 0 ? (
-          <p>Nenhum trabalho solicitado ainda.</p>
+          <p>Nenhuma solicitação na agenda ainda.</p>
         ) : null}
       </section>
       <style>{`

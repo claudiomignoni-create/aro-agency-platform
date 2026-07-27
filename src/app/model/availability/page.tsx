@@ -13,6 +13,7 @@ import {
 } from "@/lib/calendar";
 import {
   jobTitle,
+  jobModelStatusLabel,
   jobTypeLabel,
   listCurrentModelAssignments,
   listCurrentModelCalendar
@@ -157,7 +158,7 @@ export default async function ModelAvailabilityPage({
                 <strong>{jobTitle(job)}</strong>
                 <p>
                   {formatDatePtBr(dateKeyFromIso(job.start_at))} ·{" "}
-                  {jobTypeLabel(job.type)} · {assignment.status}
+                  {jobTypeLabel(job.type)} · {jobModelStatusLabel(assignment.status)}
                 </p>
                 {job.status === "booker_review" ? (
                   <p>Solicitação em revisão pela agência.</p>
@@ -177,7 +178,15 @@ export default async function ModelAvailabilityPage({
                   </form>
                 </div>
               ) : (
-                <span className="status">{assignment.model_response_status}</span>
+                <span className="status">
+                  {assignment.model_response_status === "not_released"
+                    ? "Não enviado"
+                    : assignment.model_response_status === "waiting"
+                      ? "Aguardando resposta"
+                      : assignment.model_response_status === "accepted"
+                        ? "Aceito"
+                        : "Recusado"}
+                </span>
               )}
             </article>
           );
