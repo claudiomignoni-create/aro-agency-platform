@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClientAction } from "../actions";
+import { BillingFields } from "../billing-fields";
 import { ChannelFields } from "../channel-fields";
 import { ContactFields } from "./contact-fields";
 import type { ClientStatus, ClientType } from "@/types/database";
@@ -123,6 +124,7 @@ export default function NewClientPage() {
         </section>
 
         <ChannelFields />
+        <BillingFields />
 
         <section className="client-form-section">
           <div>

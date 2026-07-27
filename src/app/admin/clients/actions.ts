@@ -56,6 +56,54 @@ const allowedChannelTypes: ClientChannelType[] = [
   "other"
 ];
 
+const billingFields = [
+  "billing_address_complement",
+  "billing_address_line",
+  "billing_address_number",
+  "billing_city",
+  "billing_cnpj",
+  "billing_contact_name",
+  "billing_country",
+  "billing_cpf",
+  "billing_email",
+  "billing_legal_name",
+  "billing_municipal_registration",
+  "billing_neighborhood",
+  "billing_person_type",
+  "billing_phone",
+  "billing_postal_code",
+  "billing_state",
+  "billing_state_registration",
+  "billing_tax_regime",
+  "billing_trade_name",
+  "default_currency",
+  "intl_billing_address",
+  "intl_billing_city",
+  "intl_billing_contact",
+  "intl_billing_country",
+  "intl_billing_email",
+  "intl_billing_postal_code",
+  "intl_billing_state",
+  "intl_company_registration_number",
+  "intl_country",
+  "intl_invoice_notes",
+  "intl_legal_company_name",
+  "intl_payment_terms",
+  "intl_tax_id",
+  "intl_tax_notes",
+  "intl_trading_name",
+  "intl_vat_number",
+  "invoice_notes",
+  "payment_terms",
+  "tax_notes"
+] as const;
+
+function billingInputFromFormData(formData: FormData) {
+  return Object.fromEntries(
+    billingFields.map((field) => [field, nullableString(formData, field)])
+  ) as Pick<ClientInput, (typeof billingFields)[number]>;
+}
+
 function clientTypeFromFormData(formData: FormData) {
   const clientType = (nullableString(formData, "client_type") ??
     "other") as ClientType;
@@ -92,6 +140,7 @@ function channelTypeFromFormData(formData: FormData, index: number) {
 
 function clientInputFromFormData(formData: FormData): ClientInput {
   return {
+    ...billingInputFromFormData(formData),
     city: nullableString(formData, "city"),
     client_type: clientTypeFromFormData(formData),
     company_name: requiredString(formData, "company_name"),

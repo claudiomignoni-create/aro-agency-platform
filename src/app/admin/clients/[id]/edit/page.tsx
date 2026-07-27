@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateClientAction } from "../../actions";
+import { BillingFields } from "../../billing-fields";
 import { ChannelFields } from "../../channel-fields";
 import { ContactFields } from "../../new/contact-fields";
 import { getClientProfile } from "@/lib/clients";
@@ -162,6 +163,7 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         </section>
 
         <ChannelFields initialChannels={channels} />
+        <BillingFields client={client} />
 
         <section className="client-form-section">
           <div>

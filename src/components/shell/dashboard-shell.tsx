@@ -78,7 +78,8 @@ export const adminNavItems = [
   { href: "/admin/models", label: "Modelos" },
   { href: "/admin/clients", label: "Clientes" },
   { href: "/admin/media", label: "Mídias" },
-  { href: "/admin/calendar", label: "Agenda" }
+  { href: "/admin/calendar", label: "Agenda" },
+  { href: "/admin/accounting", label: "Accounting" }
 ];
 
 export const modelNavItems = [

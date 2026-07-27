@@ -26,6 +26,45 @@ const clientSelect = `
   general_whatsapp,
   general_wechat,
   website,
+  billing_person_type,
+  billing_trade_name,
+  billing_legal_name,
+  billing_cnpj,
+  billing_cpf,
+  billing_state_registration,
+  billing_municipal_registration,
+  billing_tax_regime,
+  billing_postal_code,
+  billing_address_line,
+  billing_address_number,
+  billing_address_complement,
+  billing_neighborhood,
+  billing_city,
+  billing_state,
+  billing_country,
+  billing_contact_name,
+  billing_email,
+  billing_phone,
+  payment_terms,
+  default_currency,
+  invoice_notes,
+  tax_notes,
+  intl_trading_name,
+  intl_legal_company_name,
+  intl_country,
+  intl_tax_id,
+  intl_vat_number,
+  intl_company_registration_number,
+  intl_billing_address,
+  intl_billing_city,
+  intl_billing_state,
+  intl_billing_postal_code,
+  intl_billing_country,
+  intl_billing_contact,
+  intl_billing_email,
+  intl_payment_terms,
+  intl_invoice_notes,
+  intl_tax_notes,
   tags,
   market_notes,
   preferred_model_profile,
@@ -59,21 +98,60 @@ export type ClientProfile = {
 };
 
 export type ClientInput = {
+  billing_address_complement: string | null;
+  billing_address_line: string | null;
+  billing_address_number: string | null;
+  billing_city: string | null;
+  billing_cnpj: string | null;
+  billing_contact_name: string | null;
+  billing_country: string | null;
+  billing_cpf: string | null;
+  billing_email: string | null;
+  billing_legal_name: string | null;
+  billing_municipal_registration: string | null;
+  billing_neighborhood: string | null;
+  billing_person_type: string | null;
+  billing_phone: string | null;
+  billing_postal_code: string | null;
+  billing_state: string | null;
+  billing_state_registration: string | null;
+  billing_tax_regime: string | null;
+  billing_trade_name: string | null;
   city: string | null;
   client_type: ClientType;
   company_name: string;
   country: string | null;
+  default_currency: string | null;
   general_email: string | null;
   general_phone: string | null;
   general_whatsapp: string | null;
   general_wechat: string | null;
+  intl_billing_address: string | null;
+  intl_billing_city: string | null;
+  intl_billing_contact: string | null;
+  intl_billing_country: string | null;
+  intl_billing_email: string | null;
+  intl_billing_postal_code: string | null;
+  intl_billing_state: string | null;
+  intl_company_registration_number: string | null;
+  intl_country: string | null;
+  intl_invoice_notes: string | null;
+  intl_legal_company_name: string | null;
+  intl_payment_terms: string | null;
+  intl_tax_id: string | null;
+  intl_tax_notes: string | null;
+  intl_trading_name: string | null;
+  intl_vat_number: string | null;
   internal_notes: string | null;
+  invoice_notes: string | null;
   last_contact_at: string | null;
   market_notes: string | null;
   next_follow_up_at: string | null;
+  payment_terms: string | null;
   preferred_model_profile: string | null;
   status: ClientStatus;
   tags: string[];
+  tax_notes: string | null;
   website: string | null;
 };
 
