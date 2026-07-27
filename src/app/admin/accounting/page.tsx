@@ -4,6 +4,7 @@ import {
   AdminDateField,
   AdminFilterActions,
   AdminFilterBar,
+  AdminMonthFilterField,
   AdminModelIdentity,
   AdminMoreFilters,
   AdminPage,
@@ -112,10 +113,7 @@ export default async function AccountingPage({ searchParams }: AccountingPagePro
       <AdminToolbar>
         <AdminFilterBar>
           <AdminSearchField defaultValue={params.q} placeholder="Trabalho, nota ou referência" />
-          <label className="admin-field">
-            <span>Mês</span>
-            <input defaultValue={selectedMonth} name="month" type="month" />
-          </label>
+          <AdminMonthFilterField defaultValue={selectedMonth} label="Mês" name="month" />
           <AdminSelectField
             defaultValue={currency}
             label="Moeda"

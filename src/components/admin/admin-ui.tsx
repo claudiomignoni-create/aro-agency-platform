@@ -1,6 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+  AdminCustomSelect,
+  AdminDateField as AdminCustomDateField,
+  AdminMonthField,
+  type AdminControlOption
+} from "@/components/admin/admin-controls";
 import { Search } from "@/components/admin/admin-icons";
 
 type AdminPageProps = {
@@ -21,11 +27,6 @@ type FieldProps = {
   defaultValue?: string;
   label: string;
   name: string;
-};
-
-type SelectOption = {
-  label: string;
-  value: string;
 };
 
 type AvatarProps = {
@@ -129,28 +130,16 @@ export function AdminSelectField({
   label,
   name,
   options
-}: FieldProps & { options: SelectOption[] }) {
-  return (
-    <label className="admin-field">
-      <span>{label}</span>
-      <select defaultValue={defaultValue ?? ""} name={name}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+}: FieldProps & { options: AdminControlOption[] }) {
+  return <AdminCustomSelect defaultValue={defaultValue ?? ""} label={label} name={name} options={options} />;
 }
 
 export function AdminDateField({ defaultValue, label, name }: FieldProps) {
-  return (
-    <label className="admin-field">
-      <span>{label}</span>
-      <input defaultValue={defaultValue ?? ""} name={name} type="date" />
-    </label>
-  );
+  return <AdminCustomDateField defaultValue={defaultValue ?? ""} label={label} name={name} />;
+}
+
+export function AdminMonthFilterField({ defaultValue, label, name }: FieldProps) {
+  return <AdminMonthField defaultValue={defaultValue ?? ""} label={label} name={name} />;
 }
 
 export function AdminTextField({

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getAdminUserProfile, getProfilePreferencesStatus } from "@/lib/admin-profile";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
+import { getBuildShortSha } from "@/lib/build-info";
 import { createClient } from "@/lib/supabase/server";
 import {
   updateAdminEmailAction,
@@ -51,6 +52,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     getStoredTheme(profile.id)
   ]);
   const activeTab = tabs.some((tab) => tab.id === params.tab) ? params.tab : "profile";
+  const buildShortSha = getBuildShortSha();
 
   return (
     <div className="settings-page">
@@ -183,6 +185,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         </section>
       ) : null}
 
+      <p className="settings-build muted">Build {buildShortSha}</p>
+
       <style>{`
         .settings-page {
           display: grid;
@@ -286,6 +290,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         .settings-form select:disabled {
           cursor: not-allowed;
           opacity: 0.62;
+        }
+
+        .settings-build {
+          margin: 0;
+          font-size: var(--admin-font-label);
+          font-weight: 800;
+          text-align: right;
         }
       `}</style>
     </div>
