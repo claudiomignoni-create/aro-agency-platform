@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { currentDateKey, isValidDateKey, safeDateKey } from "@/lib/calendar";
 import {
   listAvailableModelsByDate,
   modelDisplayName,
@@ -28,7 +29,9 @@ export default async function ClientNewJobPage({
   searchParams
 }: ClientNewJobPageProps) {
   const params = (await searchParams) ?? {};
-  const selectedDate = params.date ?? "2026-06-13";
+  const today = currentDateKey();
+  const hasInvalidDateParam = Boolean(params.date && !isValidDateKey(params.date));
+  const selectedDate = safeDateKey(params.date, today);
   const availableModels = await listAvailableModelsByDate(selectedDate);
   const modelImageUrls = await createModelMainImageUrlsByIds(
     availableModels.map((model) => model.id)
@@ -50,6 +53,11 @@ export default async function ClientNewJobPage({
       </section>
 
       {params.error ? <p className="notice error">{params.error}</p> : null}
+      {hasInvalidDateParam ? (
+        <p className="notice error">
+          Data invalida na URL. Usamos a data atual para continuar.
+        </p>
+      ) : null}
 
       <section className="panel">
         <form className="date-filter" method="get">
