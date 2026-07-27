@@ -7,12 +7,14 @@ import {
   getAdminJob,
   jobModelStatusLabel,
   jobStatusLabel,
-  jobTitle,
   jobTypeLabel,
+  listJobDeletionStatuses,
   modelDisplayName,
   modelInitials,
   modelLocation,
   modelMeasurements,
+  modelNames,
+  smartJobTitle,
   type JobModelWithModel
 } from "@/lib/jobs";
 import { createModelMainImageUrls } from "@/lib/models";
@@ -21,6 +23,7 @@ import {
   approveJobForModelAction,
   updateJobStatusAction
 } from "../../jobs/actions";
+import { JobActionsMenu } from "../../jobs/job-actions-menu";
 
 type AdminCalendarDetailPageProps = {
   params: Promise<{
@@ -142,6 +145,10 @@ export default async function AdminCalendarDetailPage({
       .map((jobModel) => jobModel.model)
       .filter((model): model is NonNullable<typeof model> => Boolean(model))
   );
+  const deletionStatus = (await listJobDeletionStatuses([job])).get(job.id) ?? {
+    canDelete: false,
+    reason: "Não foi possível auditar dependências deste job."
+  };
   const jobActionsDisabled =
     job.status === "canceled" || job.status === "completed";
   const rows = [
@@ -205,7 +212,7 @@ export default async function AdminCalendarDetailPage({
       <section className="panel job-detail-hero">
         <div>
           <span className="eyebrow">Agenda</span>
-          <h2>{jobTitle(job)}</h2>
+          <h2>{smartJobTitle(job)}</h2>
           <p>{job.brand_name || job.project_name || "Evento sem marca informada"}</p>
         </div>
         <div className="actions">
@@ -221,6 +228,13 @@ export default async function AdminCalendarDetailPage({
           >
             Duplicar fluxo
           </Link>
+          <JobActionsMenu
+            dateLabel={formatDatePtBr(dateKeyFromIso(job.start_at))}
+            deletionStatus={deletionStatus}
+            jobId={job.id}
+            modelLabel={modelNames(job)}
+            title={smartJobTitle(job)}
+          />
         </div>
       </section>
 

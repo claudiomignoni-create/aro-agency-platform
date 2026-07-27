@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   approveJobForModel,
   createAdminJob,
+  deleteSimpleAdminJob,
   jobInputFromFormData,
   updateAdminJob,
   updateJobStatus
@@ -95,4 +96,22 @@ export async function approveJobForModelAction(jobId: string, modelId: string) {
   revalidatePath(`/admin/calendar/${jobId}`);
   revalidatePath(`/admin/jobs/${jobId}`);
   redirect(`/admin/calendar/${jobId}?notice=model_sent`);
+}
+
+export async function deleteSimpleJobAction(jobId: string) {
+  try {
+    await deleteSimpleAdminJob(jobId);
+  } catch (error) {
+    const params = new URLSearchParams({
+      error: readableError(error)
+    });
+    revalidatePath("/admin/calendar");
+    revalidatePath("/admin/jobs");
+    revalidatePath(`/admin/calendar/${jobId}`);
+    redirect(`/admin/jobs?${params.toString()}`);
+  }
+
+  revalidatePath("/admin/calendar");
+  revalidatePath("/admin/jobs");
+  redirect("/admin/jobs?notice=job_deleted");
 }

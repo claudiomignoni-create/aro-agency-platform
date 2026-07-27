@@ -42,6 +42,11 @@ export type JobWithRelations = Job & {
   job_models: JobModelWithModel[];
 };
 
+export type JobDeletionStatus = {
+  canDelete: boolean;
+  reason: string | null;
+};
+
 export type ModelAssignment = JobModel & {
   job: Job | null;
 };
@@ -332,6 +337,65 @@ export function jobTitle(job: Pick<Job, "brand_name" | "project_name" | "type">)
   );
 }
 
+export function isUntitledJob(job: Pick<Job, "brand_name" | "project_name">) {
+  return !job.project_name?.trim() && !job.brand_name?.trim();
+}
+
+export function smartJobTitle(
+  job: Pick<Job, "brand_name" | "project_name" | "start_at" | "type"> & {
+    job_models?: Array<{ model: ModelSummary | null }>;
+  }
+) {
+  if (!isUntitledJob(job)) {
+    return jobTitle(job);
+  }
+
+  const modelName = modelDisplayName(job.job_models?.[0]?.model ?? null);
+  const date = new Date(job.start_at);
+  const dateLabel = Number.isNaN(date.getTime())
+    ? null
+    : new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        timeZone: "America/Sao_Paulo"
+      }).format(date);
+
+  return [jobTypeLabel(job.type), modelName, dateLabel].filter(Boolean).join(" · ");
+}
+
+export function canDeleteSimpleJob({
+  financialEntryCount,
+  hasReceipts,
+  status
+}: {
+  financialEntryCount: number;
+  hasReceipts: boolean;
+  status: JobStatus;
+}): JobDeletionStatus {
+  if (hasReceipts) {
+    return {
+      canDelete: false,
+      reason: "Este trabalho possui recebimentos registrados e precisa ser preservado."
+    };
+  }
+
+  if (financialEntryCount > 0) {
+    return {
+      canDelete: false,
+      reason: "Este trabalho possui lançamentos financeiros e não pode ser excluído permanentemente."
+    };
+  }
+
+  if (!["draft", "booker_review", "client_requested", "quote_requested", "declined", "canceled"].includes(status)) {
+    return {
+      canDelete: false,
+      reason: "Somente rascunhos, solicitações, recusados ou cancelados sem dependências podem ser excluídos."
+    };
+  }
+
+  return { canDelete: true, reason: null };
+}
+
 export function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return "-";
@@ -569,6 +633,118 @@ export async function getAdminJob(id: string) {
   }
 
   return data ? normalizeJob(data) : null;
+}
+
+export async function listJobDeletionStatuses(jobs: JobWithRelations[]) {
+  await requireRole(["admin"]);
+  const statusByJob = new Map<string, JobDeletionStatus>();
+  const jobIds = jobs.map((job) => job.id);
+
+  for (const job of jobs) {
+    statusByJob.set(
+      job.id,
+      canDeleteSimpleJob({
+        financialEntryCount: 0,
+        hasReceipts: false,
+        status: job.status
+      })
+    );
+  }
+
+  if (!jobIds.length) return statusByJob;
+
+  const supabase = await createClient();
+  const { data: entries, error } = await supabase
+    .from("financial_job_entries")
+    .select("id, job_id")
+    .in("job_id", jobIds);
+
+  if (error && isMissingSchemaError(error)) return statusByJob;
+  if (error) throw error;
+
+  const entryRows = (entries ?? []) as Array<{ id: string; job_id: string | null }>;
+  const entryIds = entryRows.map((entry) => entry.id);
+  const entryCountByJob = new Map<string, number>();
+  const entryIdToJobId = new Map<string, string>();
+
+  for (const entry of entryRows) {
+    if (!entry.job_id) continue;
+    entryCountByJob.set(entry.job_id, (entryCountByJob.get(entry.job_id) ?? 0) + 1);
+    entryIdToJobId.set(entry.id, entry.job_id);
+  }
+
+  const jobsWithReceipts = new Set<string>();
+
+  if (entryIds.length) {
+    const { data: receipts, error: receiptError } = await supabase
+      .from("financial_job_payment_receipts")
+      .select("id, financial_job_entry_id")
+      .in("financial_job_entry_id", entryIds)
+      .limit(1_000);
+
+    if (receiptError && !isMissingSchemaError(receiptError)) throw receiptError;
+
+    for (const receipt of (receipts ?? []) as Array<{ financial_job_entry_id: string }>) {
+      const jobId = entryIdToJobId.get(receipt.financial_job_entry_id);
+      if (jobId) jobsWithReceipts.add(jobId);
+    }
+  }
+
+  for (const job of jobs) {
+    statusByJob.set(
+      job.id,
+      canDeleteSimpleJob({
+        financialEntryCount: entryCountByJob.get(job.id) ?? 0,
+        hasReceipts: jobsWithReceipts.has(job.id),
+        status: job.status
+      })
+    );
+  }
+
+  return statusByJob;
+}
+
+export async function deleteSimpleAdminJob(jobId: string) {
+  await requireRole(["admin"]);
+  const job = await getAdminJob(jobId);
+
+  if (!job) {
+    throw new Error("Trabalho não encontrado.");
+  }
+
+  const deletionStatus = (await listJobDeletionStatuses([job])).get(job.id);
+
+  if (!deletionStatus?.canDelete) {
+    throw new Error(deletionStatus?.reason ?? "Este trabalho não pode ser excluído com segurança.");
+  }
+
+  const supabase = await createClient();
+  const { error: blocksError } = await supabase
+    .from("model_calendar_blocks")
+    .delete()
+    .eq("job_id", jobId);
+
+  if (blocksError) {
+    assertAgendaSchema(blocksError);
+    throw blocksError;
+  }
+
+  const { error: modelsError } = await supabase
+    .from("job_models")
+    .delete()
+    .eq("job_id", jobId);
+
+  if (modelsError) {
+    assertAgendaSchema(modelsError);
+    throw modelsError;
+  }
+
+  const { error: jobError } = await supabase.from("jobs").delete().eq("id", jobId);
+
+  if (jobError) {
+    assertAgendaSchema(jobError);
+    throw jobError;
+  }
 }
 
 export async function listClientJobs() {
