@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { signIn } from "./actions";
 
 type LoginPageProps = {
@@ -22,7 +23,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="entry-stage">
         <div className="entry-copy">
           <span className="brand-mark">
-            <strong>ARO</strong>LAB
+            <Image alt="ARO" height={48} priority src="/brand/aro-mark.png" width={48} />
+            <strong>ARO</strong>
           </span>
           <h1 className="hero-title">Casting operations, refined.</h1>
           <p>

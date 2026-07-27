@@ -119,6 +119,44 @@ export type CalendarBlockVisibility =
   | "model_private"
   | "client_limited";
 
+export type TripReason =
+  | "international_season"
+  | "job"
+  | "casting"
+  | "test_shoot"
+  | "return"
+  | "meeting"
+  | "other";
+
+export type TripStatus =
+  | "planned"
+  | "booked"
+  | "in_transit"
+  | "arrived"
+  | "hosted"
+  | "completed"
+  | "canceled";
+
+export type FlightSegmentStatus =
+  | "planned"
+  | "booked"
+  | "check_in_open"
+  | "boarding"
+  | "departed"
+  | "in_flight"
+  | "landed"
+  | "delayed"
+  | "canceled";
+
+export type TravelDocumentType =
+  | "ticket"
+  | "e_ticket"
+  | "booking_confirmation"
+  | "visa"
+  | "insurance"
+  | "hotel"
+  | "related_document";
+
 export type Profile = {
   id: string;
   role: UserRole;
@@ -547,6 +585,74 @@ export type ModelCalendarBlock = {
   visibility: CalendarBlockVisibility;
   source: string;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ModelTrip = {
+  id: string;
+  model_id: string;
+  title: string;
+  reason: TripReason;
+  status: TripStatus;
+  starts_on: string | null;
+  ends_on: string | null;
+  origin_city: string | null;
+  origin_country: string | null;
+  destination_city: string | null;
+  destination_country: string | null;
+  destination_latitude: number | null;
+  destination_longitude: number | null;
+  agency_name: string | null;
+  internal_notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TravelFlightSegment = {
+  id: string;
+  trip_id: string;
+  airline_name: string | null;
+  airline_code: string | null;
+  flight_number: string | null;
+  pnr: string | null;
+  ticket_number: string | null;
+  departure_airport: string | null;
+  departure_iata: string | null;
+  departure_city: string | null;
+  departure_country: string | null;
+  departure_at: string | null;
+  departure_timezone: string | null;
+  departure_terminal: string | null;
+  departure_gate: string | null;
+  arrival_airport: string | null;
+  arrival_iata: string | null;
+  arrival_city: string | null;
+  arrival_country: string | null;
+  arrival_at: string | null;
+  arrival_timezone: string | null;
+  arrival_terminal: string | null;
+  seat: string | null;
+  baggage: string | null;
+  cabin_class: string | null;
+  status: FlightSegmentStatus;
+  check_in_url: string | null;
+  cost_amount: number | null;
+  currency: string | null;
+  internal_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TravelDocument = {
+  id: string;
+  trip_id: string;
+  document_type: TravelDocumentType;
+  title: string;
+  storage_bucket: string;
+  storage_path: string;
+  uploaded_by: string | null;
   created_at: string;
   updated_at: string;
 };
