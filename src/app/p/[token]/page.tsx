@@ -1,7 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { findPresentationByToken, type PublicPresentationPayload } from "@/lib/communications/data";
+import {
+  findPresentationByTokenWithRateLimit,
+  getPresentationPrivateMediaRefsByToken,
+  type PublicPresentationPayload
+} from "@/lib/communications/data";
+import { requestIpHash } from "@/lib/communications/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata = {
@@ -22,14 +27,19 @@ type SnapshotModel = Omit<NonNullable<PublicPresentationPayload["snapshot"]["mod
   }>;
 };
 
-async function signPresentationMedia(presentation: PublicPresentationPayload): Promise<SnapshotModel[]> {
+async function signPresentationMedia(
+  presentation: PublicPresentationPayload,
+  privateRefs: Awaited<ReturnType<typeof getPresentationPrivateMediaRefsByToken>>
+): Promise<SnapshotModel[]> {
   const admin = createAdminClient();
   const models = await Promise.all(
-    (presentation.snapshot.models ?? []).map(async (model): Promise<SnapshotModel> => {
+    (presentation.snapshot.models ?? []).map(async (model, modelIndex): Promise<SnapshotModel> => {
+      const refs = privateRefs[modelIndex] ?? [];
       const media = await Promise.all(
-        (model.media ?? []).map(async (item) => {
-          const bucket = "storage_bucket" in item ? String(item.storage_bucket ?? "") : "";
-          const path = item.thumbnail_path || item.storage_path;
+        (model.media ?? []).map(async (item, mediaIndex) => {
+          const ref = refs[mediaIndex];
+          const bucket = ref?.storage_bucket ?? "";
+          const path = ref?.thumbnail_path || ref?.storage_path;
           if (!bucket || !path) return { ...item, signed_url: null };
           const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, 300);
           return { ...item, signed_url: error ? null : data.signedUrl };
@@ -56,13 +66,15 @@ function measurementLabel(key: string) {
 
 export default async function PublicPresentationPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const presentation = await findPresentationByToken(token);
+  const ipHash = await requestIpHash();
+  const presentation = await findPresentationByTokenWithRateLimit(token, ipHash);
 
   if (!presentation) {
     notFound();
   }
 
-  const models = await signPresentationMedia(presentation);
+  const privateRefs = await getPresentationPrivateMediaRefsByToken(token);
+  const models = await signPresentationMedia(presentation, privateRefs);
 
   return (
     <main className="public-presentation">

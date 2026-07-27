@@ -158,6 +158,7 @@ create table if not exists public.outbound_emails (
   status text not null default 'draft',
   mode text not null default 'system_draft',
   scheduled_at timestamptz,
+  scheduled_timezone text,
   gmail_message_id text,
   gmail_thread_id text,
   gmail_draft_id text,
@@ -186,6 +187,9 @@ on public.outbound_emails (idempotency_key);
 
 create index if not exists outbound_emails_status_idx
 on public.outbound_emails (status, scheduled_at, created_at);
+
+alter table public.outbound_emails
+  add column if not exists scheduled_timezone text;
 
 create table if not exists public.model_update_requests (
   id uuid primary key default gen_random_uuid(),
@@ -341,8 +345,35 @@ create table if not exists public.model_update_reminders (
   outbound_email_id uuid references public.outbound_emails(id) on delete set null,
   created_at timestamptz not null default now(),
   constraint model_update_reminders_status_check check (
-    status in ('scheduled', 'sent', 'skipped', 'failed', 'canceled')
+    status in ('scheduled', 'queued', 'processing', 'sent', 'skipped', 'failed', 'canceled')
   )
+);
+
+create table if not exists public.model_update_verification_codes (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null references public.model_update_requests(id) on delete cascade,
+  model_id uuid not null references public.models(id) on delete cascade,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempt_count integer not null default 0,
+  requested_at timestamptz not null default now(),
+  verified_at timestamptz,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint model_update_verification_codes_attempt_check check (attempt_count >= 0)
+);
+
+create table if not exists public.communication_rate_limits (
+  id uuid primary key default gen_random_uuid(),
+  token_hash text not null,
+  ip_hash text not null,
+  operation text not null,
+  window_start timestamptz not null,
+  attempt_count integer not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (token_hash, ip_hash, operation, window_start),
+  constraint communication_rate_limits_attempt_check check (attempt_count >= 0)
 );
 
 do $$
@@ -364,7 +395,9 @@ begin
     'model_update_submissions',
     'model_update_files',
     'model_update_audit_events',
-    'model_update_reminders'
+    'model_update_reminders',
+    'model_update_verification_codes',
+    'communication_rate_limits'
   ] loop
     execute format('alter table public.%I enable row level security', table_name);
   end loop;
@@ -389,7 +422,9 @@ begin
     'model_update_submissions',
     'model_update_files',
     'model_update_audit_events',
-    'model_update_reminders'
+    'model_update_reminders',
+    'model_update_verification_codes',
+    'communication_rate_limits'
   ] loop
     if not exists (
       select 1 from pg_policies
@@ -509,6 +544,15 @@ on public.model_update_reminders (status, remind_at);
 create index if not exists model_update_audit_events_request_idx
 on public.model_update_audit_events (request_id, created_at desc);
 
+create index if not exists model_update_files_submission_idx
+on public.model_update_files (submission_id, created_at desc);
+
+create index if not exists model_update_verification_codes_request_idx
+on public.model_update_verification_codes (request_id, expires_at desc);
+
+create index if not exists communication_rate_limits_lookup_idx
+on public.communication_rate_limits (token_hash, ip_hash, operation, window_start);
+
 drop trigger if exists set_google_workspace_connections_updated_at on public.google_workspace_connections;
 create trigger set_google_workspace_connections_updated_at
 before update on public.google_workspace_connections
@@ -554,7 +598,33 @@ begin
     'language', p.language,
     'allow_downloads', p.allow_downloads,
     'published_at', p.published_at,
-    'snapshot', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)
+    'snapshot', jsonb_build_object(
+      'title', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'title',
+      'description', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'description',
+      'contact', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'contact',
+      'models', coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'board', model_item->'board',
+            'city', model_item->'city',
+            'country', model_item->'country',
+            'display_name', model_item->'display_name',
+            'highlighted', model_item->'highlighted',
+            'measurements', model_item->'measurements',
+            'media', coalesce((
+              select jsonb_agg(
+                jsonb_build_object(
+                  'media_type', media_item->'media_type',
+                  'title', media_item->'title'
+                )
+              )
+              from jsonb_array_elements(coalesce(model_item->'media', '[]'::jsonb)) media_item
+            ), '[]'::jsonb)
+          )
+        )
+        from jsonb_array_elements(coalesce(coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'models', '[]'::jsonb)) model_item
+      ), '[]'::jsonb)
+    )
   )
   into payload
   from public.presentations p
@@ -727,6 +797,320 @@ begin
 end;
 $$;
 
+create or replace function public.check_communication_rate_limit(
+  p_token_hash text,
+  p_ip_hash text,
+  p_operation text,
+  p_limit integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_window timestamptz;
+  current_count integer;
+begin
+  if p_token_hash is null or p_ip_hash is null or p_operation is null then
+    return false;
+  end if;
+
+  current_window := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+
+  insert into public.communication_rate_limits (
+    token_hash,
+    ip_hash,
+    operation,
+    window_start,
+    attempt_count
+  )
+  values (
+    p_token_hash,
+    p_ip_hash,
+    p_operation,
+    current_window,
+    1
+  )
+  on conflict (token_hash, ip_hash, operation, window_start)
+  do update set
+    attempt_count = public.communication_rate_limits.attempt_count + 1,
+    updated_at = now()
+  returning attempt_count into current_count;
+
+  return current_count <= p_limit;
+end;
+$$;
+
+create or replace function public.sanitize_model_update_payload(
+  p_request_id uuid,
+  p_payload jsonb,
+  p_sensitive_verified boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  sanitized jsonb := '{}'::jsonb;
+  key_name text;
+  value_json jsonb;
+  field_record record;
+  allowed_keys text[];
+  payload_text text;
+begin
+  if p_payload is null then
+    return '{}'::jsonb;
+  end if;
+
+  if jsonb_typeof(p_payload) <> 'object' then
+    raise exception 'invalid_payload_type';
+  end if;
+
+  if (select count(*) from jsonb_object_keys(p_payload)) > 30 then
+    raise exception 'payload_has_too_many_keys';
+  end if;
+
+  payload_text := p_payload::text;
+  if length(payload_text) > 20000 then
+    raise exception 'payload_too_large';
+  end if;
+
+  select array_agg(field_key)
+    into allowed_keys
+  from public.model_update_request_fields
+  where request_id = p_request_id;
+
+  if allowed_keys is null then
+    allowed_keys := array[]::text[];
+  end if;
+
+  for key_name, value_json in
+    select key, value
+    from jsonb_each(p_payload)
+  loop
+    if key_name in (
+      'id',
+      'model_id',
+      'request_id',
+      'public_token_hash',
+      'token',
+      'status',
+      'created_by',
+      'updated_by',
+      'reviewed_by',
+      'admin',
+      'permissions'
+    ) then
+      raise exception 'administrative_field_not_allowed';
+    end if;
+
+    if not (key_name = any(allowed_keys)) then
+      raise exception 'field_not_requested';
+    end if;
+
+    select *
+      into field_record
+    from public.model_update_request_fields
+    where request_id = p_request_id
+      and field_key = key_name
+    limit 1;
+
+    if field_record.is_sensitive and not p_sensitive_verified then
+      raise exception 'sensitive_field_requires_verification';
+    end if;
+
+    if jsonb_typeof(value_json) not in ('string', 'number', 'boolean', 'array') then
+      raise exception 'invalid_field_value_type';
+    end if;
+
+    if length(value_json::text) > 4000 then
+      raise exception 'field_value_too_large';
+    end if;
+
+    sanitized := sanitized || jsonb_build_object(
+      key_name,
+      case
+        when jsonb_typeof(value_json) = 'string' then
+          to_jsonb(
+            left(
+              regexp_replace(
+                trim(both '"' from value_json::text),
+                '<[^>]*>|javascript:|data:text/html|on[a-z]+\s*=',
+                '',
+                'gi'
+              ),
+              1000
+            )
+          )
+        else value_json
+      end
+    );
+  end loop;
+
+  return sanitized;
+end;
+$$;
+
+create or replace function public.update_presentation_draft(
+  p_presentation_id uuid,
+  p_admin_id uuid,
+  p_payload jsonb
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  model_item jsonb;
+  media_item jsonb;
+  presentation_model_uuid uuid;
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
+    raise exception 'invalid_presentation_payload';
+  end if;
+
+  update public.presentations
+  set
+    allow_downloads = coalesce((p_payload->>'allow_downloads')::boolean, false),
+    client_id = nullif(p_payload->>'client_id', '')::uuid,
+    description = nullif(p_payload->>'description', ''),
+    expires_at = nullif(p_payload->>'expires_at', '')::timestamptz,
+    agency_id = nullif(p_payload->>'agency_id', '')::uuid,
+    job_id = nullif(p_payload->>'job_id', '')::uuid,
+    language = coalesce(nullif(p_payload->>'language', ''), 'pt-BR'),
+    purpose = nullif(p_payload->>'purpose', ''),
+    title = nullif(p_payload->>'title', ''),
+    updated_by = p_admin_id
+  where id = p_presentation_id
+    and status in ('draft', 'published');
+
+  if not found then
+    raise exception 'presentation_not_editable';
+  end if;
+
+  delete from public.presentation_model_media pmm
+  using public.presentation_models pm
+  where pmm.presentation_model_id = pm.id
+    and pm.presentation_id = p_presentation_id;
+
+  delete from public.presentation_models
+  where presentation_id = p_presentation_id;
+
+  for model_item in
+    select value
+    from jsonb_array_elements(coalesce(p_payload->'models', '[]'::jsonb))
+  loop
+    insert into public.presentation_models (
+      include_location,
+      include_measurements,
+      include_social_links,
+      model_id,
+      model_snapshot,
+      position,
+      presentation_id
+    )
+    values (
+      coalesce((model_item->>'include_location')::boolean, true),
+      coalesce((model_item->>'include_measurements')::boolean, true),
+      coalesce((model_item->>'include_social_links')::boolean, true),
+      (model_item->>'model_id')::uuid,
+      jsonb_build_object('highlighted', coalesce((model_item->>'highlighted')::boolean, false)),
+      coalesce((model_item->>'position')::integer, 0),
+      p_presentation_id
+    )
+    returning id into presentation_model_uuid;
+
+    for media_item in
+      select value
+      from jsonb_array_elements(coalesce(model_item->'media', '[]'::jsonb))
+    loop
+      insert into public.presentation_model_media (
+        media_snapshot,
+        media_type,
+        model_media_id,
+        position,
+        presentation_model_id
+      )
+      values (
+        jsonb_build_object('source', 'admin_selection'),
+        coalesce(nullif(media_item->>'media_type', ''), 'portfolio'),
+        (media_item->>'media_id')::uuid,
+        coalesce((media_item->>'position')::integer, 0),
+        presentation_model_uuid
+      );
+    end loop;
+  end loop;
+
+  return true;
+end;
+$$;
+
+create or replace function public.publish_presentation_snapshot(
+  p_presentation_id uuid,
+  p_admin_id uuid,
+  p_snapshot jsonb
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_version integer;
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  if p_snapshot is null or jsonb_typeof(p_snapshot) <> 'object' then
+    raise exception 'invalid_presentation_snapshot';
+  end if;
+
+  select version_number + 1
+    into next_version
+  from public.presentations
+  where id = p_presentation_id
+  for update;
+
+  if next_version is null then
+    raise exception 'presentation_not_found';
+  end if;
+
+  update public.presentations
+  set
+    published_at = now(),
+    revoked_at = null,
+    snapshot = p_snapshot,
+    status = 'published',
+    updated_by = p_admin_id,
+    version_number = next_version
+  where id = p_presentation_id;
+
+  insert into public.presentation_versions (
+    created_by,
+    presentation_id,
+    snapshot,
+    version_number
+  )
+  values (
+    p_admin_id,
+    p_presentation_id,
+    p_snapshot,
+    next_version
+  );
+
+  return next_version;
+end;
+$$;
+
 create or replace function public.save_model_update_request_draft(p_token_hash text, draft jsonb)
 returns boolean
 language plpgsql
@@ -736,6 +1120,7 @@ as $$
 declare
   request_uuid uuid;
   model_uuid uuid;
+  safe_draft jsonb;
 begin
   select id, model_id into request_uuid, model_uuid
   from public.model_update_requests
@@ -748,18 +1133,17 @@ begin
     return false;
   end if;
 
+  safe_draft := public.sanitize_model_update_payload(request_uuid, draft, false);
+
   insert into public.model_update_submissions (request_id, model_id, status, draft_payload)
-  values (request_uuid, model_uuid, 'draft', coalesce(draft, '{}'::jsonb))
+  values (request_uuid, model_uuid, 'draft', safe_draft)
   on conflict (request_id)
-  do update set draft_payload = excluded.draft_payload, status = 'draft', updated_at = now();
+  do update set draft_payload = excluded.draft_payload, updated_at = now();
 
   update public.model_update_requests
   set status = 'partially_completed'
   where id = request_uuid
     and status in ('ready', 'sent', 'delivered', 'opened', 'started');
-
-  insert into public.model_update_audit_events (request_id, model_id, event_type, new_snapshot, metadata)
-  values (request_uuid, model_uuid, 'draft_saved', coalesce(draft, '{}'::jsonb), jsonb_build_object('source', 'public_link'));
 
   return true;
 end;
@@ -774,6 +1158,8 @@ as $$
 declare
   request_uuid uuid;
   model_uuid uuid;
+  safe_submission jsonb;
+  sensitive_verified boolean;
 begin
   select id, model_id into request_uuid, model_uuid
   from public.model_update_requests
@@ -785,6 +1171,19 @@ begin
   if request_uuid is null then
     return false;
   end if;
+
+  select exists (
+    select 1
+    from public.model_update_verification_codes
+    where request_id = request_uuid
+      and model_id = model_uuid
+      and verified_at is not null
+      and consumed_at is null
+      and expires_at > now()
+  )
+  into sensitive_verified;
+
+  safe_submission := public.sanitize_model_update_payload(request_uuid, submission, sensitive_verified);
 
   insert into public.model_update_submissions (
     request_id,
@@ -798,8 +1197,8 @@ begin
     request_uuid,
     model_uuid,
     'submitted',
-    coalesce(submission, '{}'::jsonb),
-    coalesce(submission, '{}'::jsonb),
+    safe_submission,
+    safe_submission,
     now()
   )
   on conflict (request_id)
@@ -815,10 +1214,198 @@ begin
       submitted_at = now()
   where id = request_uuid;
 
+  update public.model_update_verification_codes
+  set consumed_at = now()
+  where request_id = request_uuid
+    and model_id = model_uuid
+    and verified_at is not null
+    and consumed_at is null;
+
   insert into public.model_update_audit_events (request_id, model_id, event_type, new_snapshot, metadata)
-  values (request_uuid, model_uuid, 'submitted', coalesce(submission, '{}'::jsonb), jsonb_build_object('source', 'public_link'));
+  values (request_uuid, model_uuid, 'submitted', safe_submission, jsonb_build_object('source', 'public_link'));
 
   return true;
+end;
+$$;
+
+create or replace function public.current_model_id()
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select m.id
+  from public.models m
+  where m.user_id = auth.uid()
+  limit 1
+$$;
+
+create or replace function public.get_my_model_update_requests()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  model_uuid uuid;
+begin
+  model_uuid := public.current_model_id();
+
+  if model_uuid is null then
+    return '[]'::jsonb;
+  end if;
+
+  return coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', r.id,
+        'title', r.title,
+        'status', r.status,
+        'due_at', r.due_at,
+        'expires_at', r.expires_at,
+        'submitted_at', r.submitted_at,
+        'fields', coalesce((
+          select jsonb_agg(
+            jsonb_build_object(
+              'field_key', f.field_key,
+              'field_group', f.field_group,
+              'is_required', f.is_required,
+              'is_sensitive', f.is_sensitive
+            )
+            order by f.position
+          )
+          from public.model_update_request_fields f
+          where f.request_id = r.id
+        ), '[]'::jsonb)
+      )
+      order by r.created_at desc
+    )
+    from public.model_update_requests r
+    where r.model_id = model_uuid
+  ), '[]'::jsonb);
+end;
+$$;
+
+create or replace function public.get_my_model_update_request(p_request_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  model_uuid uuid;
+  payload jsonb;
+begin
+  model_uuid := public.current_model_id();
+
+  if model_uuid is null then
+    return null;
+  end if;
+
+  select jsonb_build_object(
+    'id', r.id,
+    'title', r.title,
+    'message', r.message,
+    'status', r.status,
+    'due_at', r.due_at,
+    'expires_at', r.expires_at,
+    'submitted_at', r.submitted_at,
+    'fields', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'field_key', f.field_key,
+          'field_group', f.field_group,
+          'is_required', f.is_required,
+          'is_sensitive', f.is_sensitive
+        )
+        order by f.position
+      )
+      from public.model_update_request_fields f
+      where f.request_id = r.id
+    ), '[]'::jsonb)
+  )
+  into payload
+  from public.model_update_requests r
+  where r.id = p_request_id
+    and r.model_id = model_uuid;
+
+  return payload;
+end;
+$$;
+
+create or replace function public.get_my_model_update_submission(p_request_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  model_uuid uuid;
+  payload jsonb;
+begin
+  model_uuid := public.current_model_id();
+
+  if model_uuid is null then
+    return null;
+  end if;
+
+  select jsonb_build_object(
+    'status', s.status,
+    'draft_payload', s.draft_payload,
+    'submitted_payload', s.submitted_payload,
+    'submitted_at', s.submitted_at,
+    'files', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', f.id,
+          'media_type', f.media_type,
+          'original_name', f.original_name,
+          'mime_type', f.mime_type,
+          'size_bytes', f.size_bytes,
+          'status', f.status,
+          'position', f.position
+        )
+        order by f.position, f.created_at
+      )
+      from public.model_update_files f
+      where f.submission_id = s.id
+    ), '[]'::jsonb)
+  )
+  into payload
+  from public.model_update_submissions s
+  join public.model_update_requests r on r.id = s.request_id
+  where s.request_id = p_request_id
+    and r.model_id = model_uuid;
+
+  return payload;
+end;
+$$;
+
+create or replace function public.claim_outbound_emails(p_limit integer default 5)
+returns setof public.outbound_emails
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  with claimed as (
+    select id
+    from public.outbound_emails
+    where status in ('queued', 'scheduled', 'retry_pending')
+      and (scheduled_at is null or scheduled_at <= now())
+    order by created_at
+    for update skip locked
+    limit greatest(1, least(coalesce(p_limit, 5), 20))
+  )
+  update public.outbound_emails e
+  set status = 'processing',
+      attempt_count = e.attempt_count + 1,
+      updated_at = now()
+  from claimed
+  where e.id = claimed.id
+  returning e.*;
 end;
 $$;
 
@@ -829,6 +1416,15 @@ revoke all on function public.mark_model_update_request_opened(text) from public
 revoke all on function public.start_model_update_request(text) from public;
 revoke all on function public.save_model_update_request_draft(text, jsonb) from public;
 revoke all on function public.submit_model_update_request(text, jsonb) from public;
+revoke all on function public.current_model_id() from public;
+revoke all on function public.get_my_model_update_requests() from public;
+revoke all on function public.get_my_model_update_request(uuid) from public;
+revoke all on function public.get_my_model_update_submission(uuid) from public;
+revoke all on function public.check_communication_rate_limit(text, text, text, integer, integer) from public;
+revoke all on function public.sanitize_model_update_payload(uuid, jsonb, boolean) from public;
+revoke all on function public.update_presentation_draft(uuid, uuid, jsonb) from public;
+revoke all on function public.publish_presentation_snapshot(uuid, uuid, jsonb) from public;
+revoke all on function public.claim_outbound_emails(integer) from public;
 
 grant execute on function public.get_public_presentation_by_token(text) to anon, authenticated;
 grant execute on function public.mark_public_presentation_opened(text) to anon, authenticated;
@@ -837,3 +1433,10 @@ grant execute on function public.mark_model_update_request_opened(text) to anon,
 grant execute on function public.start_model_update_request(text) to anon, authenticated;
 grant execute on function public.save_model_update_request_draft(text, jsonb) to anon, authenticated;
 grant execute on function public.submit_model_update_request(text, jsonb) to anon, authenticated;
+grant execute on function public.current_model_id() to authenticated;
+grant execute on function public.get_my_model_update_requests() to authenticated;
+grant execute on function public.get_my_model_update_request(uuid) to authenticated;
+grant execute on function public.get_my_model_update_submission(uuid) to authenticated;
+grant execute on function public.check_communication_rate_limit(text, text, text, integer, integer) to anon, authenticated;
+grant execute on function public.update_presentation_draft(uuid, uuid, jsonb) to authenticated;
+grant execute on function public.publish_presentation_snapshot(uuid, uuid, jsonb) to authenticated;

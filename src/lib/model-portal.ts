@@ -99,12 +99,7 @@ export async function getModelPortalData(): Promise<ModelPortalData> {
       .eq("model_id", model.id)
       .order("created_at", { ascending: false })
       .limit(8),
-    supabase
-      .from("model_update_requests")
-      .select("id, title, status, due_at, expires_at")
-      .eq("model_id", model.id)
-      .order("created_at", { ascending: false })
-      .limit(8)
+    supabase.rpc("get_my_model_update_requests")
   ]);
 
   const media =
@@ -116,7 +111,9 @@ export async function getModelPortalData(): Promise<ModelPortalData> {
   const paymentRows =
     paymentsResult.status === "fulfilled" && !paymentsResult.value.error ? paymentsResult.value.data ?? [] : [];
   const requestRows =
-    requestsResult.status === "fulfilled" && !requestsResult.value.error ? requestsResult.value.data ?? [] : [];
+    requestsResult.status === "fulfilled" && !requestsResult.value.error
+      ? ((requestsResult.value.data ?? []) as Array<{ due_at: string | null; expires_at: string; status: string; title: string }>)
+      : [];
 
   const schemaAlerts = [travelResult, paymentsResult, requestsResult]
     .filter((result) => result.status === "fulfilled" && result.value.error && isMissingSchemaError(result.value.error))
