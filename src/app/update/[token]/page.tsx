@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { findUpdateRequestByToken, startUpdateRequestByToken } from "@/lib/communications/data";
+import { requestIpHash } from "@/lib/communications/rate-limit";
 import { ModelUpdateForm } from "@/app/update/[token]/model-update-form";
 
 export const metadata = {
@@ -12,13 +13,14 @@ export const metadata = {
 
 export default async function ModelUpdatePortalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const request = await findUpdateRequestByToken(token);
+  const ipHash = await requestIpHash();
+  const request = await findUpdateRequestByToken(token, ipHash);
 
   if (!request || ["expired", "canceled", "applied"].includes(request.status)) {
     notFound();
   }
 
-  await startUpdateRequestByToken(token);
+  await startUpdateRequestByToken(token, ipHash);
 
   return (
     <main className="model-update-portal">
@@ -193,6 +195,51 @@ export default async function ModelUpdatePortalPage({ params }: { params: Promis
 
         .model-update-form dd {
           margin: 0;
+        }
+
+        .model-update-verification {
+          display: grid;
+          gap: 8px;
+          border: 1px solid rgba(153, 202, 255, 0.22);
+          border-radius: 12px;
+          background: rgba(4, 24, 60, 0.58);
+          padding: 12px;
+        }
+
+        .model-update-verification button,
+        .model-update-form input[type="file"]::file-selector-button {
+          border: 1px solid rgba(153, 202, 255, 0.3);
+          border-radius: 10px;
+          background: rgba(31, 125, 255, 0.22);
+          color: #f8fbff;
+          cursor: pointer;
+          font-weight: 800;
+          padding: 8px 10px;
+        }
+
+        .model-update-file-status {
+          display: grid;
+          gap: 4px;
+        }
+
+        .model-update-file-status small,
+        .model-update-verification small {
+          color: rgba(248, 251, 255, 0.72);
+          font-size: 12px;
+        }
+
+        @media (max-width: 640px) {
+          .model-update-portal {
+            padding: 14px;
+          }
+
+          .model-update-form dl div {
+            grid-template-columns: 1fr;
+          }
+
+          .model-update-submit {
+            width: 100%;
+          }
         }
       `}</style>
     </main>

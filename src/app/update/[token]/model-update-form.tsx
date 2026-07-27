@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { PublicModelUpdateRequestPayload } from "@/lib/communications/data";
+import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 type ModelUpdateFormProps = {
   request: PublicModelUpdateRequestPayload;
@@ -30,6 +31,13 @@ function stringifyDraftValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+async function fileSha256(file: File) {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
   const [draft, setDraft] = useState<Record<string, string>>(() => {
     const values: Record<string, string> = {};
@@ -38,6 +46,9 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
     }
     return values;
   });
+  const [fileStatus, setFileStatus] = useState<Record<string, string>>({});
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState<"idle" | "pending" | "sent" | "verified" | "error">("idle");
   const [status, setStatus] = useState<"dirty" | "error" | "saved" | "saving" | "submitted">("saved");
   const [isPending, startTransition] = useTransition();
   const requestedFields = useMemo(
@@ -50,16 +61,25 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
           ],
     [request.fields]
   );
-  const editableFields = requestedFields.filter((field) => !field.is_sensitive);
+  const editableFields = useMemo(() => requestedFields.filter((field) => !field.is_sensitive), [requestedFields]);
   const completedCount = editableFields.filter((field) => draft[field.field_key]?.trim()).length;
   const progress = editableFields.length ? Math.round((completedCount / editableFields.length) * 100) : 100;
+  const autosaveDraft = useMemo(
+    () =>
+      Object.fromEntries(
+        editableFields
+          .map((field) => [field.field_key, draft[field.field_key]] as const)
+          .filter(([, value]) => value?.trim())
+      ),
+    [draft, editableFields]
+  );
 
   useEffect(() => {
     if (status !== "dirty") return;
     const timer = window.setTimeout(async () => {
       setStatus("saving");
       const response = await fetch(`/update/${token}/autosave`, {
-        body: JSON.stringify({ draft }),
+        body: JSON.stringify({ draft: autosaveDraft }),
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
@@ -67,7 +87,7 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [draft, status, token]);
+  }, [autosaveDraft, status, token]);
 
   const groupedFields = useMemo(() => {
     const groups = new Map<string, typeof requestedFields>();
@@ -87,6 +107,94 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
       method: "POST"
     });
     setStatus(response.ok ? "submitted" : "error");
+  }
+
+  async function uploadFiles(fieldKey: string, files: FileList | null) {
+    if (!files?.length) return;
+    const supabase = createBrowserSupabaseClient();
+
+    for (const file of Array.from(files)) {
+      const key = `${fieldKey}:${file.name}`;
+      setFileStatus((current) => ({ ...current, [key]: "Preparando..." }));
+      const checksum = await fileSha256(file);
+      const prepare = await fetch(`/update/${token}/uploads`, {
+        body: JSON.stringify({
+          action: "prepare",
+          fieldKey,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sha256: checksum,
+          sizeBytes: file.size
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const prepared = (await prepare.json()) as {
+        bucket?: string;
+        error?: string;
+        objectPath?: string;
+        ok: boolean;
+        token?: string;
+      };
+
+      if (!prepared.ok || !prepared.bucket || !prepared.objectPath || !prepared.token) {
+        setFileStatus((current) => ({ ...current, [key]: prepared.error ?? "Falha ao preparar" }));
+        continue;
+      }
+
+      setFileStatus((current) => ({ ...current, [key]: "Enviando..." }));
+      const { error } = await supabase.storage
+        .from(prepared.bucket)
+        .uploadToSignedUrl(prepared.objectPath, prepared.token, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false
+        });
+
+      if (error) {
+        setFileStatus((current) => ({ ...current, [key]: error.message }));
+        continue;
+      }
+
+      const complete = await fetch(`/update/${token}/uploads`, {
+        body: JSON.stringify({
+          action: "complete",
+          bucket: prepared.bucket,
+          fieldKey,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          objectPath: prepared.objectPath,
+          sha256: checksum,
+          sizeBytes: file.size
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const completed = (await complete.json()) as { error?: string; ok: boolean };
+      setFileStatus((current) => ({
+        ...current,
+        [key]: completed.ok ? "Enviado para revisão" : completed.error ?? "Falha ao registrar"
+      }));
+    }
+  }
+
+  async function requestVerificationCode() {
+    setVerificationStatus("pending");
+    const response = await fetch(`/update/${token}/verification-code`, {
+      body: JSON.stringify({ mode: "request" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST"
+    });
+    setVerificationStatus(response.ok ? "sent" : "error");
+  }
+
+  async function verifyCode() {
+    setVerificationStatus("pending");
+    const response = await fetch(`/update/${token}/verification-code`, {
+      body: JSON.stringify({ code: verificationCode, mode: "verify" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST"
+    });
+    setVerificationStatus(response.ok ? "verified" : "error");
   }
 
   return (
@@ -111,6 +219,7 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
               label: field.field_key
             };
             const sensitive = field.is_sensitive || definition.sensitive;
+            const canEditSensitive = sensitive && verificationStatus === "verified";
 
             return (
               <label className={sensitive ? "sensitive" : ""} key={field.field_key}>
@@ -119,11 +228,20 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
                   {field.is_required ? <strong>Obrigatório</strong> : null}
                   {sensitive ? <strong>Verificação necessária</strong> : null}
                 </span>
-                {sensitive ? (
-                  <p>
-                    Este campo não é enviado sem verificação adicional por e-mail. A ARO ativará essa etapa antes de
-                    solicitar documentos, saúde ou banco.
-                  </p>
+                {sensitive && !canEditSensitive ? (
+                  <div className="model-update-verification">
+                    <p>Este campo exige código de verificação enviado para o e-mail cadastrado.</p>
+                    <button onClick={requestVerificationCode} type="button">Enviar código</button>
+                    <input
+                      inputMode="numeric"
+                      maxLength={6}
+                      onChange={(event) => setVerificationCode(event.target.value)}
+                      placeholder="000000"
+                      value={verificationCode}
+                    />
+                    <button onClick={verifyCode} type="button">Validar código</button>
+                    <small>{verificationStatus}</small>
+                  </div>
                 ) : definition.type === "textarea" ? (
                   <textarea
                     onChange={(event) => {
@@ -135,16 +253,21 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
                     value={draft[field.field_key] ?? ""}
                   />
                 ) : definition.type === "file" ? (
-                  <input
-                    accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime"
-                    onChange={(event) => {
-                      const names = Array.from(event.target.files ?? []).map((file) => file.name).join(", ");
-                      setDraft((current) => ({ ...current, [field.field_key]: names }));
-                      setStatus("dirty");
-                    }}
-                    type="file"
-                    multiple
-                  />
+                  <>
+                    <input
+                      accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime"
+                      onChange={(event) => uploadFiles(field.field_key, event.target.files)}
+                      type="file"
+                      multiple
+                    />
+                    <div className="model-update-file-status">
+                      {Object.entries(fileStatus)
+                        .filter(([key]) => key.startsWith(`${field.field_key}:`))
+                        .map(([key, value]) => (
+                          <small key={key}>{key.split(":").slice(1).join(":")}: {value}</small>
+                        ))}
+                    </div>
+                  </>
                 ) : (
                   <input
                     onChange={(event) => {
