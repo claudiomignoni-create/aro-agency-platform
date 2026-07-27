@@ -13,7 +13,7 @@ import {
   monthTitlePtBr,
   safeDateKey
 } from "@/lib/calendar";
-import { listClients } from "@/lib/clients";
+import { listClientOptions } from "@/lib/clients";
 import {
   jobModelStatusLabel,
   jobStatusLabel,
@@ -205,7 +205,7 @@ export default async function AdminCalendarPage({
       status: filters.status,
       type: filters.type
     }),
-    listClients(),
+    listClientOptions(),
     listModels()
   ]);
   const modelImageUrls = await createModelMainImageUrls(

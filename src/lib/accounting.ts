@@ -55,9 +55,33 @@ export type AccountingEntry = {
   occurred_on: string;
   payment_method: string | null;
   payment_reference: string | null;
+  source_plan_id: string | null;
   status: "scheduled" | "posted" | "void";
   title: string;
   void_reason: string | null;
+};
+
+export type ModelAccountingPlan = {
+  active: boolean;
+  amount: string | number;
+  cadence: "weekly" | "monthly";
+  category: string;
+  currency: AccountingCurrency;
+  custom_category_label: string | null;
+  description: string | null;
+  entry_type: "advance" | "expense";
+  id: string;
+  model: {
+    display_name: string;
+    id: string;
+    stage_name: string | null;
+  } | null;
+  model_id: string;
+  occurrence_count: number;
+  posting_mode: "post_all_now" | "schedule_per_period";
+  request_key: string;
+  start_date: string;
+  title: string;
 };
 
 export type AccountingPeriod = {
@@ -195,6 +219,32 @@ export async function listAccountingEntries(filters: AccountingPeriod & { modelI
   const { data, error } = await query.limit(500);
   if (error) throw error;
   return (data ?? []) as AccountingEntry[];
+}
+
+export async function listModelAccountingPlans(filters: AccountingPeriod & { modelId?: string } = {}) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  let query = supabase
+    .from("model_accounting_plans")
+    .select(`
+      *,
+      model:models (
+        id,
+        display_name,
+        stage_name
+      )
+    `)
+    .order("created_at", { ascending: false });
+
+  if (filters.currency) query = query.eq("currency", filters.currency);
+  if (filters.from) query = query.gte("start_date", filters.from);
+  if (filters.to) query = query.lte("start_date", filters.to);
+  if (filters.modelId) query = query.eq("model_id", filters.modelId);
+  if (filters.q) query = query.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%`);
+
+  const { data, error } = await query.limit(200);
+  if (error) throw error;
+  return (data ?? []) as ModelAccountingPlan[];
 }
 
 export async function listModelAccountSummaries(filters: AccountingPeriod = {}) {

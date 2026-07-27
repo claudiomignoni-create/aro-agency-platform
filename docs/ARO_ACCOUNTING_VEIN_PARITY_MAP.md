@@ -84,6 +84,17 @@ Base ARO:
 
 A proxima sequencia livre na ARO e `011`.
 
+Sequencia oficial reservada para esta release conjunta:
+
+- `010_agenda_event_types.sql`
+- `011_accounting_base.sql`
+- `012_accounting_receipts_integrity.sql`
+- `013_model_accounting_entries_plans.sql`
+- `014_clients_billing_tax_fields.sql`
+- `015_accounting_hardening_reconciliation.sql`
+
+PR #5 possui uma migration antiga tambem chamada `010`, e PR #6 possui outra migration antiga tambem chamada `010`. Esses PRs nao fazem parte desta release. Quando forem retomados, suas migrations deverao receber numeros posteriores a `015`. Notificacoes e IA nao devem ser incorporadas nesta release.
+
 1. `011_accounting_base.sql`
    - Tipo `finance_currency` com `BRL`, `USD`, `EUR`.
    - `financial_job_entries` com `job_id`, `model_id`, `client_id`, valores ARO, status financeiro e `financial_review_required`.

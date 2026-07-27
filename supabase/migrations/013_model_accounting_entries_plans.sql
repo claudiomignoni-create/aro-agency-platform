@@ -231,9 +231,7 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if old.status = 'posted' then
-    raise exception 'posted_accounting_entries_cannot_be_deleted';
-  end if;
+  raise exception 'model_accounting_entries_cannot_be_deleted';
 
   return old;
 end;

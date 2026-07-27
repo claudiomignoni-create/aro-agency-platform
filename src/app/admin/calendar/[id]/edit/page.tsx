@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dateKeyFromIso } from "@/lib/calendar";
-import { listClients } from "@/lib/clients";
+import { listClientOptions } from "@/lib/clients";
 import {
   getAdminJob,
   jobTitle,
@@ -34,7 +34,7 @@ export default async function EditCalendarEventPage({
 
   const selectedDate = dateKeyFromIso(job.start_at);
   const [clients, models, conflicts] = await Promise.all([
-    listClients(),
+    listClientOptions(),
     listModels(),
     listModelCalendarConflictsByDate(selectedDate)
   ]);

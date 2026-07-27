@@ -115,11 +115,12 @@ insert into public.financial_job_entries (
 )
 select
   case
-    when coalesce(jm.fee_amount, jm.final_amount) is null or j.agency_fee_percent is null then null
-    else round(coalesce(jm.fee_amount, jm.final_amount) * j.agency_fee_percent / 100, 2)
+    when jm.fee_amount is null or j.agency_fee_percent is null then null
+    else round(jm.fee_amount * j.agency_fee_percent / 100, 2)
   end as agency_fee_amount,
   j.agency_fee_percent,
   case
+    when jm.fee_amount is null then null
     when jm.final_amount is not null then jm.final_amount
     when jm.fee_amount is not null and j.agency_fee_percent is not null
       then round(jm.fee_amount + (jm.fee_amount * j.agency_fee_percent / 100), 2)
@@ -128,15 +129,15 @@ select
   j.client_id,
   'BRL'::public.finance_currency,
   (
-    coalesce(jm.fee_amount, jm.final_amount) is null
+    jm.fee_amount is null
     or j.agency_fee_percent is null
     or j.status in ('canceled', 'declined')
   ) as financial_review_required,
   (j.start_at at time zone 'America/Sao_Paulo')::date,
   j.id,
-  coalesce(jm.fee_amount, jm.final_amount),
+  jm.fee_amount,
   jm.model_id,
-  coalesce(jm.fee_amount, jm.final_amount),
+  jm.fee_amount,
   coalesce(nullif(j.project_name, ''), nullif(j.brand_name, ''), 'Trabalho AROLAB')
 from public.job_models jm
 join public.jobs j on j.id = jm.job_id

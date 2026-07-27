@@ -153,9 +153,7 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if old.status = 'posted' then
-    raise exception 'posted_receipts_cannot_be_deleted';
-  end if;
+  raise exception 'accounting_receipts_cannot_be_deleted';
 
   return old;
 end;
