@@ -57,6 +57,20 @@ test("communication migration creates token hashes, queue states and RLS", async
   assert.doesNotMatch(sql, /TRUNCATE/i);
 });
 
+test("public presentation snapshots strip private media paths", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const publicPage = await readFile("src/app/p/[token]/page.tsx", "utf8");
+  const data = await readFile("src/lib/communications/data.ts", "utf8");
+  const publicFunction = sql.slice(sql.indexOf("create or replace function public.get_public_presentation_by_token"));
+
+  assert.match(publicFunction, /jsonb_build_object\(\s*'media_type'/);
+  assert.doesNotMatch(publicFunction, /'storage_bucket'/);
+  assert.doesNotMatch(publicFunction, /'storage_path'/);
+  assert.doesNotMatch(publicFunction, /'thumbnail_path'/);
+  assert.match(data, /getPresentationPrivateMediaRefsByToken/);
+  assert.match(publicPage, /signPresentationMedia\(presentation, privateRefs\)/);
+});
+
 test("public presentation access uses restricted security definer RPCs", async () => {
   const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
   const publicPage = await readFile("src/app/p/[token]/page.tsx", "utf8");
@@ -85,6 +99,72 @@ test("public model update access avoids direct table reads and supports draft su
   assert.doesNotMatch(updatePage, /\.from\("model_update_requests"\)/);
   assert.match(data, /\.rpc\("save_model_update_request_draft"/);
   assert.match(data, /\.rpc\("submit_model_update_request"/);
+});
+
+test("model portal update requests are model-owned RPCs instead of model_id filters", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const portal = await readFile("src/lib/model-portal.ts", "utf8");
+
+  assert.match(sql, /current_model_id\(\)/);
+  assert.match(sql, /get_my_model_update_requests/);
+  assert.match(sql, /where r\.model_id = model_uuid/);
+  assert.match(portal, /\.rpc\("get_my_model_update_requests"\)/);
+  assert.doesNotMatch(portal, /\.from\("model_update_requests"\)[^]*\.eq\("model_id"/);
+});
+
+test("model update payloads, uploads and OTP are validated and rate limited", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const data = await readFile("src/lib/communications/data.ts", "utf8");
+  const upload = await readFile("src/app/update/[token]/uploads/route.ts", "utf8");
+  const otp = await readFile("src/app/update/[token]/verification-code/route.ts", "utf8");
+  const form = await readFile("src/app/update/[token]/model-update-form.tsx", "utf8");
+
+  assert.match(sql, /sanitize_model_update_payload/);
+  assert.match(sql, /field_not_requested/);
+  assert.match(sql, /sensitive_field_requires_verification/);
+  assert.match(sql, /sensitive_verified boolean/);
+  assert.match(sql, /consumed_at = now\(\)/);
+  assert.match(sql, /communication_rate_limits/);
+  assert.match(sql, /check_communication_rate_limit/);
+  assert.match(data, /operation: "update_start"/);
+  assert.match(upload, /createSignedUploadUrl/);
+  assert.match(upload, /extensions:/);
+  assert.match(form, /uploadToSignedUrl/);
+  assert.match(upload, /model_update_verification_codes/);
+  assert.match(otp, /crypto\.randomInt\(100000, 1000000\)/);
+  assert.match(otp, /code_hash: sha256\(code\)/);
+  assert.doesNotMatch(otp, /return NextResponse\.json\([^)]*code/);
+  assert.match(form, /fileSha256/);
+  assert.match(form, /verification-code/);
+});
+
+test("email queue claims atomically and retries with backoff", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const queue = await readFile("src/app/api/communications/process-email-queue/route.ts", "utf8");
+  const reminders = await readFile("src/app/api/communications/process-model-update-reminders/route.ts", "utf8");
+
+  assert.match(sql, /claim_outbound_emails/);
+  assert.match(sql, /for update skip locked/);
+  assert.match(sql, /status = 'processing'/);
+  assert.match(queue, /\.rpc\("claim_outbound_emails"/);
+  assert.match(queue, /retry_pending/);
+  assert.match(queue, /delayMinutes/);
+  assert.match(reminders, /onConflict: "idempotency_key"/);
+  assert.match(reminders, /status: "queued"/);
+  assert.doesNotMatch(reminders, /status: "sent"/);
+});
+
+test("presentation edits and publication use transactional RPCs", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const actions = await readFile("src/app/admin/presentations/actions.ts", "utf8");
+
+  assert.match(sql, /update_presentation_draft/);
+  assert.match(sql, /publish_presentation_snapshot/);
+  assert.match(sql, /for update/);
+  assert.match(actions, /\.rpc\("update_presentation_draft"/);
+  assert.match(actions, /\.rpc\("publish_presentation_snapshot"/);
+  assert.doesNotMatch(actions, /\.from\("presentation_models"\)\.delete/);
+  assert.doesNotMatch(actions, /\.from\("presentation_versions"\)\.insert/);
 });
 
 test("communication migration preserves upgrade compatibility and history", async () => {

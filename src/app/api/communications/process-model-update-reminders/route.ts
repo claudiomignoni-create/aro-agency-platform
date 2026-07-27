@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aroGoogleEmail } from "@/lib/communications/google-workspace";
-import { randomToken, sanitizeError } from "@/lib/communications/security";
+import { sanitizeError } from "@/lib/communications/security";
 
 function authorized(request: Request) {
   const secret = process.env.COMMUNICATIONS_CRON_SECRET;
@@ -86,10 +86,10 @@ export async function POST(request: Request) {
 
       const { data: email, error: emailError } = await admin
         .from("outbound_emails")
-        .insert({
+        .upsert({
           body_html: html(bodyText),
           body_text: bodyText,
-          idempotency_key: `reminder-${reminder.id}-${randomToken(8)}`,
+          idempotency_key: `reminder-${reminder.id}`,
           mode: "send_now",
           model_update_request_id: requestRow.id,
           recipient_email: model.email,
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
           sender_connection_id: connection.id,
           status: "queued",
           subject: "ARO — Lembrete de atualização"
-        })
+        }, { onConflict: "idempotency_key" })
         .select("id")
         .single();
 
@@ -107,8 +107,7 @@ export async function POST(request: Request) {
         .from("model_update_reminders")
         .update({
           outbound_email_id: email.id,
-          sent_at: now,
-          status: "sent"
+          status: "queued"
         })
         .eq("id", reminder.id);
 

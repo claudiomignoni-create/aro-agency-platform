@@ -16,7 +16,9 @@ type QueueEmail = {
   body_text: string;
   id: string;
   idempotency_key: string;
+  model_update_request_id: string | null;
   mode: "gmail_draft" | "scheduled" | "send_now" | "system_draft";
+  presentation_id: string | null;
   recipient_email: string;
   sender_connection_id: string | null;
   status: string;
@@ -72,32 +74,14 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const now = new Date().toISOString();
-  const { data: queue, error } = await admin
-    .from("outbound_emails")
-    .select("id, sender_connection_id, recipient_email, subject, body_html, body_text, status, mode, attempt_count, idempotency_key")
-    .in("status", ["queued", "scheduled", "retry_pending"])
-    .or(`scheduled_at.is.null,scheduled_at.lte.${now}`)
-    .order("created_at", { ascending: true })
-    .limit(5);
+  const { data: queue, error } = await admin.rpc("claim_outbound_emails", {
+    p_limit: 5
+  });
 
   if (error) throw error;
 
   const results = [];
   for (const email of (queue ?? []) as QueueEmail[]) {
-    const lock = await admin
-      .from("outbound_emails")
-      .update({ attempt_count: email.attempt_count + 1, status: "processing" })
-      .eq("id", email.id)
-      .in("status", ["queued", "scheduled", "retry_pending"])
-      .select("id")
-      .maybeSingle();
-
-    if (lock.error || !lock.data) {
-      results.push({ id: email.id, status: "skipped" });
-      continue;
-    }
-
     try {
       if (!email.sender_connection_id) throw new Error("E-mail sem conexão Google.");
       const { data: connection, error: connectionError } = await admin
@@ -125,10 +109,10 @@ export async function POST(request: Request) {
             gmail_draft_id: draft.id,
             gmail_message_id: draft.message?.id ?? null,
             gmail_thread_id: draft.message?.threadId ?? null,
-            status: "sent",
-            sent_at: new Date().toISOString()
+            status: "draft"
           })
           .eq("id", email.id);
+        results.push({ id: email.id, status: "draft" });
       } else {
         assertSafeRecipientForRealSend(email.recipient_email);
         const sent = await sendGmailMessage(accessToken, {
@@ -146,19 +130,43 @@ export async function POST(request: Request) {
             sent_at: new Date().toISOString()
           })
           .eq("id", email.id);
+        await admin
+          .from("model_update_reminders")
+          .update({ sent_at: new Date().toISOString(), status: "sent" })
+          .eq("outbound_email_id", email.id)
+          .neq("status", "sent");
+        await admin
+          .from("presentation_recipients")
+          .update({ sent_at: new Date().toISOString() })
+          .eq("outbound_email_id", email.id);
+        if (email.presentation_id) {
+          await admin
+            .from("presentations")
+            .update({ status: "sent" })
+            .eq("id", email.presentation_id)
+            .eq("status", "published");
+        }
+        results.push({ id: email.id, status: "sent" });
       }
-
-      results.push({ id: email.id, status: "sent" });
     } catch (error) {
-      const retry = email.attempt_count + 1 < 3;
+      const retry = email.attempt_count < 3;
+      const delayMinutes = email.attempt_count <= 1 ? 5 : 30;
       await admin
         .from("outbound_emails")
         .update({
           error_message_sanitized: sanitizeError(error),
           failed_at: retry ? null : new Date().toISOString(),
+          scheduled_at: retry ? new Date(Date.now() + delayMinutes * 60 * 1000).toISOString() : null,
           status: retry ? "retry_pending" : "failed"
         })
         .eq("id", email.id);
+      if (!retry) {
+        await admin
+          .from("model_update_reminders")
+          .update({ status: "failed" })
+          .eq("outbound_email_id", email.id)
+          .neq("status", "sent");
+      }
       results.push({ id: email.id, status: retry ? "retry_pending" : "failed" });
     }
   }

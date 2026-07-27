@@ -6,6 +6,8 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createPublicToken } from "@/lib/communications/data";
+import { assertSafeRecipientForRealSend, getUsableGoogleAccessToken } from "@/lib/communications/google-server";
+import { randomToken } from "@/lib/communications/security";
 
 function textValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -22,6 +24,87 @@ function values(formData: FormData, key: string) {
 function numberValue(formData: FormData, key: string, fallback = 0) {
   const value = Number.parseInt(textValue(formData, key), 10);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function emailValues(formData: FormData) {
+  const manual = textValue(formData, "manual_email");
+  return Array.from(
+    new Set(
+      [...values(formData, "recipient"), manual]
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.includes("@"))
+    )
+  );
+}
+
+function bodyFromPresentation({
+  link,
+  modelCount,
+  recipientName,
+  title
+}: {
+  link: string;
+  modelCount: number;
+  recipientName: string;
+  title: string;
+}) {
+  return [
+    `Olá, ${recipientName || "tudo bem?"}.`,
+    `Compartilho a apresentação "${title}" com ${modelCount} modelo(s) selecionado(s) pela ARO.`,
+    `Ver apresentação: ${link}`,
+    "Claudio Mignoni\nDirector / Model Manager\nARO\nclaudio@arolab.co\nwww.arolab.co"
+  ].join("\n\n");
+}
+
+function htmlFromText(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${paragraph.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function zonedDateTimeToUtc(date: string, time: string, timeZone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric"
+  }).formatToParts(utcGuess);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const zonedAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second)
+  );
+  return new Date(utcGuess.getTime() - (zonedAsUtc - utcGuess.getTime()));
+}
+
+function scheduledDateTime(id: string, formData: FormData) {
+  const date = textValue(formData, "scheduled_date");
+  const time = textValue(formData, "scheduled_time");
+  const timezone = textValue(formData, "scheduled_timezone") || "America/Sao_Paulo";
+
+  if (!date || !time) redirect(`/admin/presentations/${id}/email?error=missing-schedule`);
+
+  const scheduledAt = zonedDateTimeToUtc(date, time, timezone);
+  if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+    redirect(`/admin/presentations/${id}/email?error=invalid-schedule`);
+  }
+
+  return {
+    scheduled_at: scheduledAt.toISOString(),
+    scheduled_timezone: timezone
+  };
 }
 
 export async function createPresentationAction(formData: FormData) {
@@ -69,63 +152,41 @@ export async function updatePresentationAction(id: string, formData: FormData) {
 
   if (!title) redirect(`/admin/presentations/${id}/edit?error=missing-title`);
 
-  const { error } = await supabase
-    .from("presentations")
-    .update({
+  const selectedModelIds = values(formData, "model_id");
+  const highlightedModelId = textValue(formData, "highlighted_model_id");
+  const models = selectedModelIds.map((modelId, index) => ({
+    highlighted: highlightedModelId === modelId,
+    include_location: formData.get(`include_location_${modelId}`) === "on",
+    include_measurements: formData.get(`include_measurements_${modelId}`) === "on",
+    include_social_links: formData.get(`include_social_links_${modelId}`) === "on",
+    media: values(formData, `media_${modelId}`).map((mediaId, mediaIndex) => ({
+      media_id: mediaId,
+      media_type: textValue(formData, `media_type_${mediaId}`) || "portfolio",
+      position: mediaIndex
+    })),
+    model_id: modelId,
+    position: numberValue(formData, `position_${modelId}`, index)
+  }));
+
+  const { error } = await supabase.rpc("update_presentation_draft", {
+    p_admin_id: profile.id,
+    p_payload: {
+      agency_id: nullableUuid(textValue(formData, "agency_id")),
       allow_downloads: formData.get("allow_downloads") === "on",
       client_id: nullableUuid(textValue(formData, "client_id")),
       description: textValue(formData, "description") || null,
       expires_at: textValue(formData, "expires_at") || null,
-      agency_id: nullableUuid(textValue(formData, "agency_id")),
       job_id: nullableUuid(textValue(formData, "job_id")),
       language: textValue(formData, "language") || "pt-BR",
+      models,
       purpose: textValue(formData, "purpose") || null,
-      title,
-      updated_by: profile.id
-    })
-    .eq("id", id)
-    .in("status", ["draft", "published"]);
+      title
+    },
+    p_presentation_id: id
+  });
 
   if (error && isMissingSchemaError(error)) redirect("/admin/presentations?schema=pending");
   if (error) throw error;
-
-  const selectedModelIds = values(formData, "model_id");
-  const highlightedModelId = textValue(formData, "highlighted_model_id");
-
-  await supabase.from("presentation_models").delete().eq("presentation_id", id);
-
-  for (const [index, modelId] of selectedModelIds.entries()) {
-    const { data: inserted, error: modelError } = await supabase
-      .from("presentation_models")
-      .insert({
-        include_location: formData.get(`include_location_${modelId}`) === "on",
-        include_measurements: formData.get(`include_measurements_${modelId}`) === "on",
-        include_social_links: formData.get(`include_social_links_${modelId}`) === "on",
-        model_id: modelId,
-        model_snapshot: {
-          highlighted: highlightedModelId === modelId,
-          note: "Draft selection. Publication creates immutable sanitized snapshot."
-        },
-        position: numberValue(formData, `position_${modelId}`, index),
-        presentation_id: id
-      })
-      .select("id")
-      .single();
-
-    if (modelError) throw modelError;
-
-    const mediaIds = values(formData, `media_${modelId}`);
-    for (const [mediaIndex, mediaId] of mediaIds.entries()) {
-      const { error: mediaError } = await supabase.from("presentation_model_media").insert({
-        media_snapshot: { note: "Draft media selection. Publication snapshots safe media fields." },
-        media_type: textValue(formData, `media_type_${mediaId}`) || "portfolio",
-        model_media_id: mediaId,
-        position: mediaIndex,
-        presentation_model_id: inserted.id
-      });
-      if (mediaError) throw mediaError;
-    }
-  }
 
   revalidatePath(`/admin/presentations/${id}`);
   revalidatePath(`/admin/presentations/${id}/edit`);
@@ -268,37 +329,13 @@ export async function publishPresentationAction(id: string) {
 
   if (!snapshot.models.length) redirect(`/admin/presentations/${id}/edit?error=no-models`);
 
-  const { data: presentation, error: currentError } = await supabase
-    .from("presentations")
-    .select("version_number")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (currentError) throw currentError;
-  const nextVersion = (presentation?.version_number ?? 0) + 1;
-
-  const { error: updateError } = await supabase
-    .from("presentations")
-    .update({
-      published_at: new Date().toISOString(),
-      revoked_at: null,
-      snapshot,
-      status: "published",
-      updated_by: profile.id,
-      version_number: nextVersion
-    })
-    .eq("id", id);
-
-  if (updateError) throw updateError;
-
-  const { error: versionError } = await supabase.from("presentation_versions").insert({
-    created_by: profile.id,
-    presentation_id: id,
-    snapshot,
-    version_number: nextVersion
+  const { error } = await supabase.rpc("publish_presentation_snapshot", {
+    p_admin_id: profile.id,
+    p_presentation_id: id,
+    p_snapshot: snapshot
   });
 
-  if (versionError) throw versionError;
+  if (error) throw error;
 
   revalidatePath(`/admin/presentations/${id}`);
   revalidatePath(`/admin/presentations/${id}/preview`);
@@ -352,5 +389,86 @@ export async function regeneratePresentationTokenAction(id: string) {
     .eq("id", id);
   if (error) throw error;
   revalidatePath(`/admin/presentations/${id}`);
+  redirect(`/admin/presentations/${id}?token=${encodeURIComponent(token)}`);
+}
+
+export async function createPresentationEmailsAction(id: string, formData: FormData) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const recipients = emailValues(formData);
+  if (!recipients.length) redirect(`/admin/presentations/${id}/email?error=missing-recipient`);
+
+  const { data: presentation, error } = await supabase
+    .from("presentations")
+    .select("id, title, language, status, snapshot")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!presentation) redirect("/admin/presentations");
+  if (!["published", "sent"].includes(presentation.status)) {
+    redirect(`/admin/presentations/${id}/email?error=not-published`);
+  }
+
+  const mode = textValue(formData, "mode") || "system_draft";
+  if (mode === "send_now" || mode === "scheduled") {
+    for (const recipient of recipients) assertSafeRecipientForRealSend(recipient);
+  }
+
+  const connection =
+    mode === "gmail_draft" || mode === "send_now" || mode === "scheduled"
+      ? await getUsableGoogleAccessToken(profile.id)
+      : null;
+  const { hash, token } = createPublicToken();
+  const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://aro-agency-platform.vercel.app"}/p/${token}`;
+  const snapshot = (presentation.snapshot ?? {}) as { models?: unknown[] };
+  const subject = textValue(formData, "subject") || `ARO — ${presentation.title}`;
+
+  await supabase
+    .from("presentations")
+    .update({ public_token_hash: hash, updated_by: profile.id })
+    .eq("id", id);
+
+  for (const recipientEmail of recipients) {
+    const recipientName = recipientEmail.split("@")[0] ?? "contato";
+    const bodyText = bodyFromPresentation({
+      link: publicUrl,
+      modelCount: snapshot.models?.length ?? 0,
+      recipientName,
+      title: presentation.title
+    });
+    const schedule = mode === "scheduled" ? scheduledDateTime(id, formData) : {};
+    const status =
+      mode === "scheduled" ? "scheduled" : mode === "send_now" || mode === "gmail_draft" ? "queued" : "draft";
+    const { data: email, error: emailError } = await supabase
+      .from("outbound_emails")
+      .insert({
+        body_html: htmlFromText(bodyText),
+        body_text: bodyText,
+        created_by: profile.id,
+        idempotency_key: randomToken(24),
+        mode,
+        presentation_id: id,
+        recipient_email: recipientEmail,
+        recipient_name: recipientName,
+        ...schedule,
+        sender_connection_id: connection?.connectionId ?? null,
+        status,
+        subject
+      })
+      .select("id")
+      .single();
+    if (emailError) throw emailError;
+
+    const { error: recipientError } = await supabase.from("presentation_recipients").insert({
+      outbound_email_id: email.id,
+      presentation_id: id,
+      recipient_email: recipientEmail,
+      recipient_name: recipientName
+    });
+    if (recipientError) throw recipientError;
+  }
+
+  revalidatePath(`/admin/presentations/${id}`);
+  revalidatePath(`/admin/presentations/${id}/email`);
   redirect(`/admin/presentations/${id}?token=${encodeURIComponent(token)}`);
 }

@@ -22,6 +22,53 @@ function htmlFromText(value: string) {
     .join("");
 }
 
+function scheduledDateTime(formData: FormData) {
+  const date = textValue(formData, "scheduled_date");
+  const time = textValue(formData, "scheduled_time");
+  const timezone = textValue(formData, "scheduled_timezone") || "America/Sao_Paulo";
+
+  if (!date || !time) {
+    throw new Error("Informe data e hora para agendar.");
+  }
+
+  const scheduledAt = zonedDateTimeToUtc(date, time, timezone);
+  if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+    throw new Error("O agendamento precisa estar no futuro.");
+  }
+
+  return {
+    scheduled_at: scheduledAt.toISOString(),
+    scheduled_timezone: timezone
+  };
+}
+
+function zonedDateTimeToUtc(date: string, time: string, timeZone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric"
+  }).formatToParts(utcGuess);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const zonedAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second)
+  );
+  const offset = zonedAsUtc - utcGuess.getTime();
+  return new Date(utcGuess.getTime() - offset);
+}
+
 export async function createOutboundEmailAction(formData: FormData) {
   const profile = await requireRole(["admin"]);
   const supabase = await createClient();
@@ -84,6 +131,17 @@ export async function createOutboundEmailAction(formData: FormData) {
           status: "sent"
         } as never;
       }
+    }
+
+    if (mode === "scheduled") {
+      assertSafeRecipientForRealSend(recipientEmail);
+      const connection = await getUsableGoogleAccessToken(profile.id);
+      insertRecord = {
+        ...record,
+        ...scheduledDateTime(formData),
+        sender_connection_id: connection.connectionId,
+        status: "scheduled"
+      } as never;
     }
 
     const { error } = await supabase.from("outbound_emails").insert(insertRecord);

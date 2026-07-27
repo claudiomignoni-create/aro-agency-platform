@@ -41,6 +41,15 @@ export default function ComposeEmailPage() {
               { label: "Agendar envio", value: "scheduled" }
             ]}
           />
+          <label className="admin-field">
+            <span>Data do agendamento</span>
+            <input name="scheduled_date" type="date" />
+          </label>
+          <label className="admin-field">
+            <span>Hora do agendamento</span>
+            <input name="scheduled_time" type="time" />
+          </label>
+          <AdminTextField label="Timezone" name="scheduled_timezone" placeholder="America/Sao_Paulo" />
           <label className="admin-field span-2">
             <span>Mensagem</span>
             <textarea
