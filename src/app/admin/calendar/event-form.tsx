@@ -4,6 +4,7 @@ import {
   currentDateKey,
   dateKeyFromIso
 } from "@/lib/calendar";
+import type { ClientOption } from "@/lib/clients";
 import {
   jobStatusOptions,
   jobTypeLabel,
@@ -13,7 +14,6 @@ import {
   type JobWithRelations
 } from "@/lib/jobs";
 import type {
-  Client,
   JobStatus,
   JobType,
   Model,
@@ -22,7 +22,7 @@ import type {
 
 type CalendarEventFormProps = {
   action: (formData: FormData) => void | Promise<void>;
-  clients: Client[];
+  clients: ClientOption[];
   conflicts: ModelCalendarBlock[];
   event?: JobWithRelations;
   initialDate?: string;

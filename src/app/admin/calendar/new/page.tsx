@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { currentDateKey, isValidDateKey, safeDateKey } from "@/lib/calendar";
-import { listClients } from "@/lib/clients";
+import { listClientOptions } from "@/lib/clients";
 import {
   listModelCalendarConflictsByDate,
   safeJobType
@@ -26,7 +26,7 @@ export default async function NewCalendarEventPage({
   const selectedDate = safeDateKey(params.date, today);
   const hasInvalidDateParam = Boolean(params.date && !isValidDateKey(params.date));
   const [clients, models, conflicts] = await Promise.all([
-    listClients(),
+    listClientOptions(),
     listModels(),
     listModelCalendarConflictsByDate(selectedDate)
   ]);
