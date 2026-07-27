@@ -211,6 +211,7 @@ export const modelProfileTabs = [
   { id: "work", label: "Trabalhos importantes" },
   { id: "health", label: "Saúde e logística" },
   { id: "representation", label: "Representação e carreira" },
+  { id: "international", label: "Temporadas internacionais" },
   { id: "internal", label: "Observações internas" },
   { id: "history", label: "Histórico e atualizações" }
 ] as const;
@@ -1739,11 +1740,38 @@ function renderActiveTab(profile: ModelProfile, activeTab: ModelProfileTab) {
       return <HealthTab profile={profile} />;
     case "representation":
       return <RepresentationTab profile={profile} />;
+    case "international":
+      return <InternationalSeasonsTab model={profile.model} />;
     case "internal":
       return <InternalTab model={profile.model} />;
     case "history":
       return <HistoryTab profile={profile} />;
   }
+}
+
+function InternationalSeasonsTab({ model }: { model: Model }) {
+  return (
+    <div className="stack">
+      <div>
+        <span className="eyebrow">Travel</span>
+        <h3>Temporadas internacionais</h3>
+        <p className="muted">
+          Controle temporadas, agencias parceiras, documentos privados e alertas pelo modulo Travel.
+        </p>
+      </div>
+      <div className="actions">
+        <Link className="button" href={`/admin/travel?model=${model.id}`}>
+          Ver viagens e temporadas
+        </Link>
+        <Link className="button secondary" href="/admin/agencies">
+          Ver Agencies
+        </Link>
+        <Link className="button secondary" href={`/admin/calendar/new?modelId=${model.id}&type=travel`}>
+          Criar evento de viagem
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 export function ModelProfileEditor({

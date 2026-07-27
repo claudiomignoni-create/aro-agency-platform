@@ -349,7 +349,7 @@ export default async function AdminDashboardPage({
             <Shortcut href="/admin/media" icon={Send} label="Enviar Material" />
             <Shortcut href="/admin/clients" icon={UsersRound} label="Ver CRM" />
             <Shortcut href="/admin/accounting/reports" icon={Landmark} label="Relatorios Gerenciais" />
-            <Shortcut href="/admin/clients/new?client_type=international_agency" icon={Plus} label="Nova Agencia Parceira" />
+            <Shortcut href="/admin/agencies/new" icon={Plus} label="Nova Agencia Parceira" />
           </div>
         </article>
 

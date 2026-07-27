@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
+import { isMissingAgenciesSchemaError } from "@/lib/agencies";
 import { createClient } from "@/lib/supabase/server";
 
 type SearchResult = {
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
   }
 
   const pattern = likeQuery(q);
-  const [modelsResult, clientsResult, jobsResult, tripsResult, flightsResult] =
+  const [modelsResult, clientsResult, agenciesResult, jobsResult, tripsResult, flightsResult] =
     await Promise.allSettled([
       supabase
         .from("models")
@@ -44,6 +45,13 @@ export async function GET(request: Request) {
         .select("id, company_name, contact_name, client_type, city, country")
         .or(
           `company_name.ilike.${pattern},contact_name.ilike.${pattern},general_email.ilike.${pattern},city.ilike.${pattern},country.ilike.${pattern}`
+        )
+        .limit(8),
+      supabase
+        .from("partner_agencies")
+        .select("id, display_name, legal_name, agency_type, city, country")
+        .or(
+          `display_name.ilike.${pattern},legal_name.ilike.${pattern},city.ilike.${pattern},country.ilike.${pattern},primary_email.ilike.${pattern},website_url.ilike.${pattern},instagram_url.ilike.${pattern}`
         )
         .limit(8),
       supabase
@@ -85,15 +93,32 @@ export async function GET(request: Request) {
 
   if (clientsResult.status === "fulfilled" && !clientsResult.value.error) {
     for (const client of clientsResult.value.data ?? []) {
-      const isAgency = ["international_agency", "partner"].includes(client.client_type ?? "");
       results.push({
         href: `/admin/clients/${client.id}`,
-        id: `${isAgency ? "agency" : "client"}:${client.id}`,
+        id: `client:${client.id}`,
         subtitle: compactSubtitle([client.contact_name, client.city, client.country]),
         title: client.company_name,
-        type: isAgency ? "agency" : "client"
+        type: "client"
       });
     }
+  }
+
+  if (agenciesResult.status === "fulfilled" && !agenciesResult.value.error) {
+    for (const agency of agenciesResult.value.data ?? []) {
+      results.push({
+        href: `/admin/agencies/${agency.id}`,
+        id: `agency:${agency.id}`,
+        subtitle: compactSubtitle([agency.agency_type, agency.city, agency.country]),
+        title: agency.display_name,
+        type: "agency"
+      });
+    }
+  } else if (
+    agenciesResult.status === "fulfilled" &&
+    agenciesResult.value.error &&
+    !isMissingAgenciesSchemaError(agenciesResult.value.error)
+  ) {
+    throw agenciesResult.value.error;
   }
 
   if (jobsResult.status === "fulfilled" && !jobsResult.value.error) {

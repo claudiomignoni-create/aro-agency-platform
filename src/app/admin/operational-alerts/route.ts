@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { requireRole } from "@/lib/auth";
 import { operationalTimeZone } from "@/lib/calendar";
+import { isMissingInternationalSeasonsSchemaError } from "@/lib/international-seasons";
 import { createClient } from "@/lib/supabase/server";
 
 type AlertItem = {
@@ -48,7 +49,7 @@ export async function GET() {
   const in48Hours = new Date(now.getTime() + 48 * 36e5).toISOString();
   const isoNow = now.toISOString();
 
-  const [jobsResult, financeResult, flightsResult, documentsResult, updatesResult] =
+  const [jobsResult, financeResult, flightsResult, seasonAlertsResult, documentsResult, updatesResult] =
     await Promise.allSettled([
       supabase
         .from("jobs")
@@ -70,6 +71,14 @@ export async function GET() {
         .lte("departure_at", in48Hours)
         .order("departure_at", { ascending: true })
         .limit(8),
+      supabase
+        .from("international_season_alerts")
+        .select("id, season_id, alert_type, due_on, priority, title, description, link_path, status")
+        .gte("due_on", isoNow.slice(0, 10))
+        .lte("due_on", new Date(now.getTime() + 120 * 24 * 36e5).toISOString().slice(0, 10))
+        .in("status", ["scheduled", "active"])
+        .order("due_on", { ascending: true })
+        .limit(10),
       supabase
         .from("model_media")
         .select("id, model_id, title, valid_until, media_type")
@@ -144,6 +153,26 @@ export async function GET() {
     !isMissingSchemaError(flightsResult.value.error)
   ) {
     throw flightsResult.value.error;
+  }
+
+  if (seasonAlertsResult.status === "fulfilled" && !seasonAlertsResult.value.error) {
+    for (const alert of seasonAlertsResult.value.data ?? []) {
+      alerts.push({
+        description: alert.description ?? "Temporada internacional",
+        href: alert.link_path || `/admin/travel`,
+        id: `season-alert:${alert.id}`,
+        priority: alert.priority,
+        timeLabel: alert.due_on,
+        title: alert.title,
+        type: alert.alert_type.includes("payment") ? "payment" : "contract"
+      });
+    }
+  } else if (
+    seasonAlertsResult.status === "fulfilled" &&
+    seasonAlertsResult.value.error &&
+    !isMissingInternationalSeasonsSchemaError(seasonAlertsResult.value.error)
+  ) {
+    throw seasonAlertsResult.value.error;
   }
 
   if (documentsResult.status === "fulfilled" && !documentsResult.value.error) {

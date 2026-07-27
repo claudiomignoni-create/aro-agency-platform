@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { Plane, Search } from "@/components/admin/admin-icons";
 import {
+  internationalSeasonStatusLabel,
+  listInternationalSeasons
+} from "@/lib/international-seasons";
+import {
   getTravelSchemaStatus,
   listTravelTrips,
   tripStatusLabel,
@@ -32,7 +36,11 @@ function formatDate(value: string | null) {
 
 export default async function AdminTravelPage({ searchParams }: AdminTravelPageProps) {
   const filters = (await searchParams) ?? {};
-  const [schema, models] = await Promise.all([getTravelSchemaStatus(), listModels()]);
+  const [schema, models, seasons] = await Promise.all([
+    getTravelSchemaStatus(),
+    listModels(),
+    listInternationalSeasons({ activeOnly: true })
+  ]);
   const trips = schema.ready
     ? await listTravelTrips({
         airline: filters.airline,
@@ -129,6 +137,37 @@ export default async function AdminTravelPage({ searchParams }: AdminTravelPageP
       </section>
 
       <section className="travel-grid">
+        {seasons.map((season) => (
+          <Link
+            className="aro-glass-card travel-card season-card"
+            href={season.trip_id ? `/admin/travel/${season.trip_id}` : "/admin/travel"}
+            key={season.id}
+          >
+            <header>
+              <strong>{season.title}</strong>
+              <span>{internationalSeasonStatusLabel(season.status)}</span>
+            </header>
+            <p>{season.model?.stage_name || season.model?.display_name || "Modelo"}</p>
+            <dl>
+              <div>
+                <dt>Agência</dt>
+                <dd>{season.receiving_agency?.display_name || "—"}</dd>
+              </div>
+              <div>
+                <dt>Destino</dt>
+                <dd>{[season.city, season.country].filter(Boolean).join(", ") || "—"}</dd>
+              </div>
+              <div>
+                <dt>Contrato</dt>
+                <dd>{formatDate(season.contract_start_date)} → {formatDate(season.contract_end_date)}</dd>
+              </div>
+              <div>
+                <dt>Pagamento</dt>
+                <dd>{formatDate(season.final_payment_due_date)}</dd>
+              </div>
+            </dl>
+          </Link>
+        ))}
         {trips.map((trip) => {
           const segment = trip.flight_segments?.[0];
           return (
@@ -160,7 +199,7 @@ export default async function AdminTravelPage({ searchParams }: AdminTravelPageP
           );
         })}
       </section>
-      {schema.ready && trips.length === 0 ? (
+      {schema.ready && trips.length === 0 && seasons.length === 0 ? (
         <section className="aro-glass-card travel-empty">Nenhuma viagem encontrada.</section>
       ) : null}
 
@@ -259,6 +298,10 @@ export default async function AdminTravelPage({ searchParams }: AdminTravelPageP
           display: grid;
           gap: 12px;
           padding: 16px;
+        }
+
+        .season-card {
+          border-color: rgba(80, 167, 255, 0.46);
         }
 
         .travel-card header {

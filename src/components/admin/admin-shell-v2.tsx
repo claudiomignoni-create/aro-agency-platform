@@ -60,6 +60,7 @@ const adminNavItems: Array<{
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/admin/models", icon: UserRound, label: "Models" },
   { href: "/admin/clients", icon: UsersRound, label: "Clients" },
+  { href: "/admin/agencies", icon: Landmark, label: "Agencies" },
   { href: "/admin/jobs", icon: BriefcaseBusiness, label: "Jobs" },
   { href: "/admin/accounting", icon: Landmark, label: "Accounting" },
   { href: "/admin/travel", icon: Plane, label: "Travel" },

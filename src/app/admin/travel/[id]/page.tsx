@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText, Plane } from "@/components/admin/admin-icons";
+import { formatMoney } from "@/lib/finance-calculations";
+import { getSeasonForTrip, internationalSeasonStatusLabel } from "@/lib/international-seasons";
 import { getTravelTrip, flightStatusLabel, tripReasonLabel, tripStatusLabel } from "@/lib/travel";
 
 type TravelDetailPageProps = {
@@ -23,7 +25,7 @@ function formatDateTime(value: string | null) {
 
 export default async function TravelDetailPage({ params }: TravelDetailPageProps) {
   const { id } = await params;
-  const trip = await getTravelTrip(id);
+  const [trip, season] = await Promise.all([getTravelTrip(id), getSeasonForTrip(id)]);
 
   if (!trip) notFound();
 
@@ -57,6 +59,33 @@ export default async function TravelDetailPage({ params }: TravelDetailPageProps
             <div><dt>Período</dt><dd>{[trip.starts_on, trip.ends_on].filter(Boolean).join(" → ") || "—"}</dd></div>
           </dl>
         </article>
+
+        {season ? (
+          <article className="aro-glass-card travel-detail-card span-2">
+            <h2>Temporada internacional</h2>
+            <dl>
+              <div><dt>Status</dt><dd>{internationalSeasonStatusLabel(season.status)}</dd></div>
+              <div><dt>Agência</dt><dd>{season.receiving_agency?.display_name || "—"}</dd></div>
+              <div><dt>Contrato</dt><dd>{season.contract_start_date} → {season.contract_end_date}</dd></div>
+              <div><dt>Alerta</dt><dd>{season.contract_reminder_date || "—"}</dd></div>
+              <div><dt>Pagamento final</dt><dd>{season.final_payment_due_date || "—"}</dd></div>
+              <div><dt>Divisão</dt><dd>{season.model_share_percentage ?? "—"}% modelo · {season.receiving_agency_share_percentage ?? "—"}% agência · {season.mother_agency_share_percentage ?? "—"}% ARO</dd></div>
+              <div><dt>Ganho bruto</dt><dd>{season.gross_earnings && season.gross_earnings_currency ? formatMoney(Number(season.gross_earnings), season.gross_earnings_currency as "BRL" | "USD" | "EUR") : "Pendente"}</dd></div>
+              <div><dt>Documentos</dt><dd>Contrato {season.contract_document_status} · Ida {season.outbound_ticket_status} · Volta {season.return_ticket_status}</dd></div>
+            </dl>
+            <div className="actions season-actions">
+              <Link className="button secondary" href={`/admin/travel/${trip.id}/documents`}>
+                Documentos
+              </Link>
+              <Link className="button secondary" href={`/admin/travel/${trip.id}/finance`}>
+                Financeiro
+              </Link>
+              <Link className="button secondary" href={`/admin/models/${trip.model_id}/edit?tab=representation`}>
+                Cadastro360
+              </Link>
+            </div>
+          </article>
+        ) : null}
 
         <article className="aro-glass-card travel-detail-card span-2">
           <h2>Trechos de voo</h2>
@@ -201,6 +230,10 @@ export default async function TravelDetailPage({ params }: TravelDetailPageProps
           display: flex;
           gap: 12px;
           align-items: start;
+        }
+
+        .season-actions {
+          margin-top: 14px;
         }
 
         @media (max-width: 900px) {

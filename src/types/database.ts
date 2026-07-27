@@ -657,6 +657,236 @@ export type TravelDocument = {
   updated_at: string;
 };
 
+export type PartnerAgencyType =
+  | "mother_agency"
+  | "placement_agency"
+  | "receiving_agency"
+  | "partner_agency"
+  | "scouting_partner"
+  | "direct_booking_partner"
+  | "other";
+
+export type PartnerAgencyStatus =
+  | "active"
+  | "inactive"
+  | "prospect"
+  | "suspended"
+  | "archived";
+
+export type PartnerAgency = {
+  id: string;
+  display_name: string;
+  legal_name: string | null;
+  agency_type: PartnerAgencyType;
+  status: PartnerAgencyStatus;
+  country: string | null;
+  country_code: string | null;
+  city: string | null;
+  state_region: string | null;
+  timezone: string | null;
+  address: string | null;
+  website_url: string | null;
+  instagram_url: string | null;
+  primary_email: string | null;
+  secondary_email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  contact_name: string | null;
+  contact_role: string | null;
+  notes: string | null;
+  logo_storage_path: string | null;
+  default_currency: string | null;
+  default_payment_terms_days: number | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerAgencyContact = {
+  id: string;
+  agency_id: string;
+  full_name: string;
+  job_title: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  wechat: string | null;
+  line_id: string | null;
+  instagram: string | null;
+  contact_type: string;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonStatus =
+  | "planned"
+  | "preparing"
+  | "visa_pending"
+  | "booked"
+  | "traveling"
+  | "active"
+  | "ending_soon"
+  | "completed"
+  | "settlement_pending"
+  | "settled"
+  | "canceled";
+
+export type ModelInternationalSeason = {
+  id: string;
+  model_id: string;
+  receiving_agency_id: string;
+  mother_agency_id: string | null;
+  trip_id: string | null;
+  title: string;
+  country: string;
+  country_code: string | null;
+  city: string;
+  timezone: string | null;
+  destination_latitude: number | null;
+  destination_longitude: number | null;
+  contract_start_date: string;
+  contract_end_date: string;
+  duration_months: number | null;
+  arrival_date: string | null;
+  departure_date: string | null;
+  status: InternationalSeasonStatus;
+  contract_status: string;
+  visa_status: string;
+  accommodation_status: string;
+  payment_status: string;
+  settlement_status: string;
+  contract_currency: string | null;
+  pocket_money_amount: number | null;
+  pocket_money_currency: string | null;
+  pocket_money_frequency: string | null;
+  gross_earnings: number | null;
+  gross_earnings_currency: string | null;
+  model_share_percentage: number | null;
+  receiving_agency_share_percentage: number | null;
+  mother_agency_share_percentage: number | null;
+  model_amount_due: number | null;
+  receiving_agency_amount_due: number | null;
+  mother_agency_amount_due: number | null;
+  model_amount_paid: number | null;
+  mother_agency_amount_received: number | null;
+  receiving_agency_amount_settled: number | null;
+  final_payment_terms_days: number | null;
+  final_payment_due_date: string | null;
+  contract_reminder_date: string | null;
+  outbound_ticket_status: string;
+  return_ticket_status: string;
+  contract_document_status: string;
+  notes: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonRevenueShare = {
+  id: string;
+  season_id: string;
+  participant_type: string;
+  agency_id: string | null;
+  model_id: string | null;
+  percentage: number;
+  calculated_amount: number | null;
+  amount_paid: number | null;
+  currency: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonAlert = {
+  id: string;
+  season_id: string;
+  alert_type: string;
+  due_on: string;
+  priority: "low" | "medium" | "high";
+  title: string;
+  description: string | null;
+  link_path: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonFinancialMovement = {
+  id: string;
+  season_id: string;
+  movement_type: string;
+  participant_type: string | null;
+  agency_id: string | null;
+  model_id: string | null;
+  amount: number;
+  currency: string;
+  occurred_on: string;
+  expected_on: string | null;
+  status: string;
+  reference: string | null;
+  proof_document_id: string | null;
+  notes: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonDocument = {
+  id: string;
+  season_id: string;
+  document_type: string;
+  title: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  version_number: number;
+  replaced_by_id: string | null;
+  uploaded_by: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonVisa = {
+  id: string;
+  season_id: string;
+  country: string;
+  visa_type: string | null;
+  masked_number: string | null;
+  issued_on: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  entries_count: number | null;
+  status: string;
+  document_id: string | null;
+  photo_document_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InternationalSeasonPocketMoneyPayment = {
+  id: string;
+  season_id: string;
+  amount: number;
+  currency: string;
+  expected_on: string | null;
+  received_on: string | null;
+  status: string;
+  proof_document_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ClientContact = {
   id: string;
   client_id: string;

@@ -19,6 +19,11 @@ import {
 } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";
 import {
+  getInternationalSeasonSchemaStatus,
+  internationalSeasonStatusLabel,
+  listInternationalSeasons
+} from "@/lib/international-seasons";
+import {
   flightStatusLabel,
   getTravelSchemaStatus,
   listTravelTrips,
@@ -224,7 +229,8 @@ export async function getDashboardCommandCenterData(monthKey = currentMonthKey()
     latestModelsResult,
     recentModelsResult,
     accountingStatusResult,
-    travelStatusResult
+    travelStatusResult,
+    internationalSeasonStatusResult
   ] = await Promise.allSettled([
     supabase
       .from("models")
@@ -285,7 +291,8 @@ export async function getDashboardCommandCenterData(monthKey = currentMonthKey()
     import("@/lib/accounting-schema").then(({ getAccountingSchemaStatus }) =>
       getAccountingSchemaStatus()
     ),
-    getTravelSchemaStatus()
+    getTravelSchemaStatus(),
+    getInternationalSeasonSchemaStatus()
   ]);
 
   if (activeModelsResult.status === "fulfilled" && !activeModelsResult.value.error) {
@@ -379,17 +386,53 @@ export async function getDashboardCommandCenterData(monthKey = currentMonthKey()
     travelStatusResult.status === "fulfilled" && travelStatusResult.value.ready;
 
   if (data.travelReady) {
-    const trips = await listTravelTrips({ dateFrom: today });
+    const trips = await listTravelTrips();
     const activeTrips = trips.filter((trip) => activeTripStatuses.includes(trip.status));
-    const internationalTrips = activeTrips.filter((trip) =>
-      [
-        trip.reason === "international_season",
-        Boolean(trip.destination_country && trip.destination_country !== "Brasil"),
-        Boolean(trip.destination_country && trip.destination_country !== "Brazil")
-      ].some(Boolean)
-    );
-    data.internationalSeasonCount = internationalTrips.length;
-    data.travelMapPoints = internationalTrips
+    const internationalTrips = activeTrips.filter((trip) => {
+      const starts = trip.starts_on ?? "0000-01-01";
+      const ends = trip.ends_on ?? "9999-12-31";
+      return (
+        starts <= today &&
+        ends >= today &&
+        [
+          trip.reason === "international_season",
+          Boolean(trip.destination_country && trip.destination_country !== "Brasil"),
+          Boolean(trip.destination_country && trip.destination_country !== "Brazil")
+        ].some(Boolean)
+      );
+    });
+
+    const seasonsReady =
+      internationalSeasonStatusResult.status === "fulfilled" &&
+      internationalSeasonStatusResult.value.ready;
+    const seasons = seasonsReady ? await listInternationalSeasons({ activeOnly: true }) : [];
+    const seasonTripIds = new Set(seasons.map((season) => season.trip_id).filter(Boolean));
+    const fallbackTrips = internationalTrips.filter((trip) => !seasonTripIds.has(trip.id));
+
+    data.internationalSeasonCount = seasonsReady ? seasons.length : internationalTrips.length;
+    data.travelMapPoints = seasons.length > 0
+      ? seasons
+          .filter(
+            (season) =>
+              season.destination_latitude !== null &&
+              season.destination_longitude !== null &&
+              season.city &&
+              season.country
+          )
+          .slice(0, 12)
+          .map((season) => ({
+            agency: season.receiving_agency?.display_name ?? null,
+            city: season.city,
+            country: season.country,
+            href: season.trip_id ? `/admin/travel/${season.trip_id}` : `/admin/travel`,
+            id: season.id,
+            lat: Number(season.destination_latitude),
+            lng: Number(season.destination_longitude),
+            modelName: modelDisplayName(season.model),
+            period: [season.contract_start_date, season.contract_end_date].filter(Boolean).join(" a "),
+            status: internationalSeasonStatusLabel(season.status)
+          }))
+      : fallbackTrips
       .filter(
         (trip) =>
           trip.destination_latitude !== null &&
@@ -411,19 +454,35 @@ export async function getDashboardCommandCenterData(monthKey = currentMonthKey()
         status: tripStatusLabel(trip.status)
       }));
 
-    data.modelsTravelingNow = activeTrips.slice(0, 6).map((trip) => {
-      const firstSegment = trip.flight_segments?.[0] ?? null;
-      return {
-        destination: [trip.destination_city, trip.destination_country].filter(Boolean).join(", "),
-        flightStatus: firstSegment ? flightStatusLabel(firstSegment.status) : null,
-        href: `/admin/travel/${trip.id}`,
-        id: trip.id,
-        modelName: modelDisplayName(trip.model),
-        origin: [trip.origin_city, trip.origin_country].filter(Boolean).join(", "),
-        route: [firstSegment?.departure_iata, firstSegment?.arrival_iata].filter(Boolean).join(" → "),
-        status: tripStatusLabel(trip.status)
-      };
-    });
+    const seasonTravelingNow = seasons.slice(0, 6).map((season) => ({
+      destination: [season.city, season.country].filter(Boolean).join(", "),
+      flightStatus: null,
+      href: season.trip_id ? `/admin/travel/${season.trip_id}` : "/admin/travel",
+      id: season.id,
+      modelName: modelDisplayName(season.model),
+      origin: "Brasil",
+      route: ["BR", season.country_code].filter(Boolean).join(" → "),
+      status: internationalSeasonStatusLabel(season.status)
+    }));
+
+    const tripTravelingNow = activeTrips
+      .filter((trip) => !seasonTripIds.has(trip.id))
+      .slice(0, Math.max(0, 6 - seasonTravelingNow.length))
+      .map((trip) => {
+        const firstSegment = trip.flight_segments?.[0] ?? null;
+        return {
+          destination: [trip.destination_city, trip.destination_country].filter(Boolean).join(", "),
+          flightStatus: firstSegment ? flightStatusLabel(firstSegment.status) : null,
+          href: `/admin/travel/${trip.id}`,
+          id: trip.id,
+          modelName: modelDisplayName(trip.model),
+          origin: [trip.origin_city, trip.origin_country].filter(Boolean).join(", "),
+          route: [firstSegment?.departure_iata, firstSegment?.arrival_iata].filter(Boolean).join(" → "),
+          status: tripStatusLabel(trip.status)
+        };
+      });
+
+    data.modelsTravelingNow = [...seasonTravelingNow, ...tripTravelingNow];
   } else {
     data.internationalSeasonCount = null;
   }

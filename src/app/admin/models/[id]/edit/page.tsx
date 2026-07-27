@@ -57,6 +57,7 @@ const modelProfileTabIds: ModelProfileTab[] = [
   "work",
   "health",
   "representation",
+  "international",
   "internal",
   "history"
 ];

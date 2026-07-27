@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "import:arolab-models": "tsx scripts/import-arolab-models.ts",
+    "seed:nicolle-nextttone-season": "tsx scripts/seed-nicolle-nextttone-season.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "start": "next start",
     "lint": "eslint .",
