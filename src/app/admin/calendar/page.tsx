@@ -245,10 +245,14 @@ export default async function AdminCalendarPage({
       <section className="panel stack calendar-toolbar">
         <div className="calendar-nav">
           <Link
-            className="button secondary"
+            aria-label="Período anterior"
+            className="button secondary calendar-icon-nav"
             href={hrefWithAnchorDate(filters, previousDate, view)}
           >
-            Anterior
+            ←
+          </Link>
+          <Link className="button secondary" href={hrefWithAnchorDate(filters, today, view)}>
+            Hoje
           </Link>
           <details className="calendar-title-picker" open={hasInvalidPickerRequest}>
             <summary className="calendar-title">
@@ -288,76 +292,41 @@ export default async function AdminCalendarPage({
                 </label>
                 <label>
                   Ano
-                  <span className="month-picker-year">
-                    <Link
-                      aria-label="Voltar um ano"
-                      className="button secondary mini-button"
-                      href={hrefWithAnchorDate(
-                        filters,
-                        monthDateKey(Math.max(2000, anchorYear - 1), anchorMonth),
-                        view
-                      )}
-                    >
-                      -
-                    </Link>
-                    <input
-                      defaultValue={anchorYear}
-                      inputMode="numeric"
-                      max="2100"
-                      min="2000"
-                      name="navYear"
-                      step="1"
-                      type="number"
-                    />
-                    <Link
-                      aria-label="Avançar um ano"
-                      className="button secondary mini-button"
-                      href={hrefWithAnchorDate(
-                        filters,
-                        monthDateKey(Math.min(2100, anchorYear + 1), anchorMonth),
-                        view
-                      )}
-                    >
-                      +
-                    </Link>
-                  </span>
+                  <input
+                    defaultValue={anchorYear}
+                    inputMode="numeric"
+                    max="2100"
+                    min="2000"
+                    name="navYear"
+                    step="1"
+                    type="number"
+                  />
                 </label>
                 {hasInvalidPickerRequest ? (
                   <p className="month-picker-error">Use um mês válido e um ano entre 2000 e 2100.</p>
-                ) : (
-                  <p className="muted">
-                    O período personalizado será limpo para mostrar o mês escolhido.
-                  </p>
-                )}
+                ) : null}
                 <div className="actions month-picker-actions">
                   <button className="button" type="submit">
-                    Aplicar
+                    Ir
                   </button>
-                  <Link
-                    className="button secondary"
-                    href={hrefWithAnchorDate(filters, today, view)}
-                  >
-                    Ir para hoje
-                  </Link>
-                  <Link
-                    className="button secondary"
-                    href={hrefWith(filters, { navMonth: undefined, navYear: undefined })}
-                  >
-                    Fechar
-                  </Link>
                 </div>
               </form>
             </div>
           </details>
           <div className="calendar-nav-actions">
-            <Link className="button secondary" href={hrefWithAnchorDate(filters, today, view)}>
-              Hoje
-            </Link>
             <Link
-              className="button secondary"
+              aria-label="Próximo período"
+              className="button secondary calendar-icon-nav"
               href={hrefWithAnchorDate(filters, nextDate, view)}
             >
-              Próximo
+              →
+            </Link>
+            <Link
+              aria-label="Criar novo evento"
+              className="button calendar-plus-button"
+              href={`/admin/calendar/new?date=${anchorDate}`}
+            >
+              +
             </Link>
           </div>
         </div>
@@ -595,6 +564,15 @@ export default async function AdminCalendarPage({
           position: relative;
         }
 
+        .calendar-icon-nav,
+        .calendar-plus-button {
+          display: inline-flex;
+          width: 42px;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+
         .month-picker-panel {
           background: color-mix(in srgb, #01102a 88%, #86c8ff 12%);
           border: 1px solid color-mix(in srgb, #86c8ff 24%, var(--line));
@@ -607,7 +585,7 @@ export default async function AdminCalendarPage({
           position: absolute;
           top: 100%;
           transform: translateX(-50%);
-          width: 28rem;
+          width: 20rem;
           z-index: 5;
         }
 
@@ -616,6 +594,11 @@ export default async function AdminCalendarPage({
           gap: 0.75rem;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           text-align: left;
+        }
+
+        .month-picker-actions {
+          grid-column: 1 / -1;
+          justify-content: flex-end;
         }
 
         .month-picker-form label {
