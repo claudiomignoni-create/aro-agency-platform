@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listClients } from "@/lib/clients";
+import { currentDateKey } from "@/lib/calendar";
 import {
   modelDisplayName,
   modelInitials
@@ -33,6 +34,7 @@ export default async function NewAdminJobPage({
   const selectedType = jobTypes.some((type) => type.value === params.type)
     ? params.type
     : "job";
+  const today = currentDateKey();
 
   return (
     <div className="stack">
@@ -86,7 +88,7 @@ export default async function NewAdminJobPage({
             </label>
             <label>
               Data
-              <input defaultValue="2026-06-13" name="date" required type="date" />
+              <input defaultValue={today} name="date" required type="date" />
             </label>
             <label>
               Horário de chegada
