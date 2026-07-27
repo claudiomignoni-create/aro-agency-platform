@@ -1,5 +1,21 @@
 import Link from "next/link";
 import {
+  AdminDataTable,
+  AdminDateField,
+  AdminFilterActions,
+  AdminFilterBar,
+  AdminModelIdentity,
+  AdminMoreFilters,
+  AdminPage,
+  AdminPageHeader,
+  AdminSearchField,
+  AdminSection,
+  AdminSelectField,
+  AdminStat,
+  AdminStatusPill,
+  AdminToolbar
+} from "@/components/admin/admin-ui";
+import {
   accountingCurrencies,
   accountingStatusLabel,
   currentAccountingMonth,
@@ -11,6 +27,7 @@ import {
   type AccountingCurrency
 } from "@/lib/accounting";
 import { financialJobTitle } from "@/lib/finance";
+import { createModelMainImageUrls } from "@/lib/models";
 
 type AccountingPageProps = {
   searchParams?: Promise<{
@@ -38,6 +55,14 @@ function accountingHref(path: string, params: Record<string, string | undefined>
   return `${path}${queryString ? `?${queryString}` : ""}`;
 }
 
+function statusTone(status: string, review: boolean) {
+  if (review || status === "review") return "warning";
+  if (status === "received") return "success";
+  if (status === "pending") return "danger";
+  if (status === "partially_received") return "warning";
+  return "neutral";
+}
+
 export default async function AccountingPage({ searchParams }: AccountingPageProps) {
   const params = (await searchParams) ?? {};
   const currency = selectedCurrency(params.currency);
@@ -54,146 +79,148 @@ export default async function AccountingPage({ searchParams }: AccountingPagePro
     getAgencyFinancialPosition(filters),
     listAccountingJobs(filters)
   ]);
+  const modelImageUrls = await createModelMainImageUrls(
+    jobs
+      .map((job) => job.model)
+      .filter((model): model is NonNullable<typeof model> => Boolean(model))
+  );
 
   return (
-    <div className="stack">
-      <section className="panel stack">
-        <div className="actions spread">
-          <div>
-            <span className="eyebrow">Accounting</span>
-            <h2>Accounting</h2>
-            <p>Recebimentos, contas de modelos, despesas e relatórios financeiros.</p>
-          </div>
-          <div className="actions">
-            <Link className="button secondary" href={accountingHref("/admin/accounting/expenses", params)}>
-              Despesas
-            </Link>
-            <Link className="button secondary" href={accountingHref("/admin/accounting/model-accounts", params)}>
-              Contas dos modelos
-            </Link>
-            <Link className="button secondary" href={accountingHref("/admin/accounting/reports", params)}>
-              Relatórios
-            </Link>
-          </div>
-        </div>
-        <form className="grid" method="get">
-          <label>
-            Mês
+    <AdminPage>
+      <AdminPageHeader
+        actions={
+          <>
+            <Link className="button secondary" href={accountingHref("/admin/accounting/expenses", params)}>Despesas</Link>
+            <Link className="button secondary" href={accountingHref("/admin/accounting/model-accounts", params)}>Contas dos modelos</Link>
+            <Link className="button secondary" href={accountingHref("/admin/accounting/reports", params)}>Relatórios</Link>
+          </>
+        }
+        description={`Período ${range.from ?? "—"} até ${range.to ?? "—"} em ${currency}. Valores por moeda, sem conversão automática.`}
+        eyebrow="Accounting"
+        title="Accounting"
+      />
+
+      <section className="admin-stat-grid">
+        <AdminStat label="Recebido" value={formatMoney(position.clientCashReceived, currency)} />
+        <AdminStat label="A receber" value={formatMoney(position.clientReceivable, currency)} />
+        <AdminStat label="A pagar aos modelos" value={formatMoney(position.modelPayable, currency)} />
+        <AdminStat label="Despesas recuperáveis" value={formatMoney(position.recoverableModelExpenses, currency)} />
+        <AdminStat label="Caixa disponível" value={formatMoney(position.agencyAvailableCash, currency)} />
+        <AdminStat label="Receita da agência" value={formatMoney(position.agencyRevenue, currency)} />
+      </section>
+
+      <AdminToolbar>
+        <AdminFilterBar>
+          <AdminSearchField defaultValue={params.q} placeholder="Trabalho, nota ou referência" />
+          <label className="admin-field">
+            <span>Mês</span>
             <input defaultValue={selectedMonth} name="month" type="month" />
           </label>
-          <label>
-            De
-            <input defaultValue={params.from ?? ""} name="from" type="date" />
-          </label>
-          <label>
-            Até
-            <input defaultValue={params.to ?? ""} name="to" type="date" />
-          </label>
-          <label>
-            Moeda
-            <select defaultValue={currency} name="currency">
-              {accountingCurrencies.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Status
-            <select defaultValue={params.paymentStatus ?? ""} name="paymentStatus">
-              <option value="">Todos</option>
-              <option value="pending">Pendente</option>
-              <option value="partially_received">Parcialmente recebido</option>
-              <option value="received">Recebido</option>
-              <option value="review">Cadastro financeiro incompleto</option>
-            </select>
-          </label>
-          <label>
-            Busca
-            <input defaultValue={params.q ?? ""} name="q" placeholder="Trabalho, nota ou referência" />
-          </label>
-          <div className="actions">
-            <button className="button" type="submit">Aplicar</button>
-            <Link className="button secondary" href="/admin/accounting">Limpar</Link>
-          </div>
-        </form>
-      </section>
+          <AdminSelectField
+            defaultValue={currency}
+            label="Moeda"
+            name="currency"
+            options={accountingCurrencies.map((option) => ({ label: option, value: option }))}
+          />
+          <AdminSelectField
+            defaultValue={params.paymentStatus}
+            label="Status"
+            name="paymentStatus"
+            options={[
+              { label: "Todos", value: "" },
+              { label: "Pendente", value: "pending" },
+              { label: "Parcialmente recebido", value: "partially_received" },
+              { label: "Recebido", value: "received" },
+              { label: "Cadastro financeiro incompleto", value: "review" }
+            ]}
+          />
+          <AdminFilterActions resetHref="/admin/accounting" />
+          <AdminMoreFilters count={[params.from, params.to].filter(Boolean).length}>
+            <AdminDateField defaultValue={params.from} label="De" name="from" />
+            <AdminDateField defaultValue={params.to} label="Até" name="to" />
+          </AdminMoreFilters>
+        </AdminFilterBar>
+      </AdminToolbar>
 
-      <section className="grid">
-        <article className="panel">
-          <span className="eyebrow">Caixa recebido de clientes</span>
-          <h3>{formatMoney(position.clientCashReceived, currency)}</h3>
-        </article>
-        <article className="panel">
-          <span className="eyebrow">Valores a receber</span>
-          <h3>{formatMoney(position.clientReceivable, currency)}</h3>
-        </article>
-        <article className="panel">
-          <span className="eyebrow">Valores a pagar aos modelos</span>
-          <h3>{formatMoney(position.modelPayable, currency)}</h3>
-        </article>
-        <article className="panel">
-          <span className="eyebrow">Despesas recuperáveis</span>
-          <h3>{formatMoney(position.recoverableModelExpenses, currency)}</h3>
-        </article>
-        <article className="panel">
-          <span className="eyebrow">Caixa disponível da agência</span>
-          <h3>{formatMoney(position.agencyAvailableCash, currency)}</h3>
-        </article>
-        <article className="panel">
-          <span className="eyebrow">Receita de taxa/comissão</span>
-          <h3>{formatMoney(position.agencyRevenue, currency)}</h3>
-        </article>
-      </section>
-
-      <section className="panel stack">
-        <div className="actions spread">
-          <span className="eyebrow">Trabalhos financeiros</span>
-          <span className="badge">{jobs.length} lançamentos</span>
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Trabalho</th>
-                <th>Modelo</th>
-                <th>Cliente</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Modelo líquido</th>
-                <th>Status</th>
-                <th />
+      <AdminSection title="Trabalhos financeiros" meta={`${jobs.length} lançamento(s)`}>
+        <AdminDataTable className="accounting-table">
+          <thead>
+            <tr>
+              <th>Trabalho</th>
+              <th>Modelo</th>
+              <th>Cliente</th>
+              <th>Data</th>
+              <th>Cliente</th>
+              <th>Modelo líquido</th>
+              <th>Status</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((job) => (
+              <tr key={job.id}>
+                <td data-label="Trabalho">
+                  <strong>{financialJobTitle(job)}</strong>
+                  <small>{job.job?.city || job.job?.country || "Job financeiro"}</small>
+                </td>
+                <td data-label="Modelo">
+                  <AdminModelIdentity
+                    href={`/admin/models/${job.model_id}/edit`}
+                    imageUrl={job.model?.id ? modelImageUrls[job.model.id] : undefined}
+                    name={job.model?.stage_name || job.model?.display_name}
+                    secondary="Conta do modelo"
+                  />
+                </td>
+                <td data-label="Cliente">{job.client?.company_name || "—"}</td>
+                <td data-label="Data">{job.job_date}</td>
+                <td data-label="Cliente">{formatMoney(job.client_amount_due, job.currency)}</td>
+                <td data-label="Modelo líquido">{formatMoney(job.model_net_amount, job.currency)}</td>
+                <td data-label="Status">
+                  <AdminStatusPill tone={statusTone(job.clientPaymentStatus, job.financial_review_required)}>
+                    {job.financial_review_required ? "Revisar" : accountingStatusLabel(job.clientPaymentStatus)}
+                  </AdminStatusPill>
+                </td>
+                <td data-label="Ação">
+                  <Link className="button secondary" href={`/admin/accounting/${job.id}`}>
+                    Abrir
+                  </Link>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id}>
-                  <td data-label="Trabalho">{financialJobTitle(job)}</td>
-                  <td data-label="Modelo">{job.model?.stage_name || job.model?.display_name || "-"}</td>
-                  <td data-label="Cliente">{job.client?.company_name || "-"}</td>
-                  <td data-label="Data">{job.job_date}</td>
-                  <td data-label="Cliente">{formatMoney(job.client_amount_due, job.currency)}</td>
-                  <td data-label="Modelo líquido">{formatMoney(job.model_net_amount, job.currency)}</td>
-                  <td data-label="Status">
-                    <span className={job.financial_review_required ? "badge" : "status"}>
-                      {job.financial_review_required
-                        ? "Revisar"
-                        : accountingStatusLabel(job.clientPaymentStatus)}
-                    </span>
-                  </td>
-                  <td>
-                    <Link className="button secondary" href={`/admin/accounting/${job.id}`}>
-                      Abrir
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </AdminDataTable>
         {jobs.length === 0 ? <p className="muted">Nenhum lançamento financeiro encontrado.</p> : null}
-      </section>
-    </div>
+      </AdminSection>
+
+      <style>{`
+        .admin-stat-grid {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+
+        @media (max-width: 1380px) {
+          .admin-stat-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .accounting-table th:nth-child(5),
+          .accounting-table td:nth-child(5),
+          .accounting-table th:nth-child(6),
+          .accounting-table td:nth-child(6) {
+            display: none;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .admin-stat-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .accounting-table td:nth-child(5),
+          .accounting-table td:nth-child(6) {
+            display: grid;
+          }
+        }
+      `}</style>
+    </AdminPage>
   );
 }
