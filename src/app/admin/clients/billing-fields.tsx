@@ -1,6 +1,7 @@
 import type { Client } from "@/types/database";
 
 type BillingFieldsProps = {
+  billingFieldsAvailable?: boolean;
   client?: Client;
 };
 
@@ -8,15 +9,25 @@ function value(client: Client | undefined, key: keyof Client) {
   return client?.[key] ? String(client[key]) : "";
 }
 
-export function BillingFields({ client }: BillingFieldsProps) {
+export function BillingFields({
+  billingFieldsAvailable = true,
+  client
+}: BillingFieldsProps) {
+  const pendingNotice = !billingFieldsAvailable ? (
+    <p className="muted">
+      Os campos fiscais serão ativados após a atualização do banco.
+    </p>
+  ) : null;
+
   return (
     <>
       <section className="client-form-section">
         <div>
           <span className="eyebrow">Faturamento Brasil</span>
           <h3>Dados fiscais</h3>
+          {pendingNotice}
         </div>
-        <div className="client-form-grid">
+        <fieldset className="client-form-grid" disabled={!billingFieldsAvailable}>
           <label>
             Pessoa
             <select defaultValue={value(client, "billing_person_type")} name="billing_person_type">
@@ -118,15 +129,16 @@ export function BillingFields({ client }: BillingFieldsProps) {
             Observações fiscais
             <textarea defaultValue={value(client, "tax_notes")} name="tax_notes" rows={3} />
           </label>
-        </div>
+        </fieldset>
       </section>
 
       <section className="client-form-section">
         <div>
           <span className="eyebrow">International billing</span>
           <h3>Tax and invoice data</h3>
+          {pendingNotice}
         </div>
-        <div className="client-form-grid">
+        <fieldset className="client-form-grid" disabled={!billingFieldsAvailable}>
           <label>
             Trading name
             <input defaultValue={value(client, "intl_trading_name")} name="intl_trading_name" />
@@ -191,7 +203,7 @@ export function BillingFields({ client }: BillingFieldsProps) {
             Tax notes
             <textarea defaultValue={value(client, "intl_tax_notes")} name="intl_tax_notes" rows={3} />
           </label>
-        </div>
+        </fieldset>
       </section>
     </>
   );

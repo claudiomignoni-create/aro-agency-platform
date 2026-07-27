@@ -3,6 +3,7 @@ import { createClientAction } from "../actions";
 import { BillingFields } from "../billing-fields";
 import { ChannelFields } from "../channel-fields";
 import { ContactFields } from "./contact-fields";
+import { getClientBillingSchemaStatus } from "@/lib/clients";
 import type { ClientStatus, ClientType } from "@/types/database";
 
 const clientTypeOptions: Array<{ label: string; value: ClientType }> = [
@@ -23,7 +24,9 @@ const statusOptions: Array<{ label: string; value: ClientStatus }> = [
   { label: "Do Not Contact", value: "do_not_contact" }
 ];
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  const billingSchemaStatus = await getClientBillingSchemaStatus();
+
   return (
     <div className="client-form-shell">
       <section className="client-form-header">
@@ -124,7 +127,7 @@ export default function NewClientPage() {
         </section>
 
         <ChannelFields />
-        <BillingFields />
+        <BillingFields billingFieldsAvailable={billingSchemaStatus.ready} />
 
         <section className="client-form-section">
           <div>
@@ -246,6 +249,12 @@ export default function NewClientPage() {
           gap: 0.85rem;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           min-width: 0;
+        }
+
+        fieldset.client-form-grid {
+          border: 0;
+          margin: 0;
+          padding: 0;
         }
 
         .client-form-grid label {

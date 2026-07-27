@@ -1,5 +1,4 @@
 import { requireRole } from "@/lib/auth";
-import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Client,
@@ -9,6 +8,48 @@ import type {
   ClientStatus,
   ClientType
 } from "@/types/database";
+
+const billingClientColumns = [
+  "billing_person_type",
+  "billing_trade_name",
+  "billing_legal_name",
+  "billing_cnpj",
+  "billing_cpf",
+  "billing_state_registration",
+  "billing_municipal_registration",
+  "billing_tax_regime",
+  "billing_postal_code",
+  "billing_address_line",
+  "billing_address_number",
+  "billing_address_complement",
+  "billing_neighborhood",
+  "billing_city",
+  "billing_state",
+  "billing_country",
+  "billing_contact_name",
+  "billing_email",
+  "billing_phone",
+  "payment_terms",
+  "default_currency",
+  "invoice_notes",
+  "tax_notes",
+  "intl_trading_name",
+  "intl_legal_company_name",
+  "intl_country",
+  "intl_tax_id",
+  "intl_vat_number",
+  "intl_company_registration_number",
+  "intl_billing_address",
+  "intl_billing_city",
+  "intl_billing_state",
+  "intl_billing_postal_code",
+  "intl_billing_country",
+  "intl_billing_contact",
+  "intl_billing_email",
+  "intl_payment_terms",
+  "intl_invoice_notes",
+  "intl_tax_notes"
+] as const;
 
 const clientSelect = `
   id,
@@ -105,6 +146,30 @@ const baseClientSelect = `
   updated_at
 `;
 
+export function isMissingClientBillingSchemaError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const maybeError = error as {
+    code?: string;
+    details?: string;
+    hint?: string;
+    message?: string;
+  };
+  const errorText = [maybeError.message, maybeError.details, maybeError.hint]
+    .filter(Boolean)
+    .join(" ");
+  const referencesBillingColumn = billingClientColumns.some((column) =>
+    errorText.includes(column)
+  );
+
+  return (
+    referencesBillingColumn &&
+    (maybeError.code === "42703" ||
+      maybeError.code === "PGRST204" ||
+      /column|schema cache|does not exist/i.test(errorText))
+  );
+}
+
 function withEmptyBillingFields(client: Partial<Client>) {
   return {
     billing_address_complement: null,
@@ -152,6 +217,29 @@ function withEmptyBillingFields(client: Partial<Client>) {
 
 export type ClientOption = Pick<Client, "company_name" | "id">;
 
+export type ClientBillingSchemaStatus = {
+  ready: boolean;
+};
+
+export async function getClientBillingSchemaStatus(): Promise<ClientBillingSchemaStatus> {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("clients")
+    .select(["id", ...billingClientColumns].join(", "))
+    .limit(1);
+
+  if (error && isMissingClientBillingSchemaError(error)) {
+    return { ready: false };
+  }
+
+  if (error) {
+    throw error;
+  }
+
+  return { ready: true };
+}
+
 export async function listClientOptions() {
   await requireRole(["admin"]);
   const supabase = await createClient();
@@ -176,7 +264,7 @@ export async function listClients() {
     .order("updated_at", { ascending: false });
 
   if (error) {
-    if (isMissingSchemaError(error)) {
+    if (isMissingClientBillingSchemaError(error)) {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from("clients")
         .select(baseClientSelect)
@@ -196,6 +284,7 @@ export async function listClients() {
 }
 
 export type ClientProfile = {
+  billingSchemaReady: boolean;
   channels: ClientChannel[];
   client: Client;
   contacts: ClientContact[];
@@ -292,7 +381,7 @@ export async function createClientRecord(input: ClientInput) {
     .single();
 
   if (error) {
-    if (isMissingSchemaError(error)) {
+    if (isMissingClientBillingSchemaError(error)) {
       const fallback = await supabase
         .from("clients")
         .insert(clientPayload(input, false))
@@ -327,7 +416,7 @@ export async function createClientWithContacts(
   let clientError = clientResult.error;
 
   if (clientError) {
-    if (isMissingSchemaError(clientError)) {
+    if (isMissingClientBillingSchemaError(clientError)) {
       const fallback = await supabase
         .from("clients")
         .insert(clientPayload(input, false))
@@ -389,9 +478,11 @@ export async function getClientProfile(id: string) {
     .maybeSingle();
   let client = clientResult.data as Partial<Client> | null;
   let clientError = clientResult.error;
+  let billingSchemaReady = true;
 
   if (clientError) {
-    if (isMissingSchemaError(clientError)) {
+    if (isMissingClientBillingSchemaError(clientError)) {
+      billingSchemaReady = false;
       const fallback = await supabase
         .from("clients")
         .select(baseClientSelect)
@@ -435,6 +526,7 @@ export async function getClientProfile(id: string) {
   }
 
   return {
+    billingSchemaReady,
     channels: (channels ?? []) as ClientChannel[],
     client: withEmptyBillingFields(client as Partial<Client>),
     contacts: (contacts ?? []) as ClientContact[]
@@ -518,7 +610,7 @@ export async function updateClientWithContacts(
     .single();
 
   if (clientError) {
-    if (isMissingSchemaError(clientError)) {
+    if (isMissingClientBillingSchemaError(clientError)) {
       const fallback = await supabase
         .from("clients")
         .update(clientPayload(input, false))

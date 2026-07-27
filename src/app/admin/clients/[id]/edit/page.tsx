@@ -43,7 +43,7 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
     notFound();
   }
 
-  const { channels, client, contacts } = profile;
+  const { billingSchemaReady, channels, client, contacts } = profile;
 
   return (
     <div className="client-form-shell">
@@ -163,7 +163,10 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
         </section>
 
         <ChannelFields initialChannels={channels} />
-        <BillingFields client={client} />
+        <BillingFields
+          billingFieldsAvailable={billingSchemaReady}
+          client={client}
+        />
 
         <section className="client-form-section">
           <div>
@@ -305,6 +308,12 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
           gap: 0.85rem;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           min-width: 0;
+        }
+
+        fieldset.client-form-grid {
+          border: 0;
+          margin: 0;
+          padding: 0;
         }
 
         .client-form-grid label {
