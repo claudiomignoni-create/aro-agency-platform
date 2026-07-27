@@ -231,6 +231,42 @@ create table if not exists public.model_update_requests (
 create index if not exists model_update_requests_model_idx
 on public.model_update_requests (model_id, created_at desc);
 
+alter table public.model_update_requests
+  add column if not exists title text,
+  add column if not exists language text not null default 'pt-BR',
+  add column if not exists public_token_hash text,
+  add column if not exists verification_required boolean not null default false,
+  add column if not exists expires_at timestamptz,
+  add column if not exists due_at timestamptz,
+  add column if not exists auto_apply_safe_fields boolean not null default true,
+  add column if not exists opened_at timestamptz,
+  add column if not exists started_at timestamptz,
+  add column if not exists submitted_at timestamptz,
+  add column if not exists applied_at timestamptz,
+  add column if not exists canceled_at timestamptz,
+  add column if not exists created_by uuid references public.profiles(id) on delete set null,
+  add column if not exists updated_by uuid references public.profiles(id) on delete set null;
+
+update public.model_update_requests
+set
+  title = coalesce(title, 'Atualização de perfil ARO'),
+  expires_at = coalesce(expires_at, sent_at + interval '30 days', now() + interval '30 days'),
+  public_token_hash = coalesce(
+    public_token_hash,
+    encode(digest(id::text || clock_timestamp()::text || gen_random_uuid()::text, 'sha256'), 'hex')
+  )
+where title is null
+   or expires_at is null
+   or public_token_hash is null;
+
+alter table public.model_update_requests
+  alter column title set not null,
+  alter column expires_at set not null,
+  alter column public_token_hash set not null;
+
+create unique index if not exists model_update_requests_public_token_hash_unique
+on public.model_update_requests (public_token_hash);
+
 create table if not exists public.model_update_request_fields (
   id uuid primary key default gen_random_uuid(),
   request_id uuid not null references public.model_update_requests(id) on delete cascade,
@@ -414,3 +450,390 @@ values
     true
   )
 on conflict do nothing;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'presentation_recipients_outbound_email_fk'
+      and conrelid = 'public.presentation_recipients'::regclass
+  ) then
+    alter table public.presentation_recipients
+      add constraint presentation_recipients_outbound_email_fk
+      foreign key (outbound_email_id) references public.outbound_emails(id) on delete set null;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'outbound_emails_model_update_request_fk'
+      and conrelid = 'public.outbound_emails'::regclass
+  ) then
+    alter table public.outbound_emails
+      add constraint outbound_emails_model_update_request_fk
+      foreign key (model_update_request_id) references public.model_update_requests(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists presentations_public_token_hash_idx
+on public.presentations (public_token_hash);
+
+create index if not exists presentations_public_status_expires_idx
+on public.presentations (status, expires_at, revoked_at);
+
+create index if not exists presentation_recipients_email_idx
+on public.presentation_recipients (recipient_email);
+
+create index if not exists presentation_access_events_presentation_idx
+on public.presentation_access_events (presentation_id, occurred_at desc);
+
+create index if not exists outbound_emails_recipient_email_idx
+on public.outbound_emails (recipient_email);
+
+create index if not exists outbound_emails_update_request_idx
+on public.outbound_emails (model_update_request_id);
+
+create index if not exists model_update_requests_public_token_hash_idx
+on public.model_update_requests (public_token_hash);
+
+create index if not exists model_update_requests_status_due_idx
+on public.model_update_requests (status, due_at, expires_at);
+
+create index if not exists model_update_request_fields_request_idx
+on public.model_update_request_fields (request_id, position);
+
+create index if not exists model_update_reminders_status_remind_at_idx
+on public.model_update_reminders (status, remind_at);
+
+create index if not exists model_update_audit_events_request_idx
+on public.model_update_audit_events (request_id, created_at desc);
+
+drop trigger if exists set_google_workspace_connections_updated_at on public.google_workspace_connections;
+create trigger set_google_workspace_connections_updated_at
+before update on public.google_workspace_connections
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_email_templates_updated_at on public.email_templates;
+create trigger set_email_templates_updated_at
+before update on public.email_templates
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_presentations_updated_at on public.presentations;
+create trigger set_presentations_updated_at
+before update on public.presentations
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_outbound_emails_updated_at on public.outbound_emails;
+create trigger set_outbound_emails_updated_at
+before update on public.outbound_emails
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_model_update_requests_updated_at on public.model_update_requests;
+create trigger set_model_update_requests_updated_at
+before update on public.model_update_requests
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_model_update_submissions_updated_at on public.model_update_submissions;
+create trigger set_model_update_submissions_updated_at
+before update on public.model_update_submissions
+for each row execute function public.set_updated_at();
+
+create or replace function public.get_public_presentation_by_token(p_token_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payload jsonb;
+begin
+  select jsonb_build_object(
+    'title', p.title,
+    'description', p.description,
+    'language', p.language,
+    'allow_downloads', p.allow_downloads,
+    'published_at', p.published_at,
+    'snapshot', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)
+  )
+  into payload
+  from public.presentations p
+  left join lateral (
+    select snapshot
+    from public.presentation_versions
+    where presentation_id = p.id
+    order by version_number desc
+    limit 1
+  ) pv on true
+  where p.public_token_hash = p_token_hash
+    and p.status in ('published', 'sent')
+    and p.revoked_at is null
+    and p.archived_at is null
+    and (p.expires_at is null or p.expires_at > now())
+  limit 1;
+
+  return payload;
+end;
+$$;
+
+create or replace function public.mark_public_presentation_opened(p_token_hash text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  presentation_uuid uuid;
+begin
+  select id into presentation_uuid
+  from public.presentations
+  where public_token_hash = p_token_hash
+    and status in ('published', 'sent')
+    and revoked_at is null
+    and archived_at is null
+    and (expires_at is null or expires_at > now())
+  limit 1;
+
+  if presentation_uuid is null then
+    return false;
+  end if;
+
+  insert into public.presentation_access_events (presentation_id, event_type, metadata)
+  values (presentation_uuid, 'opened', jsonb_build_object('source', 'public_link'));
+
+  return true;
+end;
+$$;
+
+create or replace function public.get_public_model_update_request_by_token(p_token_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payload jsonb;
+begin
+  select jsonb_build_object(
+    'title', r.title,
+    'message', r.message,
+    'language', r.language,
+    'due_at', r.due_at,
+    'expires_at', r.expires_at,
+    'status', r.status,
+    'verification_required', r.verification_required,
+    'model', jsonb_build_object(
+      'display_name', m.display_name,
+      'stage_name', m.stage_name,
+      'main_image_path', m.main_image_path
+    ),
+    'fields', coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'field_key', f.field_key,
+          'field_group', f.field_group,
+          'is_required', f.is_required,
+          'is_sensitive', f.is_sensitive
+        )
+        order by f.position, f.field_key
+      ) filter (where f.id is not null),
+      '[]'::jsonb
+    ),
+    'draft_payload', coalesce(s.draft_payload, '{}'::jsonb),
+    'submitted_at', s.submitted_at
+  )
+  into payload
+  from public.model_update_requests r
+  join public.models m on m.id = r.model_id
+  left join public.model_update_request_fields f on f.request_id = r.id
+  left join public.model_update_submissions s on s.request_id = r.id
+  where r.public_token_hash = p_token_hash
+    and r.status not in ('expired', 'canceled', 'applied')
+    and r.expires_at > now()
+  group by r.id, m.id, s.id
+  limit 1;
+
+  return payload;
+end;
+$$;
+
+create or replace function public.mark_model_update_request_opened(p_token_hash text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  request_uuid uuid;
+  model_uuid uuid;
+begin
+  select id, model_id into request_uuid, model_uuid
+  from public.model_update_requests
+  where public_token_hash = p_token_hash
+    and status not in ('expired', 'canceled', 'applied')
+    and expires_at > now()
+  limit 1;
+
+  if request_uuid is null then
+    return false;
+  end if;
+
+  update public.model_update_requests
+  set opened_at = coalesce(opened_at, now()),
+      status = case when status in ('ready', 'sent', 'delivered') then 'opened' else status end
+  where id = request_uuid;
+
+  insert into public.model_update_audit_events (request_id, model_id, event_type, metadata)
+  values (request_uuid, model_uuid, 'opened', jsonb_build_object('source', 'public_link'));
+
+  return true;
+end;
+$$;
+
+create or replace function public.start_model_update_request(p_token_hash text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  request_uuid uuid;
+  model_uuid uuid;
+begin
+  select id, model_id into request_uuid, model_uuid
+  from public.model_update_requests
+  where public_token_hash = p_token_hash
+    and status not in ('expired', 'canceled', 'applied')
+    and expires_at > now()
+  limit 1;
+
+  if request_uuid is null then
+    return false;
+  end if;
+
+  update public.model_update_requests
+  set started_at = coalesce(started_at, now()),
+      status = case when status in ('ready', 'sent', 'delivered', 'opened') then 'started' else status end
+  where id = request_uuid;
+
+  insert into public.model_update_submissions (request_id, model_id, status)
+  values (request_uuid, model_uuid, 'draft')
+  on conflict (request_id) do nothing;
+
+  insert into public.model_update_audit_events (request_id, model_id, event_type, metadata)
+  values (request_uuid, model_uuid, 'started', jsonb_build_object('source', 'public_link'));
+
+  return true;
+end;
+$$;
+
+create or replace function public.save_model_update_request_draft(p_token_hash text, draft jsonb)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  request_uuid uuid;
+  model_uuid uuid;
+begin
+  select id, model_id into request_uuid, model_uuid
+  from public.model_update_requests
+  where public_token_hash = p_token_hash
+    and status not in ('expired', 'canceled', 'applied', 'submitted', 'review_required')
+    and expires_at > now()
+  limit 1;
+
+  if request_uuid is null then
+    return false;
+  end if;
+
+  insert into public.model_update_submissions (request_id, model_id, status, draft_payload)
+  values (request_uuid, model_uuid, 'draft', coalesce(draft, '{}'::jsonb))
+  on conflict (request_id)
+  do update set draft_payload = excluded.draft_payload, status = 'draft', updated_at = now();
+
+  update public.model_update_requests
+  set status = 'partially_completed'
+  where id = request_uuid
+    and status in ('ready', 'sent', 'delivered', 'opened', 'started');
+
+  insert into public.model_update_audit_events (request_id, model_id, event_type, new_snapshot, metadata)
+  values (request_uuid, model_uuid, 'draft_saved', coalesce(draft, '{}'::jsonb), jsonb_build_object('source', 'public_link'));
+
+  return true;
+end;
+$$;
+
+create or replace function public.submit_model_update_request(p_token_hash text, submission jsonb)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  request_uuid uuid;
+  model_uuid uuid;
+begin
+  select id, model_id into request_uuid, model_uuid
+  from public.model_update_requests
+  where public_token_hash = p_token_hash
+    and status not in ('expired', 'canceled', 'applied', 'submitted', 'review_required')
+    and expires_at > now()
+  limit 1;
+
+  if request_uuid is null then
+    return false;
+  end if;
+
+  insert into public.model_update_submissions (
+    request_id,
+    model_id,
+    status,
+    draft_payload,
+    submitted_payload,
+    submitted_at
+  )
+  values (
+    request_uuid,
+    model_uuid,
+    'submitted',
+    coalesce(submission, '{}'::jsonb),
+    coalesce(submission, '{}'::jsonb),
+    now()
+  )
+  on conflict (request_id)
+  do update set
+    status = 'submitted',
+    draft_payload = excluded.draft_payload,
+    submitted_payload = excluded.submitted_payload,
+    submitted_at = now(),
+    updated_at = now();
+
+  update public.model_update_requests
+  set status = 'submitted',
+      submitted_at = now()
+  where id = request_uuid;
+
+  insert into public.model_update_audit_events (request_id, model_id, event_type, new_snapshot, metadata)
+  values (request_uuid, model_uuid, 'submitted', coalesce(submission, '{}'::jsonb), jsonb_build_object('source', 'public_link'));
+
+  return true;
+end;
+$$;
+
+revoke all on function public.get_public_presentation_by_token(text) from public;
+revoke all on function public.mark_public_presentation_opened(text) from public;
+revoke all on function public.get_public_model_update_request_by_token(text) from public;
+revoke all on function public.mark_model_update_request_opened(text) from public;
+revoke all on function public.start_model_update_request(text) from public;
+revoke all on function public.save_model_update_request_draft(text, jsonb) from public;
+revoke all on function public.submit_model_update_request(text, jsonb) from public;
+
+grant execute on function public.get_public_presentation_by_token(text) to anon, authenticated;
+grant execute on function public.mark_public_presentation_opened(text) to anon, authenticated;
+grant execute on function public.get_public_model_update_request_by_token(text) to anon, authenticated;
+grant execute on function public.mark_model_update_request_opened(text) to anon, authenticated;
+grant execute on function public.start_model_update_request(text) to anon, authenticated;
+grant execute on function public.save_model_update_request_draft(text, jsonb) to anon, authenticated;
+grant execute on function public.submit_model_update_request(text, jsonb) to anon, authenticated;

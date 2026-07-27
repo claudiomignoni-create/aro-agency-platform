@@ -59,6 +59,63 @@ export type ModelUpdateRequest = {
   title: string;
 };
 
+export type PublicPresentationPayload = {
+  allow_downloads: boolean;
+  description: string | null;
+  language: string;
+  published_at: string | null;
+  snapshot: {
+    contact?: {
+      email?: string;
+      name?: string;
+      website?: string;
+    };
+    description?: string | null;
+    models?: Array<{
+      board?: string | null;
+      city?: string | null;
+      country?: string | null;
+      display_name: string;
+      highlighted?: boolean;
+      id?: string;
+      main_image_path?: string | null;
+      measurements?: Record<string, number | string | null>;
+      media?: Array<{
+        media_type: string;
+        storage_bucket?: string | null;
+        storage_path?: string | null;
+        thumbnail_path?: string | null;
+        title?: string | null;
+      }>;
+    }>;
+    title?: string;
+  };
+  title: string;
+};
+
+export type PublicModelUpdateRequestPayload = {
+  draft_payload: Record<string, unknown>;
+  due_at: string | null;
+  expires_at: string;
+  fields: Array<{
+    field_group: string;
+    field_key: string;
+    is_required: boolean;
+    is_sensitive: boolean;
+  }>;
+  language: string;
+  message: string | null;
+  model: {
+    display_name: string;
+    main_image_path: string | null;
+    stage_name: string | null;
+  };
+  status: string;
+  submitted_at: string | null;
+  title: string;
+  verification_required: boolean;
+};
+
 export function schemaPending(message = "As tabelas de comunicação serão ativadas após a migration 025.") {
   return { message, ready: false };
 }
@@ -145,30 +202,62 @@ export async function listModelUpdateRequests() {
 
 export async function findPresentationByToken(token: string) {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("presentations")
-    .select("id, title, description, language, status, expires_at, snapshot, allow_downloads")
-    .eq("public_token_hash", sha256(token))
-    .maybeSingle();
+  const tokenHash = sha256(token);
+  const { data, error } = await supabase.rpc("get_public_presentation_by_token", {
+    p_token_hash: tokenHash
+  });
 
   if (error && isMissingSchemaError(error)) return null;
   if (error) throw error;
 
-  return data;
+  if (data) {
+    await supabase.rpc("mark_public_presentation_opened", { p_token_hash: tokenHash });
+  }
+
+  return data as PublicPresentationPayload | null;
 }
 
 export async function findUpdateRequestByToken(token: string) {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("model_update_requests")
-    .select("id, model_id, title, message, language, status, expires_at, due_at, verification_required")
-    .eq("public_token_hash", sha256(token))
-    .maybeSingle();
+  const tokenHash = sha256(token);
+  const { data, error } = await supabase.rpc("get_public_model_update_request_by_token", {
+    p_token_hash: tokenHash
+  });
 
   if (error && isMissingSchemaError(error)) return null;
   if (error) throw error;
 
-  return data;
+  if (data) {
+    await supabase.rpc("mark_model_update_request_opened", { p_token_hash: tokenHash });
+  }
+
+  return data as PublicModelUpdateRequestPayload | null;
+}
+
+export async function startUpdateRequestByToken(token: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("start_model_update_request", {
+    p_token_hash: sha256(token)
+  });
+  if (error) throw error;
+}
+
+export async function saveUpdateRequestDraftByToken(token: string, draft: Record<string, unknown>) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_model_update_request_draft", {
+    draft,
+    p_token_hash: sha256(token)
+  });
+  if (error) throw error;
+}
+
+export async function submitUpdateRequestByToken(token: string, submission: Record<string, unknown>) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("submit_model_update_request", {
+    p_token_hash: sha256(token),
+    submission
+  });
+  if (error) throw error;
 }
 
 export function createPublicToken() {
