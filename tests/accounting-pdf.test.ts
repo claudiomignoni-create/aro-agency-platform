@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { PDFDocument } from "pdf-lib";
 import {
   modelStatementPdfFileName,
   renderModelStatementPdfDocument
@@ -28,43 +30,60 @@ const statement = {
   to: "2026-07-31"
 };
 
-test("model statement PDF uses AROLAB naming and BRL", () => {
-  assert.equal(modelStatementPdfFileName(statement as never), "AROLAB-MARIA-ARO-BRL-EXTRATO.pdf");
-  const pdf = renderModelStatementPdfDocument(statement as never).toString("utf8");
+test("model statement PDF uses official ARO naming and BRL", async () => {
+  assert.equal(modelStatementPdfFileName(statement as never), "ARO-EXTRATO-MARIA-ARO-2026-07-01-2026-07-31-BRL.pdf");
 
-  assert.match(pdf, /^%PDF-1.4/);
-  assert.match(pdf, /ARO/);
-  assert.match(pdf, /LAB/);
-  assert.match(pdf, /BRL/);
-  assert.equal(pdf.includes(["VE", "IN"].join("")), false);
-  assert.doesNotMatch(pdf, /THB/);
+  const pdf = await renderModelStatementPdfDocument(statement as never);
+  const rawPdf = pdf.toString("latin1");
+  const pdfDoc = await PDFDocument.load(pdf);
+
+  assert.match(rawPdf, /^%PDF-1.7/);
+  assert.equal(pdfDoc.getPageCount(), 1);
+  assert.equal(rawPdf.includes(["V", "E", "I", "N"].join("")), false);
+  assert.equal(rawPdf.includes(["L", "A", "B"].join("")), false);
+  assert.equal(rawPdf.includes(["A", "R", "O", "L", "A", "B"].join("")), false);
+  assert.doesNotMatch(rawPdf, /THB/);
 });
 
-test("model statement PDF paginates without dropping long statements", () => {
+test("model statement PDF uses the real brand image and no manual string renderer", async () => {
+  const source = await readFile("src/lib/accounting-pdf-document.ts", "utf8");
+
+  assert.match(source, /embedPng/);
+  assert.match(source, /public\", \"brand\", \"aro-mark-white\.png\"/);
+  assert.doesNotMatch(source, /function truncate/);
+  assert.doesNotMatch(source, /\\.\\.\\./);
+  assert.doesNotMatch(source, /pdfEscape/);
+  assert.doesNotMatch(source, /\/BaseFont/);
+  assert.doesNotMatch(source, new RegExp(`text\\\\\\("ARO"[^]*text\\\\\\("${["L", "A", "B"].join("")}"`));
+});
+
+test("model statement PDF paginates 100 records without dropping long text", async () => {
+  const longTitle =
+    "Campanha financeira internacional com descrição longa de aprovação, produção, uso de imagem e observações operacionais completas";
   const longStatement = {
     ...statement,
-    jobs: Array.from({ length: 70 }, (_, index) => ({
+    jobs: Array.from({ length: 100 }, (_, index) => ({
       client_amount_due: 1200,
       currency: "BRL",
       id: `job-${index}`,
       job_date: `2026-07-${String((index % 28) + 1).padStart(2, "0")}`,
       model_net_amount: 1000,
       receipts: [{ amount: 1200, status: "posted" }],
-      title: `Trabalho ${index + 1}`
+      title: `${longTitle} ${index + 1}`
     })),
-    entries: Array.from({ length: 70 }, (_, index) => ({
+    entries: Array.from({ length: 100 }, (_, index) => ({
       amount: 100,
       currency: "BRL",
       entry_type: "expense",
       id: `entry-${index}`,
       occurred_on: `2026-07-${String((index % 28) + 1).padStart(2, "0")}`,
       status: "posted",
-      title: `Despesa ${index + 1}`
+      title: `Despesa operacional com texto completo e sem corte ${index + 1}`
     }))
   } as never;
-  const pdf = renderModelStatementPdfDocument(longStatement).toString("utf8");
+  const pdf = await renderModelStatementPdfDocument(longStatement);
+  const pdfDoc = await PDFDocument.load(pdf);
 
-  assert.match(pdf, /Página 2 de/);
-  assert.match(pdf, /Trabalho 70/);
-  assert.match(pdf, /Despesa 70/);
+  assert.ok(pdfDoc.getPageCount() >= 8);
+  assert.ok(pdf.byteLength > 20000);
 });

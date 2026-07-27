@@ -19,7 +19,7 @@ export async function modelStatementPdfResponse({
     from: searchParams?.get("from") ?? undefined,
     to: searchParams?.get("to") ?? undefined
   });
-  const pdf = renderModelStatementPdf(statement);
+  const pdf = await renderModelStatementPdf(statement);
   const fileName = modelStatementPdfFileName(statement);
 
   return new NextResponse(pdf, {
