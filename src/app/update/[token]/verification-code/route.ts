@@ -53,25 +53,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (mode === "verify") {
       const code = String(body.code ?? "").replace(/\D/g, "");
       if (code.length !== 6) throw new Error("Código inválido.");
-      const codeHash = sha256(code);
-      const { data: verification, error } = await admin
-        .from("model_update_verification_codes")
-        .select("id, attempt_count")
-        .eq("request_id", updateRequest.id)
-        .eq("code_hash", codeHash)
-        .is("verified_at", null)
-        .is("consumed_at", null)
-        .gt("expires_at", new Date().toISOString())
-        .order("requested_at", { ascending: false })
-        .maybeSingle();
-      if (error) throw error;
-      if (!verification) throw new Error("Código inválido ou expirado.");
-      if (verification.attempt_count >= 5) throw new Error("Limite de tentativas atingido.");
 
-      await admin
-        .from("model_update_verification_codes")
-        .update({ attempt_count: verification.attempt_count + 1, verified_at: new Date().toISOString() })
-        .eq("id", verification.id);
+      const { data: verified, error } = await admin.rpc("verify_model_update_code", {
+        p_submitted_code_hash: sha256(code),
+        p_token_hash: tokenHash
+      });
+      if (error) throw error;
+      if (!verified) throw new Error("Código inválido, expirado ou limite atingido.");
 
       return NextResponse.json({ ok: true, verified: true });
     }

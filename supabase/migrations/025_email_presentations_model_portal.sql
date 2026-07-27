@@ -139,6 +139,17 @@ create table if not exists public.presentation_recipients (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.presentation_share_links (
+  id uuid primary key default gen_random_uuid(),
+  presentation_id uuid not null references public.presentations(id) on delete cascade,
+  presentation_version_id uuid references public.presentation_versions(id) on delete set null,
+  recipient_id uuid references public.presentation_recipients(id) on delete set null,
+  public_token_hash text not null unique,
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.presentation_access_events (
   id uuid primary key default gen_random_uuid(),
   presentation_id uuid not null references public.presentations(id) on delete cascade,
@@ -169,6 +180,7 @@ create table if not exists public.outbound_emails (
   error_code text,
   error_message_sanitized text,
   presentation_id uuid references public.presentations(id) on delete set null,
+  presentation_share_link_id uuid references public.presentation_share_links(id) on delete set null,
   model_update_request_id uuid,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -189,7 +201,8 @@ create index if not exists outbound_emails_status_idx
 on public.outbound_emails (status, scheduled_at, created_at);
 
 alter table public.outbound_emails
-  add column if not exists scheduled_timezone text;
+  add column if not exists scheduled_timezone text,
+  add column if not exists presentation_share_link_id uuid references public.presentation_share_links(id) on delete set null;
 
 create table if not exists public.model_update_requests (
   id uuid primary key default gen_random_uuid(),
@@ -319,10 +332,21 @@ create table if not exists public.model_update_files (
   position integer not null default 0,
   created_at timestamptz not null default now(),
   constraint model_update_files_status_check check (
-    status in ('pending_review', 'approved', 'rejected', 'archived')
+    status in ('uploading', 'validating', 'pending_review', 'approved', 'rejected', 'archived')
   ),
   constraint model_update_files_size_check check (size_bytes >= 0)
 );
+
+do $$
+begin
+  alter table public.model_update_files
+    drop constraint if exists model_update_files_status_check;
+
+  alter table public.model_update_files
+    add constraint model_update_files_status_check check (
+      status in ('uploading', 'validating', 'pending_review', 'approved', 'rejected', 'archived')
+    );
+end $$;
 
 create table if not exists public.model_update_audit_events (
   id uuid primary key default gen_random_uuid(),
@@ -388,6 +412,7 @@ begin
     'presentation_model_media',
     'presentation_versions',
     'presentation_recipients',
+    'presentation_share_links',
     'presentation_access_events',
     'outbound_emails',
     'model_update_requests',
@@ -415,6 +440,7 @@ begin
     'presentation_model_media',
     'presentation_versions',
     'presentation_recipients',
+    'presentation_share_links',
     'presentation_access_events',
     'outbound_emails',
     'model_update_requests',
@@ -520,6 +546,12 @@ on public.presentations (status, expires_at, revoked_at);
 create index if not exists presentation_recipients_email_idx
 on public.presentation_recipients (recipient_email);
 
+create index if not exists presentation_share_links_token_idx
+on public.presentation_share_links (public_token_hash);
+
+create index if not exists presentation_share_links_presentation_idx
+on public.presentation_share_links (presentation_id, created_at desc);
+
 create index if not exists presentation_access_events_presentation_idx
 on public.presentation_access_events (presentation_id, occurred_at desc);
 
@@ -591,56 +623,99 @@ set search_path = public
 as $$
 declare
   payload jsonb;
+  presentation_record record;
+  snapshot_source jsonb;
 begin
-  select jsonb_build_object(
-    'title', p.title,
-    'description', p.description,
-    'language', p.language,
-    'allow_downloads', p.allow_downloads,
-    'published_at', p.published_at,
-    'snapshot', jsonb_build_object(
-      'title', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'title',
-      'description', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'description',
-      'contact', coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'contact',
-      'models', coalesce((
-        select jsonb_agg(
-          jsonb_build_object(
-            'board', model_item->'board',
-            'city', model_item->'city',
-            'country', model_item->'country',
-            'display_name', model_item->'display_name',
-            'highlighted', model_item->'highlighted',
-            'measurements', model_item->'measurements',
-            'media', coalesce((
-              select jsonb_agg(
-                jsonb_build_object(
-                  'media_type', media_item->'media_type',
-                  'title', media_item->'title'
-                )
-              )
-              from jsonb_array_elements(coalesce(model_item->'media', '[]'::jsonb)) media_item
-            ), '[]'::jsonb)
-          )
-        )
-        from jsonb_array_elements(coalesce(coalesce(nullif(p.snapshot, '{}'::jsonb), pv.snapshot, '{}'::jsonb)->'models', '[]'::jsonb)) model_item
-      ), '[]'::jsonb)
-    )
-  )
-  into payload
-  from public.presentations p
-  left join lateral (
-    select snapshot
-    from public.presentation_versions
-    where presentation_id = p.id
-    order by version_number desc
-    limit 1
-  ) pv on true
-  where p.public_token_hash = p_token_hash
+  select
+    p.title,
+    p.description,
+    p.language,
+    p.allow_downloads,
+    p.published_at,
+    coalesce(nullif(pv.snapshot, '{}'::jsonb), nullif(p.snapshot, '{}'::jsonb), '{}'::jsonb) as snapshot
+  into presentation_record
+  from public.presentation_share_links sl
+  join public.presentations p on p.id = sl.presentation_id
+  left join public.presentation_versions pv on pv.id = sl.presentation_version_id
+  where sl.public_token_hash = p_token_hash
+    and sl.revoked_at is null
+    and (sl.expires_at is null or sl.expires_at > now())
     and p.status in ('published', 'sent')
     and p.revoked_at is null
     and p.archived_at is null
     and (p.expires_at is null or p.expires_at > now())
   limit 1;
+
+  if not found then
+    select
+      p.title,
+      p.description,
+      p.language,
+      p.allow_downloads,
+      p.published_at,
+      coalesce(nullif(p.snapshot, '{}'::jsonb), nullif(pv.snapshot, '{}'::jsonb), '{}'::jsonb) as snapshot
+    into presentation_record
+    from public.presentations p
+    left join lateral (
+      select snapshot
+      from public.presentation_versions
+      where presentation_id = p.id
+      order by version_number desc
+      limit 1
+    ) pv on true
+    where p.public_token_hash = p_token_hash
+      and p.status in ('published', 'sent')
+      and p.revoked_at is null
+      and p.archived_at is null
+      and (p.expires_at is null or p.expires_at > now())
+    limit 1;
+  end if;
+
+  if not found then
+    return null;
+  end if;
+
+  snapshot_source := coalesce(presentation_record.snapshot, '{}'::jsonb);
+
+  select jsonb_build_object(
+    'title', presentation_record.title,
+    'description', presentation_record.description,
+    'language', presentation_record.language,
+    'allow_downloads', presentation_record.allow_downloads,
+    'published_at', presentation_record.published_at,
+    'snapshot', jsonb_build_object(
+      'title', snapshot_source->'title',
+      'description', snapshot_source->'description',
+      'contact', snapshot_source->'contact',
+      'models', coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'public_model_key', model_item.value->'public_model_key',
+            'board', model_item.value->'board',
+            'city', model_item.value->'city',
+            'country', model_item.value->'country',
+            'display_name', model_item.value->'display_name',
+            'highlighted', model_item.value->'highlighted',
+            'measurements', model_item.value->'measurements',
+            'media', coalesce((
+              select jsonb_agg(
+                jsonb_build_object(
+                  'public_media_key', media_item.value->'public_media_key',
+                  'media_type', media_item.value->'media_type',
+                  'title', media_item.value->'title'
+                )
+                order by media_item.ordinality
+              )
+              from jsonb_array_elements(coalesce(model_item.value->'media', '[]'::jsonb)) with ordinality media_item(value, ordinality)
+            ), '[]'::jsonb)
+          )
+          order by model_item.ordinality
+        )
+        from jsonb_array_elements(coalesce(snapshot_source->'models', '[]'::jsonb)) with ordinality model_item(value, ordinality)
+      ), '[]'::jsonb)
+    )
+  )
+  into payload;
 
   return payload;
 end;
@@ -654,22 +729,52 @@ set search_path = public
 as $$
 declare
   presentation_uuid uuid;
+  recipient_uuid uuid;
+  share_link_uuid uuid;
 begin
-  select id into presentation_uuid
-  from public.presentations
-  where public_token_hash = p_token_hash
-    and status in ('published', 'sent')
-    and revoked_at is null
-    and archived_at is null
-    and (expires_at is null or expires_at > now())
+  select p.id, sl.id, sl.recipient_id into presentation_uuid, share_link_uuid, recipient_uuid
+  from public.presentation_share_links sl
+  join public.presentations p on p.id = sl.presentation_id
+  where sl.public_token_hash = p_token_hash
+    and sl.revoked_at is null
+    and (sl.expires_at is null or sl.expires_at > now())
+    and p.status in ('published', 'sent')
+    and p.revoked_at is null
+    and p.archived_at is null
+    and (p.expires_at is null or p.expires_at > now())
   limit 1;
+
+  if presentation_uuid is null then
+    select id into presentation_uuid
+    from public.presentations
+    where public_token_hash = p_token_hash
+      and status in ('published', 'sent')
+      and revoked_at is null
+      and archived_at is null
+      and (expires_at is null or expires_at > now())
+    limit 1;
+  end if;
 
   if presentation_uuid is null then
     return false;
   end if;
 
   insert into public.presentation_access_events (presentation_id, event_type, metadata)
-  values (presentation_uuid, 'opened', jsonb_build_object('source', 'public_link'));
+  values (
+    presentation_uuid,
+    'opened',
+    jsonb_build_object(
+      'source', 'public_link',
+      'share_link_id', share_link_uuid,
+      'recipient_id', recipient_uuid
+    )
+  );
+
+  if recipient_uuid is not null then
+    update public.presentation_recipients
+    set opened_at = coalesce(opened_at, now())
+    where id = recipient_uuid;
+  end if;
 
   return true;
 end;
@@ -843,6 +948,53 @@ begin
 end;
 $$;
 
+create or replace function public.verify_model_update_code(
+  p_token_hash text,
+  p_submitted_code_hash text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  code_record record;
+  accepted boolean := false;
+begin
+  select vc.id, vc.code_hash, vc.attempt_count, vc.expires_at
+    into code_record
+  from public.model_update_verification_codes vc
+  join public.model_update_requests r on r.id = vc.request_id
+  where r.public_token_hash = p_token_hash
+    and r.status not in ('expired', 'canceled', 'applied')
+    and r.expires_at > now()
+    and vc.verified_at is null
+    and vc.consumed_at is null
+  order by vc.requested_at desc
+  for update of vc
+  limit 1;
+
+  if not found then
+    return false;
+  end if;
+
+  if code_record.attempt_count >= 5 then
+    return false;
+  end if;
+
+  accepted := code_record.code_hash = p_submitted_code_hash
+    and code_record.expires_at > now();
+
+  update public.model_update_verification_codes
+  set
+    attempt_count = attempt_count + 1,
+    verified_at = case when accepted then now() else verified_at end
+  where id = code_record.id;
+
+  return accepted;
+end;
+$$;
+
 create or replace function public.sanitize_model_update_payload(
   p_request_id uuid,
   p_payload jsonb,
@@ -887,6 +1039,18 @@ begin
     allowed_keys := array[]::text[];
   end if;
 
+  if 'measurements' = any(allowed_keys) then
+    allowed_keys := allowed_keys || array[
+      'height_cm',
+      'bust_cm',
+      'waist_cm',
+      'hips_cm',
+      'shoe_size',
+      'shoe_size_br',
+      'dress_size_br'
+    ];
+  end if;
+
   for key_name, value_json in
     select key, value
     from jsonb_each(p_payload)
@@ -917,6 +1081,23 @@ begin
     where request_id = p_request_id
       and field_key = key_name
     limit 1;
+
+    if not found and key_name in (
+      'height_cm',
+      'bust_cm',
+      'waist_cm',
+      'hips_cm',
+      'shoe_size',
+      'shoe_size_br',
+      'dress_size_br'
+    ) then
+      select *
+        into field_record
+      from public.model_update_request_fields
+      where request_id = p_request_id
+        and field_key = 'measurements'
+      limit 1;
+    end if;
 
     if field_record.is_sensitive and not p_sensitive_verified then
       raise exception 'sensitive_field_requires_verification';
@@ -1228,6 +1409,280 @@ begin
 end;
 $$;
 
+create or replace function public.apply_model_update_submission(
+  p_request_id uuid,
+  p_selected_fields text[] default array[]::text[],
+  p_approved_file_ids uuid[] default array[]::uuid[]
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  request_record record;
+  submission_record record;
+  payload jsonb;
+  selected_safe text[];
+  previous_model jsonb;
+  new_model jsonb;
+  approved_file record;
+  applied_field_names text[] := array[]::text[];
+  approved_file_ids uuid[] := array[]::uuid[];
+  contact_text text;
+  location_text text;
+  location_city text;
+  location_country text;
+  email_candidate text;
+  phone_candidate text;
+  current_time timestamptz := now();
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  select *
+    into request_record
+  from public.model_update_requests
+  where id = p_request_id
+  for update;
+
+  if not found then
+    raise exception 'request_not_found';
+  end if;
+
+  select *
+    into submission_record
+  from public.model_update_submissions
+  where request_id = p_request_id
+    and status = 'submitted'
+    and submitted_payload is not null
+  for update;
+
+  if not found then
+    raise exception 'submitted_payload_not_found';
+  end if;
+
+  payload := coalesce(submission_record.submitted_payload, '{}'::jsonb);
+
+  select coalesce(array_agg(distinct selected_field), array[]::text[])
+    into selected_safe
+  from unnest(coalesce(p_selected_fields, array[]::text[])) as selected(selected_field)
+  join public.model_update_request_fields requested_field
+    on requested_field.request_id = p_request_id
+   and requested_field.field_key = selected_field
+   and requested_field.allow_auto_apply = true
+   and requested_field.is_sensitive = false;
+
+  select to_jsonb(m.*)
+    into previous_model
+  from public.models m
+  where m.id = request_record.model_id
+  for update;
+
+  if previous_model is null then
+    raise exception 'model_not_found';
+  end if;
+
+  contact_text := nullif(payload->>'contact', '');
+  email_candidate := coalesce(nullif(payload->>'email', ''), substring(coalesce(contact_text, '') from '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'));
+  phone_candidate := coalesce(nullif(payload->>'phone', ''), nullif(payload->>'whatsapp', ''), substring(coalesce(contact_text, '') from '\+?[0-9][0-9\s().-]{7,}'));
+
+  location_text := nullif(payload->>'location', '');
+  if location_text is not null then
+    location_city := nullif(trim(split_part(location_text, ',', 1)), '');
+    location_country := nullif(trim(substr(location_text, length(split_part(location_text, ',', 1)) + 2)), '');
+  end if;
+
+  update public.models
+  set
+    email = case
+      when 'email' = any(selected_safe) and email_candidate is not null then lower(email_candidate)
+      when 'contact' = any(selected_safe) and email_candidate is not null then lower(email_candidate)
+      else email
+    end,
+    phone = case
+      when 'phone' = any(selected_safe) and phone_candidate is not null then trim(phone_candidate)
+      when 'contact' = any(selected_safe) and phone_candidate is not null then trim(phone_candidate)
+      else phone
+    end,
+    whatsapp = case
+      when 'whatsapp' = any(selected_safe) and phone_candidate is not null then trim(phone_candidate)
+      when 'contact' = any(selected_safe) and phone_candidate is not null then trim(phone_candidate)
+      else whatsapp
+    end,
+    location = case
+      when 'location' = any(selected_safe) and location_text is not null then location_text
+      else location
+    end,
+    current_city = case
+      when 'current_city' = any(selected_safe) and nullif(payload->>'current_city', '') is not null then nullif(payload->>'current_city', '')
+      when 'location' = any(selected_safe) and location_city is not null then location_city
+      else current_city
+    end,
+    current_country = case
+      when 'current_country' = any(selected_safe) and nullif(payload->>'current_country', '') is not null then nullif(payload->>'current_country', '')
+      when 'location' = any(selected_safe) and location_country is not null then location_country
+      else current_country
+    end,
+    base_city = case
+      when 'base_city' = any(selected_safe) and nullif(payload->>'base_city', '') is not null then nullif(payload->>'base_city', '')
+      when 'location' = any(selected_safe) and location_city is not null then location_city
+      else base_city
+    end,
+    base_country = case
+      when 'base_country' = any(selected_safe) and nullif(payload->>'base_country', '') is not null then nullif(payload->>'base_country', '')
+      when 'location' = any(selected_safe) and location_country is not null then location_country
+      else base_country
+    end,
+    height_cm = case
+      when 'height_cm' = any(selected_safe) and (payload->>'height_cm') ~ '^[0-9]{2,3}$' then (payload->>'height_cm')::integer
+      else height_cm
+    end,
+    bust_cm = case
+      when 'bust_cm' = any(selected_safe) and (payload->>'bust_cm') ~ '^[0-9]{2,3}$' then (payload->>'bust_cm')::integer
+      else bust_cm
+    end,
+    waist_cm = case
+      when 'waist_cm' = any(selected_safe) and (payload->>'waist_cm') ~ '^[0-9]{2,3}$' then (payload->>'waist_cm')::integer
+      else waist_cm
+    end,
+    hips_cm = case
+      when 'hips_cm' = any(selected_safe) and (payload->>'hips_cm') ~ '^[0-9]{2,3}$' then (payload->>'hips_cm')::integer
+      else hips_cm
+    end,
+    shoe_size = case
+      when 'shoe_size' = any(selected_safe) and nullif(payload->>'shoe_size', '') is not null then nullif(payload->>'shoe_size', '')
+      when 'shoe_size_br' = any(selected_safe) and nullif(payload->>'shoe_size_br', '') is not null then nullif(payload->>'shoe_size_br', '')
+      else shoe_size
+    end,
+    shoe_size_br = case
+      when 'shoe_size_br' = any(selected_safe) and nullif(payload->>'shoe_size_br', '') is not null then nullif(payload->>'shoe_size_br', '')
+      when 'shoe_size' = any(selected_safe) and nullif(payload->>'shoe_size', '') is not null then nullif(payload->>'shoe_size', '')
+      else shoe_size_br
+    end,
+    dress_size_br = case
+      when 'dress_size_br' = any(selected_safe) and nullif(payload->>'dress_size_br', '') is not null then nullif(payload->>'dress_size_br', '')
+      else dress_size_br
+    end,
+    last_profile_update_at = current_time,
+    profile_reviewed_at = current_time,
+    last_measurements_update_at = case
+      when selected_safe && array['height_cm', 'bust_cm', 'waist_cm', 'hips_cm', 'shoe_size', 'shoe_size_br', 'dress_size_br'] then current_time
+      else last_measurements_update_at
+    end
+  where id = request_record.model_id
+  returning to_jsonb(models.*) into new_model;
+
+  if 'instagram' = any(selected_safe) and nullif(payload->>'instagram', '') is not null then
+    insert into public.model_social_links (model_id, instagram)
+    values (request_record.model_id, nullif(payload->>'instagram', ''))
+    on conflict (model_id)
+    do update set instagram = excluded.instagram, updated_at = now();
+  end if;
+
+  select coalesce(array_agg(field_name), array[]::text[])
+    into applied_field_names
+  from (
+    select unnest(selected_safe) as field_name
+  ) applied
+  where payload ? field_name
+     or field_name in ('email', 'phone', 'whatsapp', 'current_city', 'current_country', 'base_city', 'base_country');
+
+  for approved_file in
+    select f.*
+    from public.model_update_files f
+    where f.submission_id = submission_record.id
+      and f.id = any(coalesce(p_approved_file_ids, array[]::uuid[]))
+      and f.status = 'pending_review'
+    order by f.position, f.created_at
+  loop
+    insert into public.model_media (
+      media_type,
+      model_id,
+      review_notes,
+      status,
+      storage_bucket,
+      storage_path,
+      title,
+      visibility
+    )
+    values (
+      approved_file.media_type::public.media_type,
+      request_record.model_id,
+      case
+        when approved_file.sha256 is not null then 'Recebido via Model Portal. SHA-256: ' || approved_file.sha256
+        else 'Recebido via Model Portal.'
+      end,
+      'approved',
+      approved_file.bucket,
+      approved_file.object_path,
+      approved_file.original_name,
+      case when approved_file.media_type = 'document' then 'private' else 'client_only' end::public.media_visibility
+    );
+
+    update public.model_update_files
+    set status = 'approved'
+    where id = approved_file.id;
+
+    approved_file_ids := approved_file_ids || approved_file.id;
+  end loop;
+
+  update public.model_update_submissions
+  set
+    applied_at = current_time,
+    applied_snapshot = jsonb_build_object(
+      'selected_fields', coalesce(p_selected_fields, array[]::text[]),
+      'applied_fields', applied_field_names,
+      'approved_file_ids', approved_file_ids,
+      'legacy_measurements_review_only', payload ? 'measurements'
+    ),
+    previous_snapshot = previous_model,
+    reviewed_by = auth.uid(),
+    status = 'applied'
+  where id = submission_record.id;
+
+  update public.model_update_requests
+  set
+    applied_at = current_time,
+    status = 'applied',
+    updated_by = auth.uid()
+  where id = p_request_id;
+
+  insert into public.model_update_audit_events (
+    created_by,
+    event_type,
+    metadata,
+    model_id,
+    new_snapshot,
+    previous_snapshot,
+    request_id
+  )
+  values (
+    auth.uid(),
+    'applied',
+    jsonb_build_object(
+      'selected_fields', coalesce(p_selected_fields, array[]::text[]),
+      'applied_fields', applied_field_names,
+      'approved_file_ids', approved_file_ids,
+      'sensitive_fields_reviewed_only', (
+        select coalesce(jsonb_agg(field_key), '[]'::jsonb)
+        from public.model_update_request_fields
+        where request_id = p_request_id
+          and is_sensitive = true
+          and payload ? field_key
+      )
+    ),
+    request_record.model_id,
+    new_model,
+    previous_model,
+    p_request_id
+  );
+
+  return true;
+end;
+$$;
+
 create or replace function public.current_model_id()
 returns uuid
 language sql
@@ -1416,6 +1871,8 @@ revoke all on function public.mark_model_update_request_opened(text) from public
 revoke all on function public.start_model_update_request(text) from public;
 revoke all on function public.save_model_update_request_draft(text, jsonb) from public;
 revoke all on function public.submit_model_update_request(text, jsonb) from public;
+revoke all on function public.verify_model_update_code(text, text) from public;
+revoke all on function public.apply_model_update_submission(uuid, text[], uuid[]) from public;
 revoke all on function public.current_model_id() from public;
 revoke all on function public.get_my_model_update_requests() from public;
 revoke all on function public.get_my_model_update_request(uuid) from public;
@@ -1433,6 +1890,8 @@ grant execute on function public.mark_model_update_request_opened(text) to anon,
 grant execute on function public.start_model_update_request(text) to anon, authenticated;
 grant execute on function public.save_model_update_request_draft(text, jsonb) to anon, authenticated;
 grant execute on function public.submit_model_update_request(text, jsonb) to anon, authenticated;
+grant execute on function public.verify_model_update_code(text, text) to anon, authenticated;
+grant execute on function public.apply_model_update_submission(uuid, text[], uuid[]) to authenticated;
 grant execute on function public.current_model_id() to authenticated;
 grant execute on function public.get_my_model_update_requests() to authenticated;
 grant execute on function public.get_my_model_update_request(uuid) to authenticated;
@@ -1440,3 +1899,4 @@ grant execute on function public.get_my_model_update_submission(uuid) to authent
 grant execute on function public.check_communication_rate_limit(text, text, text, integer, integer) to anon, authenticated;
 grant execute on function public.update_presentation_draft(uuid, uuid, jsonb) to authenticated;
 grant execute on function public.publish_presentation_snapshot(uuid, uuid, jsonb) to authenticated;
+grant execute on function public.claim_outbound_emails(integer) to service_role;

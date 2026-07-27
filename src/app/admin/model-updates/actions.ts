@@ -20,60 +20,56 @@ const sensitiveFields = new Set([
 ]);
 
 const defaultFields = [
-  { field_group: "profile", field_key: "measurements", is_required: true },
+  { field_group: "measurements", field_key: "height_cm", is_required: true },
+  { field_group: "measurements", field_key: "bust_cm", is_required: true },
+  { field_group: "measurements", field_key: "waist_cm", is_required: true },
+  { field_group: "measurements", field_key: "hips_cm", is_required: true },
+  { field_group: "measurements", field_key: "shoe_size_br", is_required: false },
   { field_group: "profile", field_key: "location", is_required: false },
   { field_group: "media", field_key: "portfolio", is_required: false },
   { field_group: "media", field_key: "polaroids", is_required: false },
   { field_group: "social", field_key: "instagram", is_required: false }
 ];
 
+const groupedFieldKeys: Record<string, string[]> = {
+  measurements: ["height_cm", "bust_cm", "waist_cm", "hips_cm", "shoe_size_br", "dress_size_br"]
+};
+
+const fieldGroups: Record<string, string> = {
+  bust_cm: "measurements",
+  contact: "profile",
+  dress_size_br: "measurements",
+  height_cm: "measurements",
+  hips_cm: "measurements",
+  instagram: "social",
+  location: "profile",
+  shoe_size_br: "measurements",
+  waist_cm: "measurements"
+};
+
 function textValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-function optionalText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function firstEmail(value: string) {
-  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() ?? null;
-}
-
-function firstPhone(value: string) {
-  return value.match(/\+?[\d\s().-]{8,}/)?.[0]?.replace(/\s+/g, " ").trim() ?? null;
-}
-
-function cityCountry(value: string) {
-  const [city, ...countryParts] = value.split(",").map((part) => part.trim()).filter(Boolean);
-  const country = countryParts.join(", ") || null;
-  return { city: city || null, country };
-}
-
-function labeledNumber(value: string, labels: string[]) {
-  for (const label of labels) {
-    const match = value.match(new RegExp(`${label}\\D{0,12}(\\d{2,3})`, "i"));
-    if (match?.[1]) return Number(match[1]);
-  }
-  return null;
-}
-
-function measurementsUpdate(value: string) {
-  return {
-    bust_cm: labeledNumber(value, ["busto", "torax", "tórax", "chest", "bust"]),
-    height_cm: labeledNumber(value, ["altura", "height"]),
-    hips_cm: labeledNumber(value, ["quadril", "hips"]),
-    waist_cm: labeledNumber(value, ["cintura", "waist"])
-  };
+function formValues(formData: FormData, key: string) {
+  return formData.getAll(key).map(String).filter(Boolean);
 }
 
 export async function createModelUpdateRequestAction(formData: FormData) {
   const profile = await requireRole(["admin"]);
   const supabase = await createClient();
   const modelId = textValue(formData, "model_id");
-  const selectedFields = formData.getAll("fields").map(String);
+  const selectedFields = Array.from(
+    new Set(
+      formData
+        .getAll("fields")
+        .map(String)
+        .flatMap((field) => groupedFieldKeys[field] ?? [field])
+    )
+  );
   const fields = selectedFields.length
     ? selectedFields.map((field_key) => ({
-        field_group: sensitiveFields.has(field_key) ? "sensitive" : "profile",
+        field_group: sensitiveFields.has(field_key) ? "sensitive" : fieldGroups[field_key] ?? "profile",
         field_key,
         is_required: true
       }))
@@ -197,99 +193,20 @@ export async function rejectModelUpdateFileAction(requestId: string, fileId: str
   revalidatePath(`/admin/model-updates/${requestId}`);
 }
 
-export async function applyModelUpdateSubmissionAction(requestId: string) {
-  const profile = await requireRole(["admin"]);
+export async function applyModelUpdateSubmissionAction(requestId: string, formData: FormData) {
+  await requireRole(["admin"]);
   const supabase = await createClient();
-  const { data: request, error } = await supabase
-    .from("model_update_requests")
-    .select("id, model_id, auto_apply_safe_fields, submission:model_update_submissions(id, submitted_payload, status)")
-    .eq("id", requestId)
-    .maybeSingle();
+  const selectedFields = formValues(formData, "selected_fields");
+  const approvedFileIds = formValues(formData, "approved_file_ids");
+
+  const { error } = await supabase.rpc("apply_model_update_submission", {
+    p_approved_file_ids: approvedFileIds,
+    p_request_id: requestId,
+    p_selected_fields: selectedFields
+  });
 
   if (error && isMissingSchemaError(error)) redirect("/admin/model-updates?schema=pending");
   if (error) throw error;
-  const submission = Array.isArray(request?.submission) ? request?.submission[0] : request?.submission;
-  if (!request || !submission?.submitted_payload) redirect(`/admin/model-updates/${requestId}?error=no-submission`);
-
-  const payload = submission.submitted_payload as Record<string, unknown>;
-  const modelUpdate: Record<string, unknown> = {
-    last_profile_update_at: new Date().toISOString(),
-    profile_reviewed_at: new Date().toISOString()
-  };
-
-  const contact = optionalText(payload.contact);
-  if (contact) {
-    modelUpdate.email = firstEmail(contact);
-    modelUpdate.whatsapp = firstPhone(contact);
-    modelUpdate.phone = firstPhone(contact);
-  }
-
-  const location = optionalText(payload.location);
-  if (location) {
-    const parsed = cityCountry(location);
-    modelUpdate.location = location;
-    modelUpdate.current_city = parsed.city;
-    modelUpdate.current_country = parsed.country;
-    modelUpdate.base_city = parsed.city;
-    modelUpdate.base_country = parsed.country;
-  }
-
-  const measurements = optionalText(payload.measurements);
-  if (measurements) {
-    Object.assign(modelUpdate, measurementsUpdate(measurements), {
-      last_measurements_update_at: new Date().toISOString()
-    });
-  }
-
-  Object.keys(modelUpdate).forEach((key) => {
-    if (modelUpdate[key] === null || modelUpdate[key] === undefined || modelUpdate[key] === "") delete modelUpdate[key];
-  });
-
-  if (request.auto_apply_safe_fields && Object.keys(modelUpdate).length) {
-    const { error: modelError } = await supabase.from("models").update(modelUpdate).eq("id", request.model_id);
-    if (modelError) throw modelError;
-  }
-
-  const instagram = optionalText(payload.instagram);
-  if (request.auto_apply_safe_fields && instagram) {
-    const { error: socialError } = await supabase
-      .from("model_social_links")
-      .upsert({ instagram, model_id: request.model_id }, { onConflict: "model_id" });
-    if (socialError) throw socialError;
-  }
-
-  const appliedAt = new Date().toISOString();
-  const { error: submissionError } = await supabase
-    .from("model_update_submissions")
-    .update({
-      applied_at: appliedAt,
-      applied_snapshot: {
-        applied_fields: Object.keys(modelUpdate),
-        sensitive_fields: Object.keys(payload).filter((key) => sensitiveFields.has(key))
-      },
-      reviewed_by: profile.id,
-      status: "applied"
-    })
-    .eq("id", submission.id);
-  if (submissionError) throw submissionError;
-
-  const { error: requestError } = await supabase
-    .from("model_update_requests")
-    .update({ applied_at: appliedAt, status: "applied", updated_by: profile.id })
-    .eq("id", requestId);
-  if (requestError) throw requestError;
-
-  await supabase.from("model_update_audit_events").insert({
-    created_by: profile.id,
-    event_type: "applied",
-    metadata: {
-      applied_fields: Object.keys(modelUpdate),
-      sensitive_fields_reviewed_only: Object.keys(payload).filter((key) => sensitiveFields.has(key))
-    },
-    model_id: request.model_id,
-    new_snapshot: payload,
-    request_id: requestId
-  });
 
   revalidatePath(`/admin/model-updates/${requestId}`);
   redirect(`/admin/model-updates/${requestId}`);

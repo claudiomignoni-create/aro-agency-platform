@@ -1,4 +1,5 @@
 import Link from "next/link";
+import crypto from "node:crypto";
 import { AdminPage, AdminPageHeader, AdminSection, AdminStatusPill } from "@/components/admin/admin-ui";
 import { createPresentationEmailsAction } from "@/app/admin/presentations/actions";
 import { requireRole } from "@/lib/auth";
@@ -67,6 +68,7 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
   if (agencyContactsResult.error) throw agencyContactsResult.error;
 
   const createEmails = createPresentationEmailsAction.bind(null, id);
+  const requestNonce = crypto.randomUUID();
   const suggestedRecipients = [
     client?.email ? { email: client.email, name: client.contact_name || client.company_name, source: "Cliente" } : null,
     ...(clientContactsResult.data ?? []).map((contact) => ({
@@ -118,6 +120,7 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
       {presentation ? (
         <AdminSection title="Destinatários e modo de envio">
           <form action={createEmails} className="admin-form-grid">
+            <input name="request_nonce" type="hidden" value={requestNonce} />
             {suggestedRecipients.length ? (
               <div className="admin-field">
                 <span>Destinatários sugeridos</span>

@@ -9,7 +9,6 @@ import {
 } from "@/components/admin/admin-ui";
 import {
   applyModelUpdateSubmissionAction,
-  approveModelUpdateFileAction,
   rejectModelUpdateFileAction,
   rejectModelUpdateSubmissionAction
 } from "@/app/admin/model-updates/actions";
@@ -32,6 +31,8 @@ function payloadRows(payload: unknown) {
     value: typeof value === "string" ? value : JSON.stringify(value)
   }));
 }
+
+const structuredMeasurementFields = new Set(["height_cm", "bust_cm", "waist_cm", "hips_cm", "shoe_size", "shoe_size_br", "dress_size_br"]);
 
 export default async function ModelUpdateDetailPage({ params, searchParams }: ModelUpdateDetailProps) {
   await requireRole(["admin"]);
@@ -81,6 +82,14 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
   const rows = payloadRows(submission?.submitted_payload ?? submission?.draft_payload);
   const applyAction = applyModelUpdateSubmissionAction.bind(null, id);
   const rejectAction = rejectModelUpdateSubmissionAction.bind(null, id);
+  const applyFormId = `apply-model-update-${id}`;
+
+  function canApplyField(fieldKey: string) {
+    const requested = fields.find((field) => field.field_key === fieldKey);
+    if (requested) return requested.allow_auto_apply && !requested.is_sensitive;
+    const measurements = fields.find((field) => field.field_key === "measurements");
+    return structuredMeasurementFields.has(fieldKey) && Boolean(measurements?.allow_auto_apply && !measurements.is_sensitive);
+  }
 
   return (
     <AdminPage>
@@ -159,9 +168,11 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
       </AdminSection>
 
       <AdminSection title="Dados enviados" meta={submission?.status ?? "sem envio"}>
-        <AdminDataTable>
+        <form action={applyAction} id={applyFormId}>
+          <AdminDataTable>
           <thead>
             <tr>
+              <th>Aplicar</th>
               <th>Campo</th>
               <th>Valor</th>
             </tr>
@@ -169,22 +180,28 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
           <tbody>
             {rows.map((row) => (
               <tr key={row.key}>
+                <td data-label="Aplicar">
+                  {canApplyField(row.key) ? (
+                    <input defaultChecked name="selected_fields" type="checkbox" value={row.key} />
+                  ) : (
+                    <span className="muted">Revisão</span>
+                  )}
+                </td>
                 <td data-label="Campo">{row.key}</td>
                 <td data-label="Valor">{row.value || "—"}</td>
               </tr>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={2}>Nenhum dado enviado ainda.</td>
+                <td colSpan={3}>Nenhum dado enviado ainda.</td>
               </tr>
             ) : null}
           </tbody>
-        </AdminDataTable>
+          </AdminDataTable>
+        </form>
         {submission?.submitted_payload ? (
           <div className="admin-form-actions">
-            <form action={applyAction}>
-              <button className="button" type="submit">Aplicar campos seguros</button>
-            </form>
+            <button className="button" form={applyFormId} type="submit">Aplicar seleção revisada</button>
             <form action={rejectAction}>
               <button className="button secondary" type="submit">Solicitar revisão</button>
             </form>
@@ -196,6 +213,7 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
         <AdminDataTable>
           <thead>
             <tr>
+              <th>Aprovar</th>
               <th>Arquivo</th>
               <th>Tipo</th>
               <th>Tamanho</th>
@@ -206,15 +224,19 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
           <tbody>
             {files.map((file) => (
               <tr key={file.id}>
+                <td data-label="Aprovar">
+                  {file.status === "pending_review" ? (
+                    <input form={applyFormId} name="approved_file_ids" type="checkbox" value={file.id} />
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
                 <td data-label="Arquivo">{file.original_name}</td>
                 <td data-label="Tipo">{file.media_type}</td>
                 <td data-label="Tamanho">{Math.round((Number(file.size_bytes) / 1024 / 1024) * 10) / 10} MB</td>
                 <td data-label="Status"><AdminStatusPill>{file.status}</AdminStatusPill></td>
                 <td data-label="Ações">
                   <div className="actions">
-                    <form action={approveModelUpdateFileAction.bind(null, id, file.id)}>
-                      <button className="button secondary" type="submit">Aprovar</button>
-                    </form>
                     <form action={rejectModelUpdateFileAction.bind(null, id, file.id)}>
                       <button className="button secondary" type="submit">Rejeitar</button>
                     </form>
@@ -224,7 +246,7 @@ export default async function ModelUpdateDetailPage({ params, searchParams }: Mo
             ))}
             {!files.length ? (
               <tr>
-                <td colSpan={5}>Nenhum arquivo recebido.</td>
+                <td colSpan={6}>Nenhum arquivo recebido.</td>
               </tr>
             ) : null}
           </tbody>

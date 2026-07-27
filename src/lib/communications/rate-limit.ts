@@ -7,7 +7,11 @@ export async function requestIpHash() {
   const forwardedFor = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim();
   const realIp = headerStore.get("x-real-ip")?.trim();
   const ip = forwardedFor || realIp || "unknown";
-  return sha256(`${process.env.RATE_LIMIT_HASH_SALT ?? "aro-dev-salt"}:${ip}`);
+  const salt = process.env.RATE_LIMIT_HASH_SALT;
+  if (!salt && process.env.NODE_ENV === "production") {
+    throw new Error("RATE_LIMIT_HASH_SALT is required in production.");
+  }
+  return sha256(`${salt ?? "aro-dev-salt"}:${ip}`);
 }
 
 export async function checkCommunicationRateLimit({

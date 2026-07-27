@@ -63,12 +63,16 @@ test("public presentation snapshots strip private media paths", async () => {
   const data = await readFile("src/lib/communications/data.ts", "utf8");
   const publicFunction = sql.slice(sql.indexOf("create or replace function public.get_public_presentation_by_token"));
 
-  assert.match(publicFunction, /jsonb_build_object\(\s*'media_type'/);
+  assert.match(publicFunction, /'media_type', media_item\.value->'media_type'/);
   assert.doesNotMatch(publicFunction, /'storage_bucket'/);
   assert.doesNotMatch(publicFunction, /'storage_path'/);
   assert.doesNotMatch(publicFunction, /'thumbnail_path'/);
+  assert.match(publicFunction, /'public_media_key'/);
+  assert.match(publicFunction, /order by media_item\.ordinality/);
   assert.match(data, /getPresentationPrivateMediaRefsByToken/);
   assert.match(publicPage, /signPresentationMedia\(presentation, privateRefs\)/);
+  assert.match(publicPage, /privateRefs\[item\.public_media_key\]/);
+  assert.doesNotMatch(publicPage, /privateRefs\[modelIndex\]/);
 });
 
 test("public presentation access uses restricted security definer RPCs", async () => {
@@ -79,6 +83,7 @@ test("public presentation access uses restricted security definer RPCs", async (
   assert.match(sql, /security definer/);
   assert.match(sql, /set search_path = public/);
   assert.match(sql, /get_public_presentation_by_token/);
+  assert.match(sql, /presentation_share_links/);
   assert.match(sql, /status in \('published', 'sent'\)/);
   assert.match(sql, /expires_at is null or p\.expires_at > now\(\)/);
   assert.match(sql, /grant execute on function public\.get_public_presentation_by_token\(text\) to anon, authenticated/);
@@ -120,6 +125,8 @@ test("model update payloads, uploads and OTP are validated and rate limited", as
   const form = await readFile("src/app/update/[token]/model-update-form.tsx", "utf8");
 
   assert.match(sql, /sanitize_model_update_payload/);
+  assert.match(sql, /verify_model_update_code/);
+  assert.match(sql, /attempt_count = attempt_count \+ 1/);
   assert.match(sql, /field_not_requested/);
   assert.match(sql, /sensitive_field_requires_verification/);
   assert.match(sql, /sensitive_verified boolean/);
@@ -128,13 +135,19 @@ test("model update payloads, uploads and OTP are validated and rate limited", as
   assert.match(sql, /check_communication_rate_limit/);
   assert.match(data, /operation: "update_start"/);
   assert.match(upload, /createSignedUploadUrl/);
+  assert.match(upload, /validateStoredObject/);
+  assert.match(upload, /createHash\("sha256"\)/);
+  assert.match(upload, /status: "validating"/);
+  assert.match(upload, /status: "rejected"/);
   assert.match(upload, /extensions:/);
   assert.match(form, /uploadToSignedUrl/);
   assert.match(upload, /model_update_verification_codes/);
   assert.match(otp, /crypto\.randomInt\(100000, 1000000\)/);
+  assert.match(otp, /\.rpc\("verify_model_update_code"/);
   assert.match(otp, /code_hash: sha256\(code\)/);
   assert.doesNotMatch(otp, /return NextResponse\.json\([^)]*code/);
   assert.match(form, /fileSha256/);
+  assert.match(form, /height_cm/);
   assert.match(form, /verification-code/);
 });
 
@@ -146,6 +159,7 @@ test("email queue claims atomically and retries with backoff", async () => {
   assert.match(sql, /claim_outbound_emails/);
   assert.match(sql, /for update skip locked/);
   assert.match(sql, /status = 'processing'/);
+  assert.match(sql, /grant execute on function public\.claim_outbound_emails\(integer\) to service_role/);
   assert.match(queue, /\.rpc\("claim_outbound_emails"/);
   assert.match(queue, /retry_pending/);
   assert.match(queue, /delayMinutes/);
@@ -165,6 +179,54 @@ test("presentation edits and publication use transactional RPCs", async () => {
   assert.match(actions, /\.rpc\("publish_presentation_snapshot"/);
   assert.doesNotMatch(actions, /\.from\("presentation_models"\)\.delete/);
   assert.doesNotMatch(actions, /\.from\("presentation_versions"\)\.insert/);
+});
+
+test("model update admin review is transactional", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const actions = await readFile("src/app/admin/model-updates/actions.ts", "utf8");
+  const detail = await readFile("src/app/admin/model-updates/[id]/page.tsx", "utf8");
+
+  assert.match(sql, /apply_model_update_submission/);
+  assert.match(sql, /for update/);
+  assert.match(sql, /previous_snapshot/);
+  assert.match(sql, /approved_file_ids/);
+  assert.match(actions, /\.rpc\("apply_model_update_submission"/);
+  assert.doesNotMatch(actions, /measurementsUpdate/);
+  assert.match(detail, /selected_fields/);
+  assert.match(detail, /approved_file_ids/);
+});
+
+test("presentation emails preserve sent links and use deterministic idempotency", async () => {
+  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const actions = await readFile("src/app/admin/presentations/actions.ts", "utf8");
+  const emailPage = await readFile("src/app/admin/presentations/[id]/email/page.tsx", "utf8");
+
+  assert.match(sql, /create table if not exists public\.presentation_share_links/);
+  assert.match(actions, /\.from\("presentation_share_links"\)\.insert/);
+  assert.match(actions, /presentation_share_link_id/);
+  assert.match(actions, /stableEmailIdempotencyKey/);
+  assert.match(actions, /request_nonce/);
+  assert.match(emailPage, /name="request_nonce"/);
+  assert.doesNotMatch(actions, /\.from\("presentations"\)\s*\.update\(\{ public_token_hash: hash/);
+  assert.doesNotMatch(actions, /idempotency_key: randomToken/);
+});
+
+test("production rate limit salt is mandatory and documented", async () => {
+  const rateLimit = await readFile("src/lib/communications/rate-limit.ts", "utf8");
+  const doc = await readFile("docs/ARO_COMMUNICATIONS_HARDENING.md", "utf8");
+
+  assert.match(rateLimit, /NODE_ENV === "production"/);
+  assert.match(rateLimit, /RATE_LIMIT_HASH_SALT is required in production/);
+  assert.match(doc, /openssl rand -base64 32/);
+});
+
+test("real database validation script refuses production", async () => {
+  const script = await readFile("scripts/validate-communications-real-db.ts", "utf8");
+
+  assert.match(script, /ARO_TEST_DATABASE_URL/);
+  assert.match(script, /vsevxuxinfqpwtpykhon/);
+  assert.match(script, /claim_outbound_emails/);
+  assert.match(script, /presentation_share_links/);
 });
 
 test("communication migration preserves upgrade compatibility and history", async () => {

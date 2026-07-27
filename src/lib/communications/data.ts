@@ -82,8 +82,10 @@ export type PublicPresentationPayload = {
       id?: string;
       main_image_path?: string | null;
       measurements?: Record<string, number | string | null>;
+      public_model_key?: string | null;
       media?: Array<{
         media_type: string;
+        public_media_key?: string | null;
         storage_bucket?: string | null;
         storage_path?: string | null;
         thumbnail_path?: string | null;
@@ -234,10 +236,39 @@ export async function findPresentationByTokenWithRateLimit(token: string, ipHash
 
 export async function getPresentationPrivateMediaRefsByToken(token: string) {
   const admin = createAdminClient();
+  const tokenHash = sha256(token);
+  const { data: shareLink, error: shareLinkError } = await admin
+    .from("presentation_share_links")
+    .select(`
+      expires_at,
+      revoked_at,
+      presentation:presentations(status, revoked_at, archived_at, expires_at, snapshot),
+      version:presentation_versions(snapshot)
+    `)
+    .eq("public_token_hash", tokenHash)
+    .is("revoked_at", null)
+    .maybeSingle();
+
+  if (shareLinkError && !isMissingSchemaError(shareLinkError)) throw shareLinkError;
+
+  const linkedPresentation = Array.isArray(shareLink?.presentation) ? shareLink?.presentation[0] : shareLink?.presentation;
+  const linkedVersion = Array.isArray(shareLink?.version) ? shareLink?.version[0] : shareLink?.version;
+  if (
+    shareLink &&
+    (!shareLink.expires_at || new Date(shareLink.expires_at).getTime() > Date.now()) &&
+    linkedPresentation &&
+    ["published", "sent"].includes(String(linkedPresentation.status)) &&
+    !linkedPresentation.revoked_at &&
+    !linkedPresentation.archived_at &&
+    (!linkedPresentation.expires_at || new Date(linkedPresentation.expires_at).getTime() > Date.now())
+  ) {
+    return privateMediaMapFromSnapshot(linkedVersion?.snapshot ?? linkedPresentation.snapshot);
+  }
+
   const { data, error } = await admin
     .from("presentations")
     .select("snapshot")
-    .eq("public_token_hash", sha256(token))
+    .eq("public_token_hash", tokenHash)
     .in("status", ["published", "sent"])
     .is("revoked_at", null)
     .is("archived_at", null)
@@ -245,9 +276,14 @@ export async function getPresentationPrivateMediaRefsByToken(token: string) {
 
   if (error) throw error;
 
-  const snapshot = (data?.snapshot ?? {}) as {
+  return privateMediaMapFromSnapshot(data?.snapshot);
+}
+
+function privateMediaMapFromSnapshot(snapshotValue: unknown) {
+  const snapshot = (snapshotValue ?? {}) as {
     models?: Array<{
       media?: Array<{
+        public_media_key?: string | null;
         storage_bucket?: string | null;
         storage_path?: string | null;
         thumbnail_path?: string | null;
@@ -255,7 +291,22 @@ export async function getPresentationPrivateMediaRefsByToken(token: string) {
     }>;
   };
 
-  return snapshot.models?.map((model) => model.media ?? []) ?? [];
+  const refs: Record<
+    string,
+    {
+      storage_bucket?: string | null;
+      storage_path?: string | null;
+      thumbnail_path?: string | null;
+    }
+  > = {};
+
+  for (const model of snapshot.models ?? []) {
+    for (const media of model.media ?? []) {
+      if (media.public_media_key) refs[media.public_media_key] = media;
+    }
+  }
+
+  return refs;
 }
 
 export async function findUpdateRequestByToken(token: string, ipHash?: string) {

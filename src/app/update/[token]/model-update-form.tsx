@@ -11,21 +11,41 @@ type ModelUpdateFormProps = {
 
 const fieldDefinitions: Record<
   string,
-  { group: string; label: string; placeholder?: string; sensitive?: boolean; type?: "file" | "textarea" | "text" }
+  { group: string; label: string; placeholder?: string; sensitive?: boolean; type?: "file" | "number" | "textarea" | "text" }
 > = {
+  bust_cm: { group: "Medidas", label: "Busto em cm", type: "number" },
   contact: { group: "Contato", label: "E-mail ou WhatsApp atualizado" },
+  dress_size_br: { group: "Medidas", label: "Manequim BR" },
   documents: { group: "Documentos", label: "Documentos", sensitive: true, type: "file" },
   health: { group: "Saúde", label: "Informações de saúde", sensitive: true, type: "textarea" },
+  height_cm: { group: "Medidas", label: "Altura em cm", type: "number" },
+  hips_cm: { group: "Medidas", label: "Quadril em cm", type: "number" },
   instagram: { group: "Redes sociais", label: "Instagram", placeholder: "@aro" },
   location: { group: "Localização", label: "Cidade e país base" },
   measurements: { group: "Medidas", label: "Altura, busto, cintura, quadril e sapato", type: "textarea" },
   passport: { group: "Documentos", label: "Passaporte", sensitive: true },
   polaroids: { group: "Polaroids", label: "Polaroids recentes", type: "file" },
   portfolio: { group: "Portfolio", label: "Portfolio atualizado", type: "file" },
+  shoe_size_br: { group: "Medidas", label: "Sapato BR" },
   videos: { group: "Vídeos", label: "Vídeos recentes", type: "file" },
+  waist_cm: { group: "Medidas", label: "Cintura em cm", type: "number" },
   visa: { group: "Documentos", label: "Visto", sensitive: true },
   banking: { group: "Dados bancários", label: "Dados bancários", sensitive: true, type: "textarea" }
 };
+
+const structuredMeasurementFields = ["height_cm", "bust_cm", "waist_cm", "hips_cm", "shoe_size_br", "dress_size_br"];
+
+function expandRequestedFields(fields: PublicModelUpdateRequestPayload["fields"]) {
+  return fields.flatMap((field) =>
+    field.field_key === "measurements"
+      ? structuredMeasurementFields.map((fieldKey) => ({
+          ...field,
+          field_group: "measurements",
+          field_key: fieldKey
+        }))
+      : [field]
+  );
+}
 
 function stringifyDraftValue(value: unknown) {
   return typeof value === "string" ? value : "";
@@ -54,9 +74,12 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
   const requestedFields = useMemo(
     () =>
       request.fields.length
-        ? request.fields
+        ? expandRequestedFields(request.fields)
         : [
-            { field_group: "profile", field_key: "measurements", is_required: true, is_sensitive: false },
+            { field_group: "measurements", field_key: "height_cm", is_required: true, is_sensitive: false },
+            { field_group: "measurements", field_key: "bust_cm", is_required: true, is_sensitive: false },
+            { field_group: "measurements", field_key: "waist_cm", is_required: true, is_sensitive: false },
+            { field_group: "measurements", field_key: "hips_cm", is_required: true, is_sensitive: false },
             { field_group: "profile", field_key: "location", is_required: false, is_sensitive: false }
           ],
     [request.fields]
@@ -275,6 +298,7 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
                       setStatus("dirty");
                     }}
                     placeholder={definition.placeholder}
+                    type={definition.type === "number" ? "number" : "text"}
                     value={draft[field.field_key] ?? ""}
                   />
                 )}

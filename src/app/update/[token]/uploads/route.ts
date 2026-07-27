@@ -148,6 +148,53 @@ async function objectExists(bucket: string, objectPath: string) {
   return Boolean(data?.some((item) => item.name === name));
 }
 
+async function validateStoredObject({
+  bucket,
+  expectedMimeType,
+  expectedSha256,
+  expectedSizeBytes,
+  objectPath,
+  rule
+}: {
+  bucket: string;
+  expectedMimeType: string;
+  expectedSha256: string;
+  expectedSizeBytes: number;
+  objectPath: string;
+  rule: (typeof fieldRules)[string];
+}) {
+  const admin = createAdminClient();
+  const { data: signed, error } = await admin.storage.from(bucket).createSignedUrl(objectPath, 60);
+  if (error || !signed?.signedUrl) throw error ?? new Error("Arquivo não encontrado no Storage.");
+
+  const response = await fetch(signed.signedUrl, { cache: "no-store" });
+  if (!response.ok || !response.body) throw new Error("Arquivo não encontrado no Storage.");
+
+  const actualMimeType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  if (!actualMimeType || !rule.mime.test(actualMimeType)) throw new Error("Tipo real do arquivo não permitido.");
+  if (actualMimeType !== expectedMimeType) throw new Error("Tipo real do arquivo difere do envio autorizado.");
+  if (contentLength && contentLength !== expectedSizeBytes) throw new Error("Tamanho real do arquivo difere do envio autorizado.");
+
+  const hash = crypto.createHash("sha256");
+  let actualSizeBytes = 0;
+  const reader = response.body.getReader();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    actualSizeBytes += value.byteLength;
+    if (actualSizeBytes > rule.maxBytes) throw new Error("Arquivo maior que o limite permitido.");
+    hash.update(value);
+  }
+
+  const actualSha256 = hash.digest("hex");
+  if (actualSizeBytes !== expectedSizeBytes) throw new Error("Tamanho real do arquivo difere do envio autorizado.");
+  if (actualSha256 !== expectedSha256) throw new Error("SHA-256 real do arquivo difere do envio autorizado.");
+
+  return { actualMimeType, actualSha256, actualSizeBytes };
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
@@ -208,9 +255,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const extension = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".")) : "";
     const mimeType = String(body.mimeType ?? "").toLowerCase();
     const sizeBytes = Number(body.sizeBytes ?? 0);
+    const expectedSha256 = String(body.sha256 ?? "").toLowerCase();
     if (!rule.extensions.includes(extension)) throw new Error("Extensão de arquivo não permitida.");
     if (!rule.mime.test(mimeType)) throw new Error("Tipo de arquivo não permitido.");
     if (!sizeBytes || sizeBytes > rule.maxBytes) throw new Error("Arquivo maior que o limite permitido.");
+    if (!/^[a-f0-9]{64}$/.test(expectedSha256)) throw new Error("Checksum SHA-256 inválido.");
 
     if (action === "prepare") {
       const objectPath = `models/${updateRequest.model_id}/updates/${updateRequest.id}/${rule.folder}/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
@@ -239,19 +288,58 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       .eq("object_path", objectPath)
       .maybeSingle();
 
+    let fileId = existing?.id as string | undefined;
     if (!existing) {
-      const { error } = await admin.from("model_update_files").insert({
+      const { data: inserted, error } = await admin.from("model_update_files").insert({
         bucket: rule.bucket,
         media_type: rule.mediaType,
         mime_type: mimeType,
         object_path: objectPath,
         original_name: fileName,
-        sha256: body.sha256 ?? null,
+        sha256: expectedSha256,
         size_bytes: sizeBytes,
-        status: "pending_review",
+        status: "validating",
         submission_id: submissionId
-      });
+      }).select("id").single();
       if (error) throw error;
+      fileId = inserted.id;
+    } else {
+      await admin
+        .from("model_update_files")
+        .update({ status: "validating" })
+        .eq("id", existing.id);
+    }
+
+    try {
+      const validated = await validateStoredObject({
+        bucket: rule.bucket,
+        expectedMimeType: mimeType,
+        expectedSha256,
+        expectedSizeBytes: sizeBytes,
+        objectPath,
+        rule
+      });
+
+      if (fileId) {
+        await admin
+          .from("model_update_files")
+          .update({
+            mime_type: validated.actualMimeType,
+            sha256: validated.actualSha256,
+            size_bytes: validated.actualSizeBytes,
+            status: "pending_review"
+          })
+          .eq("id", fileId);
+      }
+    } catch (validationError) {
+      await admin.storage.from(rule.bucket).remove([objectPath]);
+      if (fileId) {
+        await admin
+          .from("model_update_files")
+          .update({ status: "rejected" })
+          .eq("id", fileId);
+      }
+      throw validationError;
     }
 
     return NextResponse.json({ ok: true, objectPath });

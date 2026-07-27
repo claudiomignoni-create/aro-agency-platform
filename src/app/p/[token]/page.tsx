@@ -17,11 +17,12 @@ export const metadata = {
 };
 
 type SnapshotModel = Omit<NonNullable<PublicPresentationPayload["snapshot"]["models"]>[number], "media"> & {
-  media?: Array<{
-    media_type: string;
-    signed_url?: string | null;
-    storage_bucket?: string;
-    storage_path?: string | null;
+    media?: Array<{
+      media_type: string;
+      public_media_key?: string | null;
+      signed_url?: string | null;
+      storage_bucket?: string;
+      storage_path?: string | null;
     thumbnail_path?: string | null;
     title?: string | null;
   }>;
@@ -33,11 +34,10 @@ async function signPresentationMedia(
 ): Promise<SnapshotModel[]> {
   const admin = createAdminClient();
   const models = await Promise.all(
-    (presentation.snapshot.models ?? []).map(async (model, modelIndex): Promise<SnapshotModel> => {
-      const refs = privateRefs[modelIndex] ?? [];
+    (presentation.snapshot.models ?? []).map(async (model): Promise<SnapshotModel> => {
       const media = await Promise.all(
-        (model.media ?? []).map(async (item, mediaIndex) => {
-          const ref = refs[mediaIndex];
+        (model.media ?? []).map(async (item) => {
+          const ref = item.public_media_key ? privateRefs[item.public_media_key] : null;
           const bucket = ref?.storage_bucket ?? "";
           const path = ref?.thumbnail_path || ref?.storage_path;
           if (!bucket || !path) return { ...item, signed_url: null };
