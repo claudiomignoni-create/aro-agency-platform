@@ -52,7 +52,7 @@ export async function createModelUpdateRequestAction(formData: FormData) {
   const { data, error } = await supabase
     .from("model_update_requests")
     .insert({
-      auto_apply_safe_fields: formData.get("auto_apply_safe_fields") !== "off",
+      auto_apply_safe_fields: formData.get("auto_apply_safe_fields") === "on",
       created_by: profile.id,
       due_at: textValue(formData, "due_at") || null,
       expires_at: expiresAt,
