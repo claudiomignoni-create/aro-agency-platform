@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Search } from "@/components/admin/admin-icons";
 import { getAccountingSchemaStatus, isMissingSchemaError } from "@/lib/accounting-schema";
 import { formatDashboardDateTime } from "@/lib/admin-dashboard";
 import { listClientOptions } from "@/lib/clients";

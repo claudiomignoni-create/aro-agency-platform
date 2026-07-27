@@ -21,7 +21,7 @@ import {
   UserRound,
   UsersRound,
   X
-} from "lucide-react";
+} from "@/components/admin/admin-icons";
 import type { ComponentType, ReactNode, SVGProps } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "@/app/(auth)/login/actions";

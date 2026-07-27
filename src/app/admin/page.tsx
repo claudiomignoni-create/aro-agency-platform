@@ -12,7 +12,7 @@ import {
   Send,
   UserRound,
   UsersRound
-} from "lucide-react";
+} from "@/components/admin/admin-icons";
 import {
   formatDashboardDateTime,
   formatRelativeDate,

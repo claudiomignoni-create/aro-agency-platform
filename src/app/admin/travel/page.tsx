@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plane, Search } from "lucide-react";
+import { Plane, Search } from "@/components/admin/admin-icons";
 import {
   getTravelSchemaStatus,
   listTravelTrips,

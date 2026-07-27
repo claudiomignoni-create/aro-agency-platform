@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, Plane } from "lucide-react";
+import { FileText, Plane } from "@/components/admin/admin-icons";
 import { getTravelTrip, flightStatusLabel, tripReasonLabel, tripStatusLabel } from "@/lib/travel";
 
 type TravelDetailPageProps = {

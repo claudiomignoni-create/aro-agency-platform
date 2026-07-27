@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle } from "@/components/admin/admin-icons";
 
 export default function MessagesPage() {
   return (
