@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   addDays,
   addMonths,
@@ -34,6 +35,8 @@ type AdminCalendarPageProps = {
     dateFrom?: string;
     dateTo?: string;
     model?: string;
+    navMonth?: string;
+    navYear?: string;
     q?: string;
     status?: string;
     type?: string;
@@ -42,6 +45,20 @@ type AdminCalendarPageProps = {
 };
 
 const views = ["month", "week", "list"] as const;
+const monthOptions = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro"
+] as const;
 
 function selectedView(value: string | undefined) {
   return views.includes(value as (typeof views)[number])
@@ -63,6 +80,34 @@ function hrefWith(
 
   const query = params.toString();
   return `/admin/calendar${query ? `?${query}` : ""}`;
+}
+
+function hrefWithAnchorDate(
+  filters: Awaited<NonNullable<AdminCalendarPageProps["searchParams"]>>,
+  date: string,
+  view: (typeof views)[number]
+) {
+  return hrefWith(filters, {
+    date,
+    dateFrom: undefined,
+    dateTo: undefined,
+    navMonth: undefined,
+    navYear: undefined,
+    view
+  });
+}
+
+function monthDateKey(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
+function isValidPickerYear(year: number) {
+  return Number.isInteger(year) && year >= 2000 && year <= 2100;
+}
+
+function selectedPickerMonth(value: string | undefined) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 12 ? parsed : null;
 }
 
 function monthRange(dateKey: string) {
@@ -103,7 +148,38 @@ export default async function AdminCalendarPage({
   const filters = (await searchParams) ?? {};
   const today = currentDateKey();
   const view = selectedView(filters.view);
+  const requestedPickerMonth = selectedPickerMonth(filters.navMonth);
+  const requestedPickerYear = filters.navYear ? Number(filters.navYear) : null;
+  const hasPickerRequest = Boolean(filters.navMonth || filters.navYear);
+  const hasInvalidPickerRequest =
+    hasPickerRequest &&
+    (!requestedPickerMonth ||
+      requestedPickerYear === null ||
+      !isValidPickerYear(requestedPickerYear));
+
+  if (
+    requestedPickerMonth &&
+    requestedPickerYear !== null &&
+    isValidPickerYear(requestedPickerYear)
+  ) {
+    redirect(
+      hrefWith(
+        {
+          client: filters.client,
+          model: filters.model,
+          q: filters.q,
+          status: filters.status,
+          type: filters.type,
+          view
+        },
+        { date: monthDateKey(requestedPickerYear, requestedPickerMonth) }
+      )
+    );
+  }
+
   const anchorDate = safeDateKey(filters.date, today);
+  const anchorMonth = Number(anchorDate.slice(5, 7));
+  const anchorYear = Number(anchorDate.slice(0, 4));
   const range =
     view === "week"
       ? { end: addDays(anchorDate, 6), start: anchorDate }
@@ -170,27 +246,116 @@ export default async function AdminCalendarPage({
         <div className="calendar-nav">
           <Link
             className="button secondary"
-            href={hrefWith(filters, { date: previousDate, view })}
+            href={hrefWithAnchorDate(filters, previousDate, view)}
           >
             Anterior
           </Link>
-          <div className="calendar-title">
-            <span className="eyebrow">
-              {view === "month"
-                ? "Mês"
-                : view === "week"
-                  ? "Semana"
-                  : "Lista"}
-            </span>
-            <h3>{monthTitlePtBr(anchorDate)}</h3>
-          </div>
+          <details className="calendar-title-picker" open={hasInvalidPickerRequest}>
+            <summary className="calendar-title">
+              <span className="eyebrow">
+                {view === "month"
+                  ? "Mês"
+                  : view === "week"
+                    ? "Semana"
+                    : "Lista"}
+              </span>
+              <h3>{monthTitlePtBr(anchorDate)}</h3>
+            </summary>
+            <div className="month-picker-panel">
+              <form className="month-picker-form" method="get">
+                <input name="date" type="hidden" value={anchorDate} />
+                <input name="view" type="hidden" value={view} />
+                {filters.q ? <input name="q" type="hidden" value={filters.q} /> : null}
+                {filters.client ? (
+                  <input name="client" type="hidden" value={filters.client} />
+                ) : null}
+                {filters.model ? (
+                  <input name="model" type="hidden" value={filters.model} />
+                ) : null}
+                {filters.type ? <input name="type" type="hidden" value={filters.type} /> : null}
+                {filters.status ? (
+                  <input name="status" type="hidden" value={filters.status} />
+                ) : null}
+                <label>
+                  Mês
+                  <select defaultValue={String(anchorMonth)} name="navMonth">
+                    {monthOptions.map((month, index) => (
+                      <option key={month} value={index + 1}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Ano
+                  <span className="month-picker-year">
+                    <Link
+                      aria-label="Voltar um ano"
+                      className="button secondary mini-button"
+                      href={hrefWithAnchorDate(
+                        filters,
+                        monthDateKey(Math.max(2000, anchorYear - 1), anchorMonth),
+                        view
+                      )}
+                    >
+                      -
+                    </Link>
+                    <input
+                      defaultValue={anchorYear}
+                      inputMode="numeric"
+                      max="2100"
+                      min="2000"
+                      name="navYear"
+                      step="1"
+                      type="number"
+                    />
+                    <Link
+                      aria-label="Avançar um ano"
+                      className="button secondary mini-button"
+                      href={hrefWithAnchorDate(
+                        filters,
+                        monthDateKey(Math.min(2100, anchorYear + 1), anchorMonth),
+                        view
+                      )}
+                    >
+                      +
+                    </Link>
+                  </span>
+                </label>
+                {hasInvalidPickerRequest ? (
+                  <p className="month-picker-error">Use um mês válido e um ano entre 2000 e 2100.</p>
+                ) : (
+                  <p className="muted">
+                    O período personalizado será limpo para mostrar o mês escolhido.
+                  </p>
+                )}
+                <div className="actions month-picker-actions">
+                  <button className="button" type="submit">
+                    Aplicar
+                  </button>
+                  <Link
+                    className="button secondary"
+                    href={hrefWithAnchorDate(filters, today, view)}
+                  >
+                    Ir para hoje
+                  </Link>
+                  <Link
+                    className="button secondary"
+                    href={hrefWith(filters, { navMonth: undefined, navYear: undefined })}
+                  >
+                    Fechar
+                  </Link>
+                </div>
+              </form>
+            </div>
+          </details>
           <div className="calendar-nav-actions">
-            <Link className="button secondary" href={hrefWith(filters, { date: today, view })}>
+            <Link className="button secondary" href={hrefWithAnchorDate(filters, today, view)}>
               Hoje
             </Link>
             <Link
               className="button secondary"
-              href={hrefWith(filters, { date: nextDate, view })}
+              href={hrefWithAnchorDate(filters, nextDate, view)}
             >
               Próximo
             </Link>
@@ -405,11 +570,101 @@ export default async function AdminCalendarPage({
         }
 
         .calendar-title {
+          border: 0;
+          cursor: pointer;
+          display: block;
+          list-style: none;
           text-align: center;
+        }
+
+        .calendar-title::-webkit-details-marker {
+          display: none;
         }
 
         .calendar-title h3 {
           margin: 0.2rem 0 0;
+        }
+
+        .calendar-title h3::after {
+          color: var(--muted);
+          content: " ▾";
+          font-size: 0.9rem;
+        }
+
+        .calendar-title-picker {
+          position: relative;
+        }
+
+        .month-picker-panel {
+          background: color-mix(in srgb, #01102a 88%, #86c8ff 12%);
+          border: 1px solid color-mix(in srgb, #86c8ff 24%, var(--line));
+          border-radius: 8px;
+          box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+          left: 50%;
+          margin-top: 0.7rem;
+          max-width: min(92vw, 28rem);
+          padding: 0.85rem;
+          position: absolute;
+          top: 100%;
+          transform: translateX(-50%);
+          width: 28rem;
+          z-index: 5;
+        }
+
+        .month-picker-form {
+          display: grid;
+          gap: 0.75rem;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          text-align: left;
+        }
+
+        .month-picker-form label {
+          color: var(--muted-strong);
+          display: grid;
+          font-size: 0.76rem;
+          font-weight: 800;
+          gap: 0.35rem;
+        }
+
+        .month-picker-form select,
+        .month-picker-form input {
+          background: rgba(1, 16, 42, 0.46);
+          border: 1px solid var(--line);
+          border-radius: var(--radius-sm);
+          color: var(--foreground);
+          min-height: 2.6rem;
+          padding: 0 0.7rem;
+        }
+
+        .month-picker-year {
+          display: grid;
+          gap: 0.4rem;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+        }
+
+        .month-picker-year .mini-button {
+          align-items: center;
+          justify-content: center;
+          min-width: 2.4rem;
+        }
+
+        .month-picker-form .muted,
+        .month-picker-error,
+        .month-picker-actions {
+          grid-column: 1 / -1;
+        }
+
+        .month-picker-error {
+          color: #ffb4b4;
+          font-size: 0.82rem;
+          font-weight: 800;
+          margin: 0;
+        }
+
+        .month-picker-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
         }
 
         .calendar-nav-actions,
@@ -666,6 +921,18 @@ export default async function AdminCalendarPage({
 
           .calendar-title {
             text-align: left;
+          }
+
+          .month-picker-panel {
+            left: 0;
+            max-width: 100%;
+            position: relative;
+            transform: none;
+            width: 100%;
+          }
+
+          .month-picker-form {
+            grid-template-columns: 1fr;
           }
 
           .calendar-nav-actions,
