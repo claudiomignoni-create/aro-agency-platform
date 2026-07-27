@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "import:arolab-models": "tsx scripts/import-arolab-models.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "start": "next start",
     "lint": "eslint .",
@@ -13,9 +14,11 @@
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
+    "image-size": "^1.2.1",
     "next": "^15.3.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
