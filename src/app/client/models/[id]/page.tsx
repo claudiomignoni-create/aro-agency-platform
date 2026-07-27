@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  currentDateKey,
+  currentMonthKey,
   dateKeyFromIso,
   formatDatePtBr,
   generateMonthDays,
-  monthTitlePtBr
+  monthStartDateKey,
+  monthTitlePtBr,
+  nextMonthKey,
+  previousMonthKey,
+  safeMonthKey
 } from "@/lib/calendar";
 import {
   listClientVisibleModelCalendar,
@@ -20,12 +26,21 @@ type ClientModelDetailPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    month?: string;
+  }>;
 };
 
 export default async function ClientModelDetailPage({
-  params
+  params,
+  searchParams
 }: ClientModelDetailPageProps) {
   const { id } = await params;
+  const query = (await searchParams) ?? {};
+  const today = currentDateKey();
+  const currentMonth = currentMonthKey();
+  const selectedMonth = safeMonthKey(query.month, currentMonth);
+  const selectedMonthDate = monthStartDateKey(selectedMonth);
   const [models, blocks] = await Promise.all([
     listClientModelProfiles(),
     listClientVisibleModelCalendar(id)
@@ -36,10 +51,10 @@ export default async function ClientModelDetailPage({
     notFound();
   }
 
-  const days = generateMonthDays("2026-06-13");
+  const days = generateMonthDays(selectedMonthDate, today);
   const modelImageUrls = await createModelMainImageUrlsByIds([model.id]);
   const upcoming = blocks
-    .filter((block) => dateKeyFromIso(block.start_at) >= "2026-06-13")
+    .filter((block) => dateKeyFromIso(block.start_at) >= today)
     .slice(0, 6);
 
   return (
@@ -63,13 +78,13 @@ export default async function ClientModelDetailPage({
         <div className="actions">
           <Link
             className="button"
-            href={`/client/jobs/new?modelId=${model.id}&date=2026-06-13`}
+            href={`/client/jobs/new?modelId=${model.id}&date=${today}`}
           >
             Solicitar trabalho
           </Link>
           <Link
             className="button secondary"
-            href={`/client/jobs/new?modelId=${model.id}&quote=1&date=2026-06-13`}
+            href={`/client/jobs/new?modelId=${model.id}&quote=1&date=${today}`}
           >
             Solicitar orçamento
           </Link>
@@ -103,9 +118,28 @@ export default async function ClientModelDetailPage({
       </section>
 
       <section className="panel stack">
-        <div>
-          <span className="eyebrow">Calendário</span>
-          <h3>{monthTitlePtBr("2026-06-13")}</h3>
+        <div className="calendar-nav">
+          <Link
+            className="button secondary"
+            href={`/client/models/${model.id}?month=${previousMonthKey(selectedMonth)}`}
+          >
+            Mês anterior
+          </Link>
+          <div>
+            <span className="eyebrow">Calendário</span>
+            <h3>{monthTitlePtBr(selectedMonthDate)}</h3>
+          </div>
+          <div className="calendar-nav-actions">
+            <Link className="button secondary" href={`/client/models/${model.id}`}>
+              Hoje
+            </Link>
+            <Link
+              className="button secondary"
+              href={`/client/models/${model.id}?month=${nextMonthKey(selectedMonth)}`}
+            >
+              Próximo mês
+            </Link>
+          </div>
         </div>
         <div className="calendar-grid">
           {days.map((day) => (
@@ -182,6 +216,23 @@ export default async function ClientModelDetailPage({
           width: 100%;
         }
 
+        .calendar-nav {
+          align-items: center;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+        }
+
+        .calendar-nav h3 {
+          margin: 0.2rem 0 0;
+          text-align: center;
+        }
+
+        .calendar-nav-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+
         .calendar-grid {
           display: grid;
           gap: 0.45rem;
@@ -233,6 +284,19 @@ export default async function ClientModelDetailPage({
         @media (max-width: 760px) {
           .model-public-hero {
             align-items: stretch;
+            flex-direction: column;
+          }
+
+          .calendar-nav {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .calendar-nav h3 {
+            text-align: left;
+          }
+
+          .calendar-nav-actions {
             flex-direction: column;
           }
 
