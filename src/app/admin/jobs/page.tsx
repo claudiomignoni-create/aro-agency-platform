@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { listClients } from "@/lib/clients";
-import { dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
+import { addDays, currentDateKey, dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
 import {
   countJobsByStatus,
   countJobsByType,
@@ -56,10 +56,11 @@ export default async function AdminJobsPage({ searchParams }: AdminJobsPageProps
     listClients(),
     listModels()
   ]);
-  const today = "2026-06-13";
+  const today = currentDateKey();
+  const nextWeekDate = addDays(today, 7);
   const nextWeek = jobs.filter((job) => {
     const dateKey = dateKeyFromIso(job.start_at);
-    return dateKey >= today && dateKey <= "2026-06-20";
+    return dateKey >= today && dateKey <= nextWeekDate;
   });
   const modelImageUrls = await createModelMainImageUrls(
     jobs

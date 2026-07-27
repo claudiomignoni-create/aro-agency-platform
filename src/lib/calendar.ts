@@ -7,7 +7,17 @@ export type CalendarDay = {
   weekdayShort: string;
 };
 
-const defaultToday = "2026-06-13";
+export const operationalTimeZone = "America/Sao_Paulo";
+const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const monthKeyPattern = /^\d{4}-\d{2}$/;
+
+function dateKeyFromParts(year: number, month: number, day: number) {
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0")
+  ].join("-");
+}
 
 function dateFromParts(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day, 12, 0, 0));
@@ -21,18 +31,96 @@ export function toDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export function parseDateKey(dateKey: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
+export function currentDateKey(timeZone = operationalTimeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric"
+  }).formatToParts(new Date());
 
-  if (!year || !month || !day) {
-    return dateFromParts(2026, 5, 13);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+}
+
+export function currentMonthKey(timeZone = operationalTimeZone) {
+  return currentDateKey(timeZone).slice(0, 7);
+}
+
+export function isValidDateKey(dateKey: string | null | undefined) {
+  if (!dateKey || !dateKeyPattern.test(dateKey)) {
+    return false;
   }
+
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const parsed = dateFromParts(year, month - 1, day);
+
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+export function safeDateKey(
+  dateKey: string | null | undefined,
+  fallbackDateKey = currentDateKey()
+) {
+  return isValidDateKey(dateKey) ? String(dateKey) : fallbackDateKey;
+}
+
+export function parseDateKey(dateKey: string) {
+  const safeDateKeyValue = safeDateKey(dateKey);
+  const [year, month, day] = safeDateKeyValue.split("-").map(Number);
 
   return dateFromParts(year, month - 1, day);
 }
 
 export function compareDateKeys(left: string, right: string) {
   return left.localeCompare(right);
+}
+
+export function isValidMonthKey(monthKey: string | null | undefined) {
+  if (!monthKey || !monthKeyPattern.test(monthKey)) {
+    return false;
+  }
+
+  const [year, month] = monthKey.split("-").map(Number);
+  const parsed = dateFromParts(year, month - 1, 1);
+
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1;
+}
+
+export function monthKeyFromDateKey(dateKey: string) {
+  return safeDateKey(dateKey).slice(0, 7);
+}
+
+export function monthStartDateKey(monthKey: string) {
+  return `${safeMonthKey(monthKey)}-01`;
+}
+
+export function safeMonthKey(
+  monthKey: string | null | undefined,
+  fallbackMonthKey = currentMonthKey()
+) {
+  return isValidMonthKey(monthKey) ? String(monthKey) : fallbackMonthKey;
+}
+
+export function addMonths(monthKey: string, months: number) {
+  const [year, month] = safeMonthKey(monthKey).split("-").map(Number);
+  const date = dateFromParts(year, month - 1 + months, 1);
+
+  return dateKeyFromParts(date.getUTCFullYear(), date.getUTCMonth() + 1, 1).slice(0, 7);
+}
+
+export function previousMonthKey(monthKey: string) {
+  return addMonths(monthKey, -1);
+}
+
+export function nextMonthKey(monthKey: string) {
+  return addMonths(monthKey, 1);
 }
 
 export function formatDatePtBr(dateKey: string, options?: Intl.DateTimeFormatOptions) {
@@ -53,10 +141,12 @@ export function getWeekdayPtBr(dateKey: string, format: "long" | "short" = "long
 }
 
 export function generateMonthDays(
-  anchorDateKey = defaultToday,
-  todayDateKey = defaultToday
+  anchorDateKey = currentDateKey(),
+  todayDateKey = currentDateKey()
 ) {
-  const anchor = parseDateKey(anchorDateKey);
+  const anchor = parseDateKey(
+    isValidMonthKey(anchorDateKey) ? `${anchorDateKey}-01` : anchorDateKey
+  );
   const year = anchor.getUTCFullYear();
   const monthIndex = anchor.getUTCMonth();
   const firstDay = dateFromParts(year, monthIndex, 1);
@@ -82,7 +172,7 @@ export function generateMonthDays(
   });
 }
 
-export function monthTitlePtBr(anchorDateKey = defaultToday) {
+export function monthTitlePtBr(anchorDateKey = currentDateKey()) {
   return new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     timeZone: "UTC",

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { currentDateKey, safeDateKey } from "@/lib/calendar";
 import { createClientJobRequest, jobInputFromFormData } from "@/lib/jobs";
 
 export async function createClientJobAction(formData: FormData) {
@@ -11,7 +12,7 @@ export async function createClientJobAction(formData: FormData) {
     job = await createClientJobRequest(jobInputFromFormData(formData));
   } catch (error) {
     const params = new URLSearchParams({
-      date: String(formData.get("date") ?? "2026-06-13"),
+      date: safeDateKey(String(formData.get("date") ?? ""), currentDateKey()),
       error: readableError(error)
     });
     const [modelId] = formData.getAll("model_ids").map(String).filter(Boolean);
