@@ -1,8 +1,15 @@
+import Link from "next/link";
 import {
+  currentDateKey,
+  currentMonthKey,
   dateKeyFromIso,
   formatDatePtBr,
   generateMonthDays,
-  monthTitlePtBr
+  monthStartDateKey,
+  monthTitlePtBr,
+  nextMonthKey,
+  previousMonthKey,
+  safeMonthKey
 } from "@/lib/calendar";
 import {
   jobTitle,
@@ -15,15 +22,32 @@ import {
   declineModelJobAction
 } from "./actions";
 
-export default async function ModelAvailabilityPage() {
+type ModelAvailabilityPageProps = {
+  searchParams?: Promise<{
+    month?: string;
+  }>;
+};
+
+export default async function ModelAvailabilityPage({
+  searchParams
+}: ModelAvailabilityPageProps) {
+  const params = (await searchParams) ?? {};
+  const today = currentDateKey();
+  const currentMonth = currentMonthKey();
+  const selectedMonth = safeMonthKey(params.month, currentMonth);
+  const selectedMonthDate = monthStartDateKey(selectedMonth);
   const [blocks, assignments] = await Promise.all([
     listCurrentModelCalendar(),
     listCurrentModelAssignments()
   ]);
-  const days = generateMonthDays("2026-06-13");
+  const days = generateMonthDays(selectedMonthDate, today);
   const upcomingBlocks = blocks
-    .filter((block) => dateKeyFromIso(block.start_at) >= "2026-06-13")
+    .filter((block) => dateKeyFromIso(block.start_at) >= today)
     .slice(0, 8);
+  const upcomingAssignments = assignments.filter(
+    (assignment) =>
+      assignment.job && dateKeyFromIso(assignment.job.start_at) >= today
+  );
   const openOptions = assignments.filter((item) => item.status === "option");
   const castings = assignments.filter((item) => item.job?.type === "casting");
   const confirmed = assignments.filter((item) => item.status === "confirmed");
@@ -60,9 +84,28 @@ export default async function ModelAvailabilityPage() {
       </section>
 
       <section className="panel stack">
-        <div>
-          <span className="eyebrow">Calendário mensal</span>
-          <h3>{monthTitlePtBr("2026-06-13")}</h3>
+        <div className="calendar-nav">
+          <Link
+            className="button secondary"
+            href={`/model/availability?month=${previousMonthKey(selectedMonth)}`}
+          >
+            Mês anterior
+          </Link>
+          <div>
+            <span className="eyebrow">Calendário mensal</span>
+            <h3>{monthTitlePtBr(selectedMonthDate)}</h3>
+          </div>
+          <div className="calendar-nav-actions">
+            <Link className="button secondary" href="/model/availability">
+              Hoje
+            </Link>
+            <Link
+              className="button secondary"
+              href={`/model/availability?month=${nextMonthKey(selectedMonth)}`}
+            >
+              Próximo mês
+            </Link>
+          </div>
         </div>
         <div className="calendar-grid">
           {days.map((day) => {
@@ -97,7 +140,7 @@ export default async function ModelAvailabilityPage() {
 
       <section className="panel stack">
         <span className="eyebrow">Próximos compromissos</span>
-        {assignments.map((assignment) => {
+        {upcomingAssignments.map((assignment) => {
           const job = assignment.job;
 
           if (!job) {
@@ -139,7 +182,9 @@ export default async function ModelAvailabilityPage() {
             </article>
           );
         })}
-        {assignments.length === 0 ? <p>Nenhuma atividade vinculada à agenda.</p> : null}
+        {upcomingAssignments.length === 0 ? (
+          <p>Nenhuma atividade futura vinculada à agenda.</p>
+        ) : null}
       </section>
 
       <section className="panel stack">
@@ -154,6 +199,23 @@ export default async function ModelAvailabilityPage() {
       </section>
 
       <style>{`
+        .calendar-nav {
+          align-items: center;
+          display: flex;
+          gap: 0.75rem;
+          justify-content: space-between;
+        }
+
+        .calendar-nav h3 {
+          margin: 0.2rem 0 0;
+          text-align: center;
+        }
+
+        .calendar-nav-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+
         .calendar-grid {
           display: grid;
           gap: 0.45rem;
@@ -211,6 +273,19 @@ export default async function ModelAvailabilityPage() {
         }
 
         @media (max-width: 760px) {
+          .calendar-nav {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .calendar-nav h3 {
+            text-align: left;
+          }
+
+          .calendar-nav-actions {
+            flex-direction: column;
+          }
+
           .calendar-grid {
             display: none;
           }
