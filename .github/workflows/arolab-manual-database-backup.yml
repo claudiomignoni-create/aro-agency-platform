@@ -13,23 +13,25 @@ jobs:
     timeout-minutes: 30
 
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: vsevxuxinfqpwtpykhon
+      SUPABASE_POOLER_HOST: aws-1-us-east-1.pooler.supabase.com
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate secret
+      - name: Validate database password secret
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -z "${SUPABASE_DB_URL:-}" ]; then
-            echo "SUPABASE_DB_URL is not configured."
+          if [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+            echo "SUPABASE_DB_PASSWORD is not configured."
             exit 1
           fi
 
-          echo "Database connection secret is configured."
+          echo "Database password secret is configured."
 
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v3
@@ -56,6 +58,56 @@ jobs:
           echo "backup_dir=${BACKUP_DIR}" >> "$GITHUB_OUTPUT"
 
           echo "Backup identifier: ${BACKUP_ID}"
+
+      - name: Build secure database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ENCODED_PASSWORD="$(
+            python3 - <<'PY'
+          import os
+          import urllib.parse
+
+          password = os.environ["SUPABASE_DB_PASSWORD"]
+          print(urllib.parse.quote(password, safe=""))
+          PY
+          )"
+
+          DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
+
+          echo "::add-mask::${ENCODED_PASSWORD}"
+          echo "::add-mask::${DB_URL}"
+
+          {
+            echo "SUPABASE_DB_URL=${DB_URL}"
+          } >> "$GITHUB_ENV"
+
+          echo "Secure Session Pooler connection prepared."
+
+      - name: Validate connection structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          import urllib.parse
+
+          url = urllib.parse.urlparse(os.environ["SUPABASE_DB_URL"])
+
+          expected_user = f"postgres.{os.environ['SUPABASE_PROJECT_REF']}"
+          expected_host = os.environ["SUPABASE_POOLER_HOST"]
+
+          assert url.scheme in ("postgres", "postgresql")
+          assert url.username == expected_user
+          assert url.hostname == expected_host
+          assert url.port == 5432
+          assert url.path == "/postgres"
+          assert url.password
+
+          print("Connection structure is valid.")
+          PY
 
       - name: Backup database roles
         shell: bash
