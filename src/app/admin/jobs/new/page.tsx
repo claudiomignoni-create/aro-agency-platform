@@ -15,5 +15,9 @@ export default async function NewAdminJobRedirectPage({
     }
   }
 
+  if (!params.get("type")) {
+    params.set("type", "job");
+  }
+
   redirect(`/admin/calendar/new${params.toString() ? `?${params.toString()}` : ""}`);
 }

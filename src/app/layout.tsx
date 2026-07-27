@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ARO Lab Internal",
-  description: "Internal platform for ARO Models and ARO Lab"
+  title: "ARO Internal",
+  description: "Internal platform for ARO Models",
+  icons: {
+    icon: "/favicon.png"
+  }
 };
 
 export default function RootLayout({

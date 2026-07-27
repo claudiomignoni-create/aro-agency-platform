@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
-import {
-  adminNavItems,
-  DashboardShell
-} from "@/components/shell/dashboard-shell";
+import { AdminShellV2 } from "@/components/admin/admin-shell-v2";
+import { getAdminUserProfile } from "@/lib/admin-profile";
 import { requireRole } from "@/lib/auth";
 
 export default async function AdminLayout({
@@ -11,14 +9,7 @@ export default async function AdminLayout({
   children: ReactNode;
 }) {
   await requireRole(["admin"]);
+  const profile = await getAdminUserProfile();
 
-  return (
-    <DashboardShell
-      eyebrow="Cadastro360"
-      navItems={adminNavItems}
-      title="AROLAB"
-    >
-      {children}
-    </DashboardShell>
-  );
+  return <AdminShellV2 profile={profile!}>{children}</AdminShellV2>;
 }
