@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalREQUESTSPage() {
+export default async function ModelPortalRequestsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="REQUESTS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Solicitações"
+      description="Pedidos de atualização enviados pela ARO, com status e prazo."
+      items={data.requests}
     />
   );
 }

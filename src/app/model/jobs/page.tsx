@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalJOBSPage() {
+export default async function ModelPortalJobsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="JOBS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Trabalhos"
+      description="Jobs, castings e opções vinculados ao seu perfil."
+      items={data.jobs}
     />
   );
 }

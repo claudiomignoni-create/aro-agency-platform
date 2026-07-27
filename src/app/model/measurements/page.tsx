@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalMEASUREMENTSPage() {
+export default async function ModelPortalMeasurementsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="MEASUREMENTS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Medidas"
+      description="Medidas atuais usadas pela ARO em castings e apresentações autorizadas."
+      items={data.measurements}
     />
   );
 }

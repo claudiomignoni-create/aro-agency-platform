@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalTRAVELPage() {
+export default async function ModelPortalTravelPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="TRAVEL"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Travel"
+      description="Viagens, temporadas e deslocamentos vinculados ao seu perfil."
+      items={data.travel}
     />
   );
 }

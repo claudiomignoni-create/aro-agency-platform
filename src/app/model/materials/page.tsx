@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalMATERIALSPage() {
+export default async function ModelPortalMaterialsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="MATERIALS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Materiais"
+      description="Portfolio, polaroids, vídeos e composites registrados para revisão da ARO."
+      items={data.materials}
     />
   );
 }

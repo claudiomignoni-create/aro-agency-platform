@@ -1,27 +1,46 @@
-export default function ModelPortalPage() {
+import Link from "next/link";
+import { getModelPortalData } from "@/lib/model-portal";
+
+export default async function ModelPortalPage() {
+  const data = await getModelPortalData();
+  const modelName = data.model?.stage_name || data.model?.display_name || "Modelo ARO";
+
   return (
     <div className="model-portal-home">
       <section className="model-portal-hero">
         <span className="eyebrow">ARO Model Portal</span>
-        <h1>Minha área</h1>
-        <p>Atualize perfil, materiais, agenda, viagens e pagamentos em um espaço seguro da ARO.</p>
-        <div className="model-progress" aria-label="Cadastro 60% completo">
-          <span style={{ width: "60%" }} />
+        <h1>{modelName}</h1>
+        <p>Perfil, materiais, agenda, viagens e pagamentos em um espaço seguro da ARO.</p>
+        <div className="model-progress" aria-label={`Cadastro ${data.completion}% completo`}>
+          <span style={{ width: `${data.completion}%` }} />
         </div>
+        <small>{data.completion}% do cadastro operacional preenchido</small>
       </section>
+
+      {data.alerts.length ? (
+        <section className="model-portal-alerts">
+          {data.alerts.map((alert) => (
+            <article key={`${alert.title}-${alert.meta}`}>
+              <strong>{alert.title}</strong>
+              {alert.meta ? <span>{alert.meta}</span> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+
       <section className="model-portal-grid">
         {[
-          ["Atualização pendente", "Revise solicitações enviadas pela ARO.", "/model/requests"],
-          ["Perfil e medidas", "Dados públicos e privados separados com clareza.", "/model/profile"],
-          ["Materiais", "Portfolio, polaroids, vídeos e composites para revisão.", "/model/materials"],
-          ["Trabalhos", "Próximos jobs, castings e opções.", "/model/jobs"],
-          ["Travel", "Viagens, voos e documentos de temporada.", "/model/travel"],
-          ["Pagamentos", "Resumo financeiro visível somente para você.", "/model/payments"]
+          ["Atualizações", `${data.requests.length} solicitação(ões)`, "/model/requests"],
+          ["Perfil e medidas", `${data.measurements.length} medida(s)`, "/model/profile"],
+          ["Materiais", `${data.materials.length} material(is)`, "/model/materials"],
+          ["Trabalhos", `${data.jobs.length} registro(s)`, "/model/jobs"],
+          ["Travel", `${data.travel.length} viagem(ns)`, "/model/travel"],
+          ["Pagamentos", `${data.payments.length} lançamento(s)`, "/model/payments"]
         ].map(([title, description, href]) => (
-          <a className="model-portal-card" href={href} key={href}>
+          <Link className="model-portal-card" href={href} key={href}>
             <strong>{title}</strong>
             <span>{description}</span>
-          </a>
+          </Link>
         ))}
       </section>
       <style>{`
@@ -31,7 +50,8 @@ export default function ModelPortalPage() {
         }
 
         .model-portal-hero,
-        .model-portal-card {
+        .model-portal-card,
+        .model-portal-alerts article {
           border: 1px solid rgba(153, 202, 255, 0.22);
           border-radius: 16px;
           background:
@@ -49,7 +69,9 @@ export default function ModelPortalPage() {
         }
 
         .model-portal-hero p,
-        .model-portal-card span {
+        .model-portal-hero small,
+        .model-portal-card span,
+        .model-portal-alerts span {
           color: rgba(248, 251, 255, 0.72);
           font-size: 12px;
           line-height: 1.5;
@@ -67,6 +89,16 @@ export default function ModelPortalPage() {
           height: 100%;
           border-radius: inherit;
           background: #69b4ff;
+        }
+
+        .model-portal-alerts {
+          display: grid;
+          gap: 8px;
+        }
+
+        .model-portal-alerts article {
+          display: grid;
+          gap: 4px;
         }
 
         .model-portal-grid {

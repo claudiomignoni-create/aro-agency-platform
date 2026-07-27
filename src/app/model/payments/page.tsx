@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalPAYMENTSPage() {
+export default async function ModelPortalPaymentsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="PAYMENTS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Pagamentos"
+      description="Resumo financeiro vinculado ao seu perfil. Moedas nunca são convertidas automaticamente."
+      items={data.payments}
     />
   );
 }

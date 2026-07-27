@@ -1,10 +1,16 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalSETTINGSPage() {
+export default async function ModelPortalSettingsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="SETTINGS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Configurações"
+      description="Preferências básicas do portal. Alterações sensíveis continuam sob revisão da ARO."
+      items={[
+        { title: "Perfil vinculado", meta: data.model?.stage_name || data.model?.display_name || "Não vinculado" },
+        { title: "Privacidade", meta: "Dados sensíveis não são exibidos em apresentações públicas." }
+      ]}
     />
   );
 }

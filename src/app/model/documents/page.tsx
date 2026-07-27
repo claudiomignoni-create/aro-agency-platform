@@ -1,10 +1,13 @@
 import { ModelPortalSection } from "@/app/model/portal-section";
+import { getModelPortalData } from "@/lib/model-portal";
 
-export default function ModelPortalDOCUMENTSPage() {
+export default async function ModelPortalDocumentsPage() {
+  const data = await getModelPortalData();
   return (
     <ModelPortalSection
-      title="DOCUMENTS"
-      description="Área segura do portal da modelo. Dados privados ficam separados dos dados públicos e somente a própria modelo e a ARO podem acessar."
+      title="Documentos"
+      description="Documentos privados permanecem visíveis somente para você e para a ARO."
+      items={data.documents}
     />
   );
 }
