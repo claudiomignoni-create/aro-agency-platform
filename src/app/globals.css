@@ -1284,6 +1284,58 @@ p {
   white-space: nowrap;
 }
 
+.admin-v2 .admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-v2 .admin-form-grid .span-2,
+.admin-v2 .admin-form-grid fieldset {
+  grid-column: 1 / -1;
+}
+
+.admin-v2 .admin-form-grid textarea {
+  min-height: 120px;
+  padding: 10px;
+}
+
+.admin-v2 .admin-inline-check,
+.admin-v2 .admin-checkbox-grid label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--admin-muted);
+  font-size: var(--admin-font-label);
+  font-weight: 800;
+}
+
+.admin-v2 .admin-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-v2 .admin-field legend {
+  margin-bottom: 7px;
+  color: var(--admin-muted);
+  font-size: var(--admin-font-label);
+  font-weight: 800;
+}
+
+.admin-v2 .admin-kv-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  color: var(--admin-muted);
+  font-size: var(--admin-font-body);
+}
+
+.admin-v2 .admin-kv-grid strong {
+  color: var(--admin-text);
+  overflow-wrap: anywhere;
+}
+
 .admin-v2 .admin-more-filters {
   grid-column: 1 / -1;
 }
@@ -1522,6 +1574,12 @@ p {
 
   .admin-v2 .admin-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-v2 .admin-form-grid,
+  .admin-v2 .admin-checkbox-grid,
+  .admin-v2 .admin-kv-grid {
+    grid-template-columns: 1fr;
   }
 }
 
