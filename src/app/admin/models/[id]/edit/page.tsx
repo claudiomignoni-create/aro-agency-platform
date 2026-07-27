@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
+import { currentDateKey, dateKeyFromIso, formatDatePtBr } from "@/lib/calendar";
 import { jobTypeLabel, listModelCalendar } from "@/lib/jobs";
 import { createModelMainImageUrls, getModelProfile } from "@/lib/models";
 import type { Model } from "@/types/database";
@@ -135,8 +135,9 @@ export default async function EditModelPage({
     ["Colocar em opção", `/admin/jobs/new?modelId=${model.id}&type=option`],
     ["Bloquear agenda", `/admin/jobs/new?modelId=${model.id}&type=manual_block`]
   ] as const;
+  const today = currentDateKey();
   const upcomingAgenda = calendarBlocks
-    .filter((block) => dateKeyFromIso(block.start_at) >= "2026-06-13")
+    .filter((block) => dateKeyFromIso(block.start_at) >= today)
     .slice(0, 5);
 
   return (
