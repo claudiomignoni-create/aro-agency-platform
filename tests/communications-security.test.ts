@@ -72,7 +72,7 @@ test("communication migration creates token hashes, queue states and RLS", async
 });
 
 test("public presentation snapshots strip private media paths", async () => {
-  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const sql = await readFile("supabase/migrations/026_presentation_model_selections.sql", "utf8");
   const publicPage = await readFile("src/app/p/[token]/page.tsx", "utf8");
   const data = await readFile("src/lib/communications/data.ts", "utf8");
   const publicFunction = sql.slice(sql.indexOf("create or replace function public.get_public_presentation_by_token"));
@@ -84,13 +84,13 @@ test("public presentation snapshots strip private media paths", async () => {
   assert.match(publicFunction, /'public_media_key'/);
   assert.match(publicFunction, /order by media_item\.ordinality/);
   assert.match(data, /getPresentationPrivateMediaRefsByToken/);
-  assert.match(publicPage, /signPresentationMedia\(presentation, privateRefs\)/);
+  assert.match(publicPage, /signPresentationMedia\(presentation, privateRefs, token\)/);
   assert.match(publicPage, /privateRefs\[item\.public_media_key\]/);
   assert.doesNotMatch(publicPage, /privateRefs\[modelIndex\]/);
 });
 
 test("public presentation access uses server-only security definer RPCs", async () => {
-  const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const sql = await readFile("supabase/migrations/026_presentation_model_selections.sql", "utf8");
   const publicPage = await readFile("src/app/p/[token]/page.tsx", "utf8");
   const data = await readFile("src/lib/communications/data.ts", "utf8");
 
@@ -299,7 +299,7 @@ test("real database validation script refuses production", async () => {
   assert.match(script, /vsevxuxinfqpwtpykhon/);
   assert.match(script, /auth\.users/);
   assert.match(script, /storage\.objects/);
-  assert.match(script, /migrations\.length !== 25/);
+  assert.match(script, /migrations\.length !== 26/);
   assert.match(script, /claim_outbound_emails/);
   assert.match(script, /Promise\.all/);
   assert.match(script, /model A accessed model B request/);
