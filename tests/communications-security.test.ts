@@ -305,6 +305,8 @@ test("real database validation script refuses production", async () => {
   assert.match(script, /idempotency created duplicate outbound emails/);
   assert.match(script, /model update did not roll back/);
   assert.match(script, /presentation_share_links/);
+  assert.match(script, /get_email_center_dashboard/);
+  assert.match(script, /email center exposed a sensitive submission value/);
 });
 
 test("communication migration preserves upgrade compatibility and history", async () => {

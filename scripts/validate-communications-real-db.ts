@@ -378,7 +378,7 @@ values
     'Valid presentation',
     'published',
     repeat('f', 64),
-    '{"models":[]}'::jsonb,
+    '{"models":[{"id":"00000000-0000-0000-0000-000000000101","display_name":"Model A"}]}'::jsonb,
     1,
     now(),
     now() + interval '1 day'
@@ -399,7 +399,7 @@ values (
   '00000000-0000-0000-0000-000000000311',
   '00000000-0000-0000-0000-000000000301',
   1,
-  '{"models":[]}'::jsonb
+  '{"models":[{"id":"00000000-0000-0000-0000-000000000101","display_name":"Model A"}]}'::jsonb
 );
 
 insert into public.presentation_share_links (
@@ -478,6 +478,59 @@ select public.create_presentation_delivery(
   null
 );
 
+update public.outbound_emails
+set status = 'sent',
+    sent_at = now()
+where presentation_id = '00000000-0000-0000-0000-000000000301'
+  and recipient_email = 'recipient@example.test';
+
+update public.presentation_recipients
+set sent_at = now(),
+    opened_at = now()
+where presentation_id = '00000000-0000-0000-0000-000000000301'
+  and recipient_email = 'recipient@example.test';
+
+insert into public.presentation_access_events (
+  presentation_id,
+  event_type,
+  metadata
+)
+select
+  '00000000-0000-0000-0000-000000000301',
+  'opened',
+  jsonb_build_object('share_link_id', sl.id::text)
+from public.presentation_share_links sl
+where sl.public_token_hash = repeat('5', 64);
+
+do $$
+declare
+  dashboard jsonb;
+begin
+  dashboard := public.get_email_center_dashboard(now() - interval '1 day', now() + interval '1 day');
+
+  if (dashboard->'metrics'->'emails_sent'->>'current')::integer <> 1 then
+    raise exception 'email center sent metric is incorrect';
+  end if;
+  if (dashboard->'metrics'->'models_presented'->>'current')::integer <> 1 then
+    raise exception 'email center distinct model metric is incorrect';
+  end if;
+  if (dashboard->'metrics'->'presentations_sent'->>'current')::integer <> 1 then
+    raise exception 'email center presentation metric is incorrect';
+  end if;
+  if (dashboard->'metrics'->'responses'->>'available')::boolean then
+    raise exception 'email center invented response synchronization';
+  end if;
+  if dashboard->'featured'->>'subject' <> 'Subject' then
+    raise exception 'email center featured delivery is incorrect';
+  end if;
+  if jsonb_array_length(dashboard->'top_models') <> 1 then
+    raise exception 'email center model ranking is incorrect';
+  end if;
+  if dashboard::text like '%private bank value%' then
+    raise exception 'email center exposed a sensitive submission value';
+  end if;
+end $$;
+
 reset role;
 
 do $$
@@ -495,6 +548,7 @@ begin
   if has_function_privilege('anon', 'public.get_public_presentation_by_token(text)', 'EXECUTE')
     or has_function_privilege('anon', 'public.get_public_model_update_request_by_token(text)', 'EXECUTE')
     or has_function_privilege('anon', 'public.check_communication_rate_limit(text,text,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.get_email_center_dashboard(timestamptz,timestamptz)', 'EXECUTE')
   then
     raise exception 'anon retained access to a server-only RPC';
   end if;

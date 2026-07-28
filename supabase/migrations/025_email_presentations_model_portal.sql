@@ -60,6 +60,10 @@ create table if not exists public.email_templates (
 create index if not exists email_templates_category_language_idx
 on public.email_templates (category, language, is_active);
 
+create unique index if not exists email_templates_active_default_unique
+on public.email_templates (category, language)
+where is_active = true and is_default = true;
+
 create table if not exists public.presentations (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -563,6 +567,18 @@ on public.outbound_emails (recipient_email);
 
 create index if not exists outbound_emails_update_request_idx
 on public.outbound_emails (model_update_request_id);
+
+create index if not exists outbound_emails_dashboard_status_sent_idx
+on public.outbound_emails (status, sent_at desc, created_at desc);
+
+create index if not exists outbound_emails_dashboard_presentation_idx
+on public.outbound_emails (presentation_id, status, created_at desc);
+
+create index if not exists presentation_recipients_dashboard_opened_idx
+on public.presentation_recipients (presentation_id, opened_at desc, created_at desc);
+
+create index if not exists presentation_access_events_dashboard_idx
+on public.presentation_access_events (event_type, occurred_at desc, presentation_id);
 
 create index if not exists model_update_requests_public_token_hash_idx
 on public.model_update_requests (public_token_hash);
@@ -2154,6 +2170,512 @@ begin
 end;
 $$;
 
+create or replace function public.get_email_center_dashboard(
+  p_period_start timestamptz,
+  p_period_end timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  period_duration interval;
+  previous_period_start timestamptz;
+  payload jsonb;
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  if p_period_start is null
+    or p_period_end is null
+    or p_period_end <= p_period_start
+    or p_period_end - p_period_start > interval '370 days'
+  then
+    raise exception 'invalid_email_center_period';
+  end if;
+
+  period_duration := p_period_end - p_period_start;
+  previous_period_start := p_period_start - period_duration;
+
+  with delivery_rows as (
+    select
+      e.id as outbound_email_id,
+      e.body_text,
+      e.presentation_id,
+      e.presentation_share_link_id,
+      e.recipient_email,
+      coalesce(nullif(e.recipient_name, ''), e.recipient_email) as recipient_name,
+      e.sent_at,
+      e.subject,
+      coalesce(nullif(pv.snapshot, '{}'::jsonb), nullif(p.snapshot, '{}'::jsonb), '{}'::jsonb) as snapshot,
+      case
+        when coalesce(e.sent_at, e.created_at) >= p_period_start then 'current'
+        else 'previous'
+      end as period_bucket
+    from public.outbound_emails e
+    join public.presentations p on p.id = e.presentation_id
+    left join public.presentation_share_links sl on sl.id = e.presentation_share_link_id
+    left join public.presentation_versions pv on pv.id = sl.presentation_version_id
+    where e.status = 'sent'
+      and p.status in ('published', 'sent')
+      and coalesce(e.sent_at, e.created_at) >= previous_period_start
+      and coalesce(e.sent_at, e.created_at) < p_period_end
+  ),
+  delivery_model_rows as (
+    select
+      d.outbound_email_id,
+      d.period_bucket,
+      d.presentation_id,
+      d.recipient_email,
+      nullif(model_item.value->>'id', '') as model_id,
+      coalesce(
+        nullif(model_item.value->>'display_name', ''),
+        'Modelo ARO'
+      ) as model_name
+    from delivery_rows d
+    cross join lateral jsonb_array_elements(
+      coalesce(d.snapshot->'models', '[]'::jsonb)
+    ) model_item(value)
+  ),
+  email_activity as (
+    select
+      e.id::text as id,
+      '/admin/email/' || e.id::text as href,
+      'email'::text as kind,
+      coalesce(e.sent_at, e.failed_at, e.scheduled_at, e.created_at) as occurred_at,
+      coalesce(nullif(e.recipient_name, ''), e.recipient_email) as recipient,
+      coalesce(
+        nullif(sender_profile.full_name, ''),
+        nullif(connection.connected_email, ''),
+        'ARO'
+      ) as sender,
+      case
+        when e.status = 'sent' then 'sent'
+        when e.status = 'scheduled' then 'scheduled'
+        when e.status = 'draft' then 'draft'
+        when e.status = 'failed' then 'failed'
+        else 'pending'
+      end as status,
+      case
+        when e.status = 'sent' then 'Mensagem enviada com segurança'
+        when e.status = 'scheduled' then 'Envio programado'
+        when e.status = 'draft' and e.mode = 'gmail_draft' then 'Rascunho criado no Gmail'
+        when e.status = 'draft' then 'Rascunho salvo no sistema'
+        when e.status = 'failed' then 'O envio precisa de atenção'
+        else 'Mensagem na fila de processamento'
+      end as subtitle,
+      case
+        when e.subject = 'ARO — Código de verificação' then 'ARO — Código de verificação'
+        else e.subject
+      end as title
+    from public.outbound_emails e
+    left join public.google_workspace_connections connection
+      on connection.id = e.sender_connection_id
+    left join public.profiles sender_profile
+      on sender_profile.id = e.created_by
+    where coalesce(e.sent_at, e.failed_at, e.scheduled_at, e.created_at) >= p_period_start
+      and coalesce(e.sent_at, e.failed_at, e.scheduled_at, e.created_at) < p_period_end
+  ),
+  presentation_activity as (
+    select
+      a.id::text as id,
+      '/admin/presentations/' || a.presentation_id::text || '/analytics' as href,
+      'presentation'::text as kind,
+      a.occurred_at,
+      p.title as recipient,
+      coalesce(nullif(sender_profile.full_name, ''), 'ARO') as sender,
+      case
+        when a.event_type = 'opened' then 'opened'
+        when a.event_type in ('model_viewed', 'media_viewed') then 'viewed'
+        else 'opened'
+      end as status,
+      case
+        when a.event_type = 'opened' then 'Link seguro da apresentação acessado'
+        when a.event_type = 'model_viewed' then 'Modelo visualizado na apresentação'
+        when a.event_type = 'media_viewed' then 'Material visualizado na apresentação'
+        when a.event_type = 'composite_downloaded' then 'Composite baixado'
+        else 'Apresentação acessada'
+      end as subtitle,
+      p.title
+    from public.presentation_access_events a
+    join public.presentations p on p.id = a.presentation_id
+    left join public.profiles sender_profile
+      on sender_profile.id = p.created_by
+    where a.occurred_at >= p_period_start
+      and a.occurred_at < p_period_end
+      and a.event_type in (
+        'opened',
+        'model_viewed',
+        'media_viewed',
+        'composite_downloaded',
+        'presentation_downloaded'
+      )
+  ),
+  model_update_activity as (
+    select
+      r.id::text as id,
+      '/admin/model-updates/' || r.id::text as href,
+      'model_update'::text as kind,
+      coalesce(
+        r.applied_at,
+        r.submitted_at,
+        r.opened_at,
+        r.sent_at,
+        r.created_at
+      ) as occurred_at,
+      coalesce(nullif(m.stage_name, ''), m.display_name) as recipient,
+      coalesce(nullif(sender_profile.full_name, ''), 'ARO') as sender,
+      case
+        when r.status in ('applied', 'submitted') then 'completed'
+        when r.status in ('opened', 'started', 'partially_completed') then 'opened'
+        when r.status in ('sent', 'delivered') then 'sent'
+        when r.status in ('expired', 'canceled') then 'failed'
+        else 'pending'
+      end as status,
+      case
+        when r.status = 'applied' then 'Atualização revisada e aplicada'
+        when r.status = 'submitted' then 'Atualização enviada para revisão'
+        when r.status in ('opened', 'started', 'partially_completed') then 'Pedido de atualização acessado'
+        when r.status in ('sent', 'delivered') then 'Pedido de atualização enviado'
+        else 'Pedido de atualização aguardando ação'
+      end as subtitle,
+      r.title
+    from public.model_update_requests r
+    join public.models m on m.id = r.model_id
+    left join public.profiles sender_profile
+      on sender_profile.id = r.created_by
+    where coalesce(
+      r.applied_at,
+      r.submitted_at,
+      r.opened_at,
+      r.sent_at,
+      r.created_at
+    ) >= p_period_start
+      and coalesce(
+        r.applied_at,
+        r.submitted_at,
+        r.opened_at,
+        r.sent_at,
+        r.created_at
+      ) < p_period_end
+  ),
+  all_activity as (
+    select * from email_activity
+    union all
+    select * from presentation_activity
+    union all
+    select * from model_update_activity
+  ),
+  featured_delivery as (
+    select
+      d.*,
+      (
+        select count(*)::integer
+        from public.presentation_access_events a
+        where a.presentation_id = d.presentation_id
+          and a.occurred_at >= p_period_start
+          and a.occurred_at < p_period_end
+          and (
+            d.presentation_share_link_id is null
+            or a.metadata->>'share_link_id' = d.presentation_share_link_id::text
+          )
+      ) as access_count
+    from delivery_rows d
+    where d.period_bucket = 'current'
+      and d.subject <> 'ARO — Código de verificação'
+    order by access_count desc, d.sent_at desc
+    limit 1
+  ),
+  top_models as (
+    select
+      rows.model_id,
+      rows.model_name,
+      count(distinct rows.presentation_id)::integer as presentation_count,
+      count(distinct rows.recipient_email)::integer as recipient_count
+    from delivery_model_rows rows
+    where rows.period_bucket = 'current'
+    group by rows.model_id, rows.model_name
+    order by presentation_count desc, recipient_count desc, rows.model_name
+    limit 5
+  )
+  select jsonb_build_object(
+    'metrics', jsonb_build_object(
+      'emails_sent', jsonb_build_object(
+        'current', (
+          select count(*)::integer
+          from public.outbound_emails
+          where status = 'sent'
+            and coalesce(sent_at, created_at) >= p_period_start
+            and coalesce(sent_at, created_at) < p_period_end
+        ),
+        'previous', (
+          select count(*)::integer
+          from public.outbound_emails
+          where status = 'sent'
+            and coalesce(sent_at, created_at) >= previous_period_start
+            and coalesce(sent_at, created_at) < p_period_start
+        )
+      ),
+      'models_presented', jsonb_build_object(
+        'current', (
+          select count(distinct coalesce(model_id, model_name))::integer
+          from delivery_model_rows
+          where period_bucket = 'current'
+        ),
+        'previous', (
+          select count(distinct coalesce(model_id, model_name))::integer
+          from delivery_model_rows
+          where period_bucket = 'previous'
+        )
+      ),
+      'presentations_sent', jsonb_build_object(
+        'current', (
+          select count(distinct presentation_id)::integer
+          from delivery_rows
+          where period_bucket = 'current'
+        ),
+        'previous', (
+          select count(distinct presentation_id)::integer
+          from delivery_rows
+          where period_bucket = 'previous'
+        )
+      ),
+      'responses', jsonb_build_object(
+        'available', false,
+        'current', null,
+        'previous', null
+      )
+    ),
+    'activity', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'href', recent.href,
+          'id', recent.id,
+          'kind', recent.kind,
+          'occurred_at', recent.occurred_at,
+          'recipient', recent.recipient,
+          'sender', recent.sender,
+          'status', recent.status,
+          'subtitle', recent.subtitle,
+          'title', recent.title
+        )
+        order by recent.occurred_at desc
+      )
+      from (
+        select *
+        from all_activity
+        order by occurred_at desc
+        limit 30
+      ) recent
+    ), '[]'::jsonb),
+    'performance', jsonb_build_object(
+      'total',
+        (
+          select count(*)::integer
+          from delivery_rows
+          where period_bucket = 'current'
+        )
+        + (
+          select count(*)::integer
+          from public.outbound_emails
+          where status = 'failed'
+            and coalesce(failed_at, created_at) >= p_period_start
+            and coalesce(failed_at, created_at) < p_period_end
+        )
+        + (
+          select count(*)::integer
+          from public.outbound_emails
+          where status in ('scheduled', 'queued', 'processing', 'retry_pending')
+            and coalesce(scheduled_at, created_at) >= p_period_start
+            and coalesce(scheduled_at, created_at) < p_period_end
+        ),
+      'segments', jsonb_build_array(
+        jsonb_build_object(
+          'key', 'opened',
+          'label', 'Apresentação aberta',
+          'count', (
+            select count(*)::integer
+            from delivery_rows d
+            where d.period_bucket = 'current'
+              and exists (
+                select 1
+                from public.presentation_access_events a
+                where a.presentation_id = d.presentation_id
+                  and a.occurred_at >= p_period_start
+                  and a.occurred_at < p_period_end
+                  and (
+                    d.presentation_share_link_id is null
+                    or a.metadata->>'share_link_id' = d.presentation_share_link_id::text
+                  )
+              )
+          )
+        ),
+        jsonb_build_object(
+          'key', 'unopened',
+          'label', 'Link ainda não aberto',
+          'count', (
+            select count(*)::integer
+            from delivery_rows d
+            where d.period_bucket = 'current'
+              and not exists (
+                select 1
+                from public.presentation_access_events a
+                where a.presentation_id = d.presentation_id
+                  and a.occurred_at >= p_period_start
+                  and a.occurred_at < p_period_end
+                  and (
+                    d.presentation_share_link_id is null
+                    or a.metadata->>'share_link_id' = d.presentation_share_link_id::text
+                  )
+              )
+          )
+        ),
+        jsonb_build_object(
+          'key', 'failed',
+          'label', 'Falha de envio',
+          'count', (
+            select count(*)::integer
+            from public.outbound_emails
+            where status = 'failed'
+              and coalesce(failed_at, created_at) >= p_period_start
+              and coalesce(failed_at, created_at) < p_period_end
+          )
+        ),
+        jsonb_build_object(
+          'key', 'pending',
+          'label', 'Agendado ou pendente',
+          'count', (
+            select count(*)::integer
+            from public.outbound_emails
+            where status in ('scheduled', 'queued', 'processing', 'retry_pending')
+              and coalesce(scheduled_at, created_at) >= p_period_start
+              and coalesce(scheduled_at, created_at) < p_period_end
+          )
+        )
+      )
+    ),
+    'featured', (
+      select jsonb_build_object(
+        'access_count', featured.access_count,
+        'body_excerpt', left(
+          regexp_replace(
+            regexp_replace(
+              regexp_replace(featured.body_text, 'https?://[^[:space:]]+', '[link protegido]', 'gi'),
+              '[[:digit:]]{6}',
+              '[código protegido]',
+              'g'
+            ),
+            E'[\\n\\r]+',
+            ' ',
+            'g'
+          ),
+          180
+        ),
+        'href', '/admin/email/' || featured.outbound_email_id::text,
+        'id', featured.outbound_email_id,
+        'model_count', jsonb_array_length(coalesce(featured.snapshot->'models', '[]'::jsonb)),
+        'models', coalesce((
+          select jsonb_agg(
+            jsonb_build_object(
+              'id', nullif(model_item.value->>'id', ''),
+              'name', coalesce(nullif(model_item.value->>'display_name', ''), 'Modelo ARO')
+            )
+            order by model_item.ordinality
+          )
+          from jsonb_array_elements(
+            coalesce(featured.snapshot->'models', '[]'::jsonb)
+          ) with ordinality model_item(value, ordinality)
+          where model_item.ordinality <= 4
+        ), '[]'::jsonb),
+        'recipient', featured.recipient_name,
+        'sent_at', featured.sent_at,
+        'status', case when featured.access_count > 0 then 'opened' else 'sent' end,
+        'subject', featured.subject
+      )
+      from featured_delivery featured
+    ),
+    'top_models', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', ranked.model_id,
+          'name', ranked.model_name,
+          'presentation_count', ranked.presentation_count,
+          'recipient_count', ranked.recipient_count
+        )
+        order by ranked.presentation_count desc, ranked.recipient_count desc, ranked.model_name
+      )
+      from top_models ranked
+    ), '[]'::jsonb),
+    'queue', jsonb_build_object(
+      'failed', (
+        select count(*)::integer
+        from public.outbound_emails
+        where status = 'failed'
+          and coalesce(failed_at, created_at) >= p_period_start
+          and coalesce(failed_at, created_at) < p_period_end
+      ),
+      'pending', (
+        select count(*)::integer
+        from public.outbound_emails
+        where status in ('queued', 'processing', 'retry_pending')
+          and created_at < p_period_end
+      ),
+      'scheduled', (
+        select count(*)::integer
+        from public.outbound_emails
+        where status = 'scheduled'
+          and created_at < p_period_end
+      )
+    )
+  )
+  into payload;
+
+  return payload;
+end;
+$$;
+
+create or replace function public.set_default_email_template(p_template_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  template_category text;
+  template_language text;
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  select category, language
+    into template_category, template_language
+  from public.email_templates
+  where id = p_template_id
+    and is_active = true
+  for update;
+
+  if not found then
+    raise exception 'email_template_not_found';
+  end if;
+
+  update public.email_templates
+  set is_default = false
+  where category = template_category
+    and language = template_language
+    and is_default = true;
+
+  update public.email_templates
+  set is_default = true,
+      updated_by = auth.uid()
+  where id = p_template_id;
+
+  return true;
+end;
+$$;
+
 revoke all on function public.get_public_presentation_by_token(text) from public;
 revoke all on function public.mark_public_presentation_opened(text) from public;
 revoke all on function public.get_public_model_update_request_by_token(text) from public;
@@ -2174,6 +2696,8 @@ revoke all on function public.publish_presentation_snapshot(uuid, uuid, jsonb) f
 revoke all on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) from public;
 revoke all on function public.claim_outbound_emails(integer) from public;
 revoke all on function public.redact_finalized_outbound_email_payload() from public;
+revoke all on function public.get_email_center_dashboard(timestamptz, timestamptz) from public;
+revoke all on function public.set_default_email_template(uuid) from public;
 
 grant execute on function public.get_public_presentation_by_token(text) to service_role;
 grant execute on function public.mark_public_presentation_opened(text) to service_role;
@@ -2193,3 +2717,5 @@ grant execute on function public.update_presentation_draft(uuid, uuid, jsonb) to
 grant execute on function public.publish_presentation_snapshot(uuid, uuid, jsonb) to authenticated;
 grant execute on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) to authenticated;
 grant execute on function public.claim_outbound_emails(integer) to service_role;
+grant execute on function public.get_email_center_dashboard(timestamptz, timestamptz) to authenticated;
+grant execute on function public.set_default_email_template(uuid) to authenticated;

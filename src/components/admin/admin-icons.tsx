@@ -24,6 +24,18 @@ export function Bell(props: IconProps) {
   return <Icon {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></Icon>;
 }
 
+export function AlertTriangle(props: IconProps) {
+  return <Icon {...props}><path d="M10.3 3.6 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.6a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></Icon>;
+}
+
+export function ArrowRight(props: IconProps) {
+  return <Icon {...props}><path d="M5 12h14M13 6l6 6-6 6" /></Icon>;
+}
+
+export function BarChart3(props: IconProps) {
+  return <Icon {...props}><path d="M3 3v18h18M8 17v-5M13 17V7M18 17V4" /></Icon>;
+}
+
 export function BriefcaseBusiness(props: IconProps) {
   return <Icon {...props}><path d="M10 6V5a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v1" /><rect height="14" rx="2" width="18" x="3" y="6" /><path d="M3 12h18" /><path d="M10 12v2h4v-2" /></Icon>;
 }
@@ -36,6 +48,18 @@ export function ChevronDown(props: IconProps) {
   return <Icon {...props}><path d="m6 9 6 6 6-6" /></Icon>;
 }
 
+export function CheckCircle(props: IconProps) {
+  return <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></Icon>;
+}
+
+export function Clock3(props: IconProps) {
+  return <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Icon>;
+}
+
+export function Copy(props: IconProps) {
+  return <Icon {...props}><rect height="13" rx="2" width="13" x="8" y="8" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></Icon>;
+}
+
 export function CircleDollarSign(props: IconProps) {
   return <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="M12 6v12M15 9.5c-.8-.7-2-.9-3-.9-1.4 0-2.5.6-2.5 1.7 0 2.5 5.2 1.1 5.2 4 0 1.3-1.2 2.1-2.8 2.1-1.1 0-2.4-.3-3.3-1" /></Icon>;
 }
@@ -46,6 +70,18 @@ export function Command(props: IconProps) {
 
 export function FileText(props: IconProps) {
   return <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></Icon>;
+}
+
+export function Eye(props: IconProps) {
+  return <Icon {...props}><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></Icon>;
+}
+
+export function Inbox(props: IconProps) {
+  return <Icon {...props}><path d="M4 4h16v14H4z" /><path d="M4 13h4l2 3h4l2-3h4" /></Icon>;
+}
+
+export function Layers3(props: IconProps) {
+  return <Icon {...props}><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 17l9 5 9-5" /></Icon>;
 }
 
 export function Globe2(props: IconProps) {
@@ -76,6 +112,18 @@ export function MessageCircle(props: IconProps) {
   return <Icon {...props}><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.3A8.5 8.5 0 1 1 21 11.5Z" /></Icon>;
 }
 
+export function Mail(props: IconProps) {
+  return <Icon {...props}><rect height="16" rx="2" width="20" x="2" y="4" /><path d="m4 7 8 6 8-6" /></Icon>;
+}
+
+export function RefreshCw(props: IconProps) {
+  return <Icon {...props}><path d="M20 7V3h-4M4 17v4h4" /><path d="M5.1 9A8 8 0 0 1 18.7 5L20 7M4 17l1.3 2A8 8 0 0 0 18.9 15" /></Icon>;
+}
+
+export function Reply(props: IconProps) {
+  return <Icon {...props}><path d="m9 17-6-5 6-5v3h4a8 8 0 0 1 8 8v1a7 7 0 0 0-7-6H9v4Z" /></Icon>;
+}
+
 export function Plane(props: IconProps) {
   return <Icon {...props}><path d="M22 2 11 13" /><path d="m22 2-7 20-4-9-9-4Z" /></Icon>;
 }
@@ -90,6 +138,10 @@ export function Search(props: IconProps) {
 
 export function Send(props: IconProps) {
   return <Icon {...props}><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></Icon>;
+}
+
+export function Star(props: IconProps) {
+  return <Icon {...props}><path d="m12 2 3 6 6.5 1-4.7 4.6 1.1 6.4-5.9-3.1L6.1 20l1.1-6.4L2.5 9 9 8l3-6Z" /></Icon>;
 }
 
 export function Settings(props: IconProps) {
