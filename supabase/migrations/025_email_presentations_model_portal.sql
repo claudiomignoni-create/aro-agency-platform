@@ -466,7 +466,7 @@ begin
         and policyname = 'admins manage ' || table_name
     ) then
       execute format(
-        'create policy %L on public.%I for all using (public.current_user_role() = %L) with check (public.current_user_role() = %L)',
+        'create policy %I on public.%I for all using (public.current_user_role() = %L) with check (public.current_user_role() = %L)',
         'admins manage ' || table_name,
         table_name,
         'admin',
@@ -2676,28 +2676,28 @@ begin
 end;
 $$;
 
-revoke all on function public.get_public_presentation_by_token(text) from public;
-revoke all on function public.mark_public_presentation_opened(text) from public;
-revoke all on function public.get_public_model_update_request_by_token(text) from public;
-revoke all on function public.mark_model_update_request_opened(text) from public;
-revoke all on function public.start_model_update_request(text) from public;
-revoke all on function public.save_model_update_request_draft(text, jsonb) from public;
-revoke all on function public.submit_model_update_request(text, jsonb) from public;
-revoke all on function public.verify_model_update_code(text, text) from public;
-revoke all on function public.apply_model_update_submission(uuid, text[], uuid[]) from public;
-revoke all on function public.current_model_id() from public;
-revoke all on function public.get_my_model_update_requests() from public;
-revoke all on function public.get_my_model_update_request(uuid) from public;
-revoke all on function public.get_my_model_update_submission(uuid) from public;
-revoke all on function public.check_communication_rate_limit(text, text, text) from public;
-revoke all on function public.sanitize_model_update_payload(uuid, jsonb, boolean) from public;
-revoke all on function public.update_presentation_draft(uuid, uuid, jsonb) from public;
-revoke all on function public.publish_presentation_snapshot(uuid, uuid, jsonb) from public;
-revoke all on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) from public;
-revoke all on function public.claim_outbound_emails(integer) from public;
-revoke all on function public.redact_finalized_outbound_email_payload() from public;
-revoke all on function public.get_email_center_dashboard(timestamptz, timestamptz) from public;
-revoke all on function public.set_default_email_template(uuid) from public;
+revoke all on function public.get_public_presentation_by_token(text) from public, anon, authenticated, service_role;
+revoke all on function public.mark_public_presentation_opened(text) from public, anon, authenticated, service_role;
+revoke all on function public.get_public_model_update_request_by_token(text) from public, anon, authenticated, service_role;
+revoke all on function public.mark_model_update_request_opened(text) from public, anon, authenticated, service_role;
+revoke all on function public.start_model_update_request(text) from public, anon, authenticated, service_role;
+revoke all on function public.save_model_update_request_draft(text, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.submit_model_update_request(text, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.verify_model_update_code(text, text) from public, anon, authenticated, service_role;
+revoke all on function public.apply_model_update_submission(uuid, text[], uuid[]) from public, anon, authenticated, service_role;
+revoke all on function public.current_model_id() from public, anon, authenticated, service_role;
+revoke all on function public.get_my_model_update_requests() from public, anon, authenticated, service_role;
+revoke all on function public.get_my_model_update_request(uuid) from public, anon, authenticated, service_role;
+revoke all on function public.get_my_model_update_submission(uuid) from public, anon, authenticated, service_role;
+revoke all on function public.check_communication_rate_limit(text, text, text) from public, anon, authenticated, service_role;
+revoke all on function public.sanitize_model_update_payload(uuid, jsonb, boolean) from public, anon, authenticated, service_role;
+revoke all on function public.update_presentation_draft(uuid, uuid, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.publish_presentation_snapshot(uuid, uuid, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) from public, anon, authenticated, service_role;
+revoke all on function public.claim_outbound_emails(integer) from public, anon, authenticated, service_role;
+revoke all on function public.redact_finalized_outbound_email_payload() from public, anon, authenticated, service_role;
+revoke all on function public.get_email_center_dashboard(timestamptz, timestamptz) from public, anon, authenticated, service_role;
+revoke all on function public.set_default_email_template(uuid) from public, anon, authenticated, service_role;
 
 grant execute on function public.get_public_presentation_by_token(text) to service_role;
 grant execute on function public.mark_public_presentation_opened(text) to service_role;
