@@ -68,6 +68,11 @@ export type PublicPresentationPayload = {
   allow_downloads: boolean;
   description: string | null;
   language: string;
+  link?: {
+    expires_at?: string | null;
+    recipient_name?: string | null;
+    state?: PublicPresentationLinkStatus;
+  };
   published_at: string | null;
   snapshot: {
     contact?: {
@@ -78,13 +83,19 @@ export type PublicPresentationPayload = {
     description?: string | null;
     models?: Array<{
       board?: string | null;
+      categories?: string[];
       city?: string | null;
       country?: string | null;
       display_name: string;
+      eye_color?: string | null;
+      gender?: string | null;
+      hair_color?: string | null;
       highlighted?: boolean;
       id?: string;
+      instagram?: string | null;
       main_image_path?: string | null;
       measurements?: Record<string, number | string | null>;
+      nationality?: string | null;
       public_model_key?: string | null;
       media?: Array<{
         media_type: string;
@@ -98,6 +109,21 @@ export type PublicPresentationPayload = {
     title?: string;
   };
   title: string;
+};
+
+export type PublicPresentationDecision = "yes" | "maybe" | "no";
+export type PublicPresentationLinkStatus = "active" | "expired" | "invalid" | "not_published" | "revoked";
+
+export type PublicPresentationLinkState = {
+  expires_at: string | null;
+  recipient_name: string | null;
+  schema_ready: boolean;
+  selection: {
+    client_note: string | null;
+    decisions: Record<string, PublicPresentationDecision>;
+    submitted_at: string | null;
+  };
+  state: PublicPresentationLinkStatus;
 };
 
 export type PublicModelUpdateRequestPayload = {
@@ -249,6 +275,96 @@ export async function findPresentationByTokenWithRateLimit(token: string, ipHash
   return findPresentationByToken(token);
 }
 
+function isMissingPresentationSelectionSchemaError(error: unknown) {
+  if (isMissingSchemaError(error)) return true;
+  if (!error || typeof error !== "object") return false;
+  const maybeError = error as { code?: string; message?: string };
+  return (
+    maybeError.code === "PGRST202" ||
+    /get_public_presentation_link_state|presentation_selection_responses|presentation_model_selections/i.test(
+      maybeError.message ?? ""
+    )
+  );
+}
+
+export async function findPresentationLinkState(token: string): Promise<PublicPresentationLinkState | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("get_public_presentation_link_state", {
+    p_token_hash: sha256(token)
+  });
+
+  if (error && isMissingPresentationSelectionSchemaError(error)) return null;
+  if (error) throw error;
+
+  const value = (data ?? {}) as Partial<PublicPresentationLinkState>;
+  return {
+    expires_at: value.expires_at ?? null,
+    recipient_name: value.recipient_name ?? null,
+    schema_ready: true,
+    selection: {
+      client_note: value.selection?.client_note ?? null,
+      decisions: value.selection?.decisions ?? {},
+      submitted_at: value.selection?.submitted_at ?? null
+    },
+    state: value.state ?? "invalid"
+  };
+}
+
+export async function savePresentationModelDecision({
+  decision,
+  publicModelKey,
+  token
+}: {
+  decision: PublicPresentationDecision;
+  publicModelKey: string;
+  token: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("save_public_presentation_model_decision", {
+    p_decision: decision,
+    p_public_model_key: publicModelKey,
+    p_token_hash: sha256(token)
+  });
+
+  if (error) throw error;
+  return data as { decision: PublicPresentationDecision; public_model_key: string; submitted_at: null };
+}
+
+export async function submitPresentationSelection({ note, token }: { note: string | null; token: string }) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("submit_public_presentation_selection", {
+    p_client_note: note,
+    p_token_hash: sha256(token)
+  });
+
+  if (error) throw error;
+  return data as { decision_count: number; submitted_at: string };
+}
+
+export async function recordPresentationEvent({
+  eventType,
+  publicModelKey,
+  section,
+  token
+}: {
+  eventType: "file_downloaded" | "model_viewed" | "presentation_viewed" | "section_viewed";
+  publicModelKey?: string | null;
+  section?: "book" | "digitals" | "downloads" | "overview" | "video" | null;
+  token: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("record_public_presentation_event", {
+    p_event_type: eventType,
+    p_public_model_key: publicModelKey ?? null,
+    p_section: section ?? null,
+    p_token_hash: sha256(token)
+  });
+
+  if (error && isMissingPresentationSelectionSchemaError(error)) return false;
+  if (error) throw error;
+  return Boolean(data);
+}
+
 export async function getPresentationPrivateMediaRefsByToken(token: string) {
   const admin = createAdminClient();
   const tokenHash = sha256(token);
@@ -282,7 +398,7 @@ export async function getPresentationPrivateMediaRefsByToken(token: string) {
 
   const { data, error } = await admin
     .from("presentations")
-    .select("snapshot")
+    .select("expires_at, snapshot")
     .eq("public_token_hash", tokenHash)
     .in("status", ["published", "sent"])
     .is("revoked_at", null)
@@ -290,8 +406,14 @@ export async function getPresentationPrivateMediaRefsByToken(token: string) {
     .maybeSingle();
 
   if (error) throw error;
+  if (data?.expires_at && new Date(data.expires_at).getTime() <= Date.now()) return {};
 
   return privateMediaMapFromSnapshot(data?.snapshot);
+}
+
+export async function getPresentationPrivateMediaRefByToken(token: string, publicMediaKey: string) {
+  const refs = await getPresentationPrivateMediaRefsByToken(token);
+  return refs[publicMediaKey] ?? null;
 }
 
 function privateMediaMapFromSnapshot(snapshotValue: unknown) {
