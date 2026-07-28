@@ -684,18 +684,6 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001
 select set_config('request.jwt.claim.role', 'authenticated', false);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
 
-do $$
-begin
-  if not exists (
-    select 1
-    from public.model_update_submissions
-    where request_id = '00000000-0000-0000-0000-000000000201'
-      and submitted_payload->>'banking' = 'private bank value'
-  ) then
-    raise exception 'admin could not access private submitted payload';
-  end if;
-end $$;
-
 select public.create_presentation_delivery(
   '00000000-0000-0000-0000-000000000301',
   'Recipient',
@@ -929,6 +917,11 @@ runPsqlExpectFailure([
 runPsqlExpectFailure([
   "--command",
   "set role anon; select * from public.presentation_model_selections;"
+]);
+
+runPsqlExpectFailure([
+  "--command",
+  "set role authenticated; select * from public.model_update_submissions;"
 ]);
 
 async function validateConcurrentWorkers() {

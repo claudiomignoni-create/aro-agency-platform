@@ -303,7 +303,7 @@ test("real database validation script refuses production", async () => {
   assert.match(script, /claim_outbound_emails/);
   assert.match(script, /Promise\.all/);
   assert.match(script, /model A accessed model B request/);
-  assert.match(script, /admin could not access private submitted payload/);
+  assert.match(script, /set role authenticated; select \* from public\.model_update_submissions/);
   assert.match(script, /sixth OTP attempt was not blocked/);
   assert.match(script, /idempotency created duplicate outbound emails/);
   assert.match(script, /model update did not roll back/);
