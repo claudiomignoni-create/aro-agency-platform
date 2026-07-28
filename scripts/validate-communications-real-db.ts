@@ -140,16 +140,264 @@ const migrations = readdirSync("supabase/migrations")
   .filter((file) => /^\d{3}_.+\.sql$/.test(file))
   .sort();
 
-if (migrations.length !== 25 || !migrations[0]?.startsWith("001_") || !migrations[24]?.startsWith("025_")) {
-  throw new Error("Expected the complete migration sequence 001-025.");
+if (migrations.length !== 26 || !migrations[0]?.startsWith("001_") || !migrations[25]?.startsWith("026_")) {
+  throw new Error("Expected the complete migration sequence 001-026.");
 }
 
-for (const migration of migrations) {
+const tempDir = mkdtempSync(join(tmpdir(), "aro-communications-db-"));
+const upgradeFixtureFile = join(tempDir, "presentation-upgrade-fixture.sql");
+const upgradeAssertionFile = join(tempDir, "presentation-upgrade-assertions.sql");
+
+for (const migration of migrations.slice(0, -1)) {
   console.log(`Applying ${migration}`);
   runPsql(["--file", join("supabase/migrations", migration)]);
 }
 
-const tempDir = mkdtempSync(join(tmpdir(), "aro-communications-db-"));
+writeFileSync(
+  upgradeFixtureFile,
+  `
+insert into public.presentations (
+  id,
+  title,
+  description,
+  status,
+  public_token_hash,
+  snapshot,
+  version_number,
+  published_at,
+  expires_at
+)
+values (
+  '00000000-0000-0000-0000-000000000901',
+  'Existing presentation before migration 026',
+  'Upgrade-safe presentation',
+  'sent',
+  repeat('8', 64),
+  '{
+    "title":"Existing presentation before migration 026",
+    "models":[{
+      "display_name":"Snapshot Model",
+      "public_model_key":"legacyModelKey",
+      "measurements":{"height_cm":180},
+      "media":[]
+    }]
+  }'::jsonb,
+  1,
+  now(),
+  now() + interval '7 days'
+);
+
+insert into public.presentation_versions (
+  id,
+  presentation_id,
+  version_number,
+  snapshot
+)
+select
+  '00000000-0000-0000-0000-000000000902',
+  id,
+  1,
+  snapshot
+from public.presentations
+where id = '00000000-0000-0000-0000-000000000901';
+
+insert into public.presentation_recipients (
+  id,
+  presentation_id,
+  recipient_name,
+  recipient_email,
+  sent_at
+)
+values (
+  '00000000-0000-0000-0000-000000000903',
+  '00000000-0000-0000-0000-000000000901',
+  'Upgrade Client',
+  'upgrade-client@example.test',
+  now()
+);
+
+insert into public.presentation_share_links (
+  id,
+  presentation_id,
+  presentation_version_id,
+  recipient_id,
+  public_token_hash,
+  expires_at
+)
+values (
+  '00000000-0000-0000-0000-000000000904',
+  '00000000-0000-0000-0000-000000000901',
+  '00000000-0000-0000-0000-000000000902',
+  '00000000-0000-0000-0000-000000000903',
+  repeat('9', 64),
+  now() + interval '7 days'
+);
+`
+);
+
+runPsql(["--file", upgradeFixtureFile]);
+
+const selectionMigration = migrations.at(-1);
+if (!selectionMigration) throw new Error("Missing migration 026.");
+console.log(`Applying ${selectionMigration}`);
+runPsql(["--file", join("supabase/migrations", selectionMigration)]);
+
+writeFileSync(
+  upgradeAssertionFile,
+  `
+do $$
+declare
+  first_submission jsonb;
+  payload jsonb;
+  second_submission jsonb;
+  state_payload jsonb;
+begin
+  payload := public.get_public_presentation_by_token(repeat('9', 64));
+  if payload is null
+    or payload->>'title' <> 'Existing presentation before migration 026'
+    or payload->'snapshot'->'models'->0->>'display_name' <> 'Snapshot Model'
+  then
+    raise exception 'migration 026 broke an existing presentation link or snapshot';
+  end if;
+
+  state_payload := public.get_public_presentation_link_state(repeat('9', 64));
+  if state_payload->>'state' <> 'active'
+    or state_payload->>'recipient_name' <> 'Upgrade Client'
+  then
+    raise exception 'existing presentation state was not preserved during upgrade';
+  end if;
+
+  perform public.save_public_presentation_model_decision(
+    repeat('9', 64),
+    'legacyModelKey',
+    'yes'
+  );
+  perform public.save_public_presentation_model_decision(
+    repeat('9', 64),
+    'legacyModelKey',
+    'maybe'
+  );
+
+  if (
+    select count(*)
+    from public.presentation_model_selections
+    where presentation_id = '00000000-0000-0000-0000-000000000901'
+      and public_model_key = 'legacyModelKey'
+  ) <> 1 then
+    raise exception 'decision update created a duplicate selection';
+  end if;
+
+  if (
+    select decision
+    from public.presentation_model_selections
+    where presentation_id = '00000000-0000-0000-0000-000000000901'
+      and public_model_key = 'legacyModelKey'
+  ) <> 'maybe' then
+    raise exception 'decision update did not persist the latest value';
+  end if;
+
+  begin
+    perform public.save_public_presentation_model_decision(
+      repeat('9', 64),
+      'outsideSnapshotKey',
+      'yes'
+    );
+    raise exception 'model outside the immutable snapshot was accepted';
+  exception
+    when others then
+      if sqlerrm = 'model outside the immutable snapshot was accepted'
+        or sqlerrm not like '%model_not_in_presentation_snapshot%'
+      then
+        raise;
+      end if;
+  end;
+
+  first_submission := public.submit_public_presentation_selection(
+    repeat('9', 64),
+    'Structured client note'
+  );
+  second_submission := public.submit_public_presentation_selection(
+    repeat('9', 64),
+    'Structured client note'
+  );
+
+  if first_submission->>'submitted_at' <> second_submission->>'submitted_at' then
+    raise exception 'double submission was not idempotent';
+  end if;
+
+  if (
+    select count(*)
+    from public.presentation_access_events
+    where presentation_id = '00000000-0000-0000-0000-000000000901'
+      and event_type = 'selection_submitted'
+  ) <> 1 then
+    raise exception 'double submission created duplicate submission events';
+  end if;
+
+  if (
+    select client_note
+    from public.presentation_selection_responses
+    where presentation_id = '00000000-0000-0000-0000-000000000901'
+  ) <> 'Structured client note' then
+    raise exception 'client note was not preserved';
+  end if;
+
+  update public.presentation_share_links
+  set expires_at = now() - interval '1 minute'
+  where id = '00000000-0000-0000-0000-000000000904';
+
+  if public.get_public_presentation_link_state(repeat('9', 64))->>'state' <> 'expired' then
+    raise exception 'expired share link did not enter expired state';
+  end if;
+
+  begin
+    perform public.save_public_presentation_model_decision(
+      repeat('9', 64),
+      'legacyModelKey',
+      'no'
+    );
+    raise exception 'expired link accepted a selection change';
+  exception
+    when others then
+      if sqlerrm = 'expired link accepted a selection change'
+        or sqlerrm not like '%presentation_link_inactive%'
+      then
+        raise;
+      end if;
+  end;
+
+  update public.presentation_share_links
+  set expires_at = now() + interval '7 days',
+      revoked_at = now()
+  where id = '00000000-0000-0000-0000-000000000904';
+
+  if public.get_public_presentation_link_state(repeat('9', 64))->>'state' <> 'revoked' then
+    raise exception 'revoked share link did not enter revoked state';
+  end if;
+
+  update public.presentation_share_links
+  set revoked_at = null
+  where id = '00000000-0000-0000-0000-000000000904';
+
+  update public.presentations
+  set status = 'draft'
+  where id = '00000000-0000-0000-0000-000000000901';
+
+  if public.get_public_presentation_link_state(repeat('9', 64))->>'state' <> 'not_published'
+    or public.get_public_presentation_by_token(repeat('9', 64)) is not null
+  then
+    raise exception 'unpublished presentation remained publicly available';
+  end if;
+
+  update public.presentations
+  set status = 'sent'
+  where id = '00000000-0000-0000-0000-000000000901';
+end $$;
+`
+);
+
+runPsql(["--file", upgradeAssertionFile]);
+
 const assertionFile = join(tempDir, "communications-behavior.sql");
 
 writeFileSync(
@@ -549,6 +797,8 @@ begin
     or has_function_privilege('anon', 'public.get_public_model_update_request_by_token(text)', 'EXECUTE')
     or has_function_privilege('anon', 'public.check_communication_rate_limit(text,text,text)', 'EXECUTE')
     or has_function_privilege('anon', 'public.get_email_center_dashboard(timestamptz,timestamptz)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.save_public_presentation_model_decision(text,text,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.submit_public_presentation_selection(text,text)', 'EXECUTE')
   then
     raise exception 'anon retained access to a server-only RPC';
   end if;
@@ -674,6 +924,11 @@ runPsql(["--file", assertionFile]);
 runPsqlExpectFailure([
   "--command",
   "set role anon; select public.get_public_presentation_by_token(repeat('1', 64));"
+]);
+
+runPsqlExpectFailure([
+  "--command",
+  "set role anon; select * from public.presentation_model_selections;"
 ]);
 
 const workerCommand = "set role service_role; select id from public.claim_outbound_emails(1);";
