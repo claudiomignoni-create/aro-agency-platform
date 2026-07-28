@@ -931,27 +931,35 @@ runPsqlExpectFailure([
   "set role anon; select * from public.presentation_model_selections;"
 ]);
 
-const workerCommand = "set role service_role; select id from public.claim_outbound_emails(1);";
-const workerResults = await Promise.all([
-  runPsqlAsync(["--tuples-only", "--no-align", "--command", workerCommand]),
-  runPsqlAsync(["--tuples-only", "--no-align", "--command", workerCommand])
-]);
-const claimedIds = workerResults.flatMap((result) =>
-  result.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? []
-);
+async function validateConcurrentWorkers() {
+  const workerCommand = "set role service_role; select id from public.claim_outbound_emails(1);";
+  const workerResults = await Promise.all([
+    runPsqlAsync(["--tuples-only", "--no-align", "--command", workerCommand]),
+    runPsqlAsync(["--tuples-only", "--no-align", "--command", workerCommand])
+  ]);
+  const claimedIds = workerResults.flatMap((result) =>
+    result.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? []
+  );
 
-if (claimedIds.length !== 2 || new Set(claimedIds).size !== 2) {
-  throw new Error("Concurrent workers did not claim two distinct outbound emails.");
+  if (claimedIds.length !== 2 || new Set(claimedIds).size !== 2) {
+    throw new Error("Concurrent workers did not claim two distinct outbound emails.");
+  }
+
+  runPsql([
+    "--command",
+    `do $$
+    begin
+      if (select count(*) from public.outbound_emails where id in ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000402') and status = 'processing') <> 2 then
+        raise exception 'worker claims were not committed';
+      end if;
+    end $$;`
+  ]);
+
+  console.log("Disposable Supabase behavioral validation completed.");
 }
 
-runPsql([
-  "--command",
-  `do $$
-  begin
-    if (select count(*) from public.outbound_emails where id in ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000402') and status = 'processing') <> 2 then
-      raise exception 'worker claims were not committed';
-    end if;
-  end $$;`
-]);
-
-console.log("Disposable Supabase behavioral validation completed.");
+void validateConcurrentWorkers().catch((error: unknown) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  process.stderr.write(`${redactedOutput(message)}\n`);
+  process.exitCode = 1;
+});
