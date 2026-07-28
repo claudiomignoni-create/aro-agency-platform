@@ -160,3 +160,238 @@ export async function createOutboundEmailAction(formData: FormData) {
   revalidatePath("/admin/email");
   redirect("/admin/email");
 }
+
+export async function cancelOutboundEmailAction(id: string) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("outbound_emails")
+    .update({
+      encrypted_payload: null,
+      error_message_sanitized: "Cancelado manualmente por administrador.",
+      status: "canceled"
+    })
+    .eq("id", id)
+    .in("status", ["draft", "scheduled", "queued", "retry_pending"])
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/email/queue");
+  revalidatePath(`/admin/email/${id}`);
+  redirect(`/admin/email/${id}${data ? "?notice=canceled" : "?error=not-cancelable"}`);
+}
+
+export async function duplicateOutboundEmailAction(id: string) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: source, error: sourceError } = await supabase
+    .from("outbound_emails")
+    .select("recipient_name, recipient_email, subject, body_html, body_text, presentation_id, model_update_request_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (sourceError) throw sourceError;
+  if (!source || source.subject === "ARO — Código de verificação") {
+    redirect(`/admin/email/${id}?error=not-duplicable`);
+  }
+
+  const { data: duplicate, error } = await supabase
+    .from("outbound_emails")
+    .insert({
+      ...source,
+      created_by: profile.id,
+      idempotency_key: randomToken(24),
+      mode: "system_draft",
+      status: "draft"
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/email/drafts");
+  redirect(`/admin/email/${duplicate.id}?notice=duplicated`);
+}
+
+export async function updateQueuedRecipientAction(id: string, formData: FormData) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const recipientEmail = textValue(formData, "recipient_email").toLowerCase();
+  const recipientName = textValue(formData, "recipient_name") || null;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipientEmail)) {
+    redirect(`/admin/email/${id}?error=invalid-recipient`);
+  }
+
+  const { data: current, error: currentError } = await supabase
+    .from("outbound_emails")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (!current || !["draft", "scheduled", "queued", "retry_pending"].includes(current.status)) {
+    redirect(`/admin/email/${id}?error=not-editable`);
+  }
+  if (current.status !== "draft") assertSafeRecipientForRealSend(recipientEmail);
+
+  const { data: updated, error } = await supabase
+    .from("outbound_emails")
+    .update({
+      recipient_email: recipientEmail,
+      recipient_name: recipientName
+    })
+    .eq("id", id)
+    .eq("status", current.status)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/email/queue");
+  revalidatePath(`/admin/email/${id}`);
+  redirect(
+    `/admin/email/${id}${updated ? "?notice=recipient-updated" : "?error=state-changed"}`
+  );
+}
+
+const emailTemplateCategories = new Set([
+  "model_presentation",
+  "casting_selection",
+  "shortlist",
+  "direct_booking",
+  "international_placement",
+  "material_update",
+  "profile_update_full",
+  "measurements_update",
+  "polaroids_update",
+  "videos_update",
+  "documents_update",
+  "reminder",
+  "update_completed",
+  "follow_up",
+  "custom"
+]);
+
+function templatePayload(formData: FormData) {
+  const category = textValue(formData, "category");
+  const language = textValue(formData, "language");
+  const name = textValue(formData, "name");
+  const subject = textValue(formData, "subject");
+  const bodyText = textValue(formData, "body_text");
+
+  if (
+    !emailTemplateCategories.has(category) ||
+    !["pt-BR", "en"].includes(language) ||
+    !name ||
+    !subject ||
+    !bodyText
+  ) {
+    throw new Error("Template inválido.");
+  }
+
+  return {
+    body_html: htmlFromText(bodyText),
+    body_text: bodyText,
+    category,
+    language,
+    name,
+    subject
+  };
+}
+
+export async function createEmailTemplateAction(formData: FormData) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("email_templates")
+    .insert({
+      ...templatePayload(formData),
+      created_by: profile.id,
+      is_active: true,
+      is_default: false,
+      updated_by: profile.id
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  revalidatePath("/admin/email/templates");
+  redirect(`/admin/email/templates/${data.id}/edit?notice=created`);
+}
+
+export async function updateEmailTemplateAction(id: string, formData: FormData) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("email_templates")
+    .update({
+      ...templatePayload(formData),
+      updated_by: profile.id
+    })
+    .eq("id", id);
+
+  if (error) throw error;
+  revalidatePath("/admin/email/templates");
+  revalidatePath(`/admin/email/templates/${id}/edit`);
+  redirect(`/admin/email/templates/${id}/edit?notice=updated`);
+}
+
+export async function duplicateEmailTemplateAction(id: string) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { data: source, error: sourceError } = await supabase
+    .from("email_templates")
+    .select("name, category, language, subject, body_html, body_text")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (sourceError) throw sourceError;
+  if (!source) redirect("/admin/email/templates");
+
+  const { data, error } = await supabase
+    .from("email_templates")
+    .insert({
+      ...source,
+      created_by: profile.id,
+      is_active: true,
+      is_default: false,
+      name: `${source.name} — cópia`,
+      updated_by: profile.id
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  revalidatePath("/admin/email/templates");
+  redirect(`/admin/email/templates/${data.id}/edit?notice=duplicated`);
+}
+
+export async function archiveEmailTemplateAction(id: string) {
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("email_templates")
+    .update({
+      is_active: false,
+      is_default: false,
+      updated_by: profile.id
+    })
+    .eq("id", id);
+
+  if (error) throw error;
+  revalidatePath("/admin/email/templates");
+  redirect("/admin/email/templates?notice=archived");
+}
+
+export async function setDefaultEmailTemplateAction(id: string) {
+  await requireRole(["admin"]);
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_default_email_template", {
+    p_template_id: id
+  });
+
+  if (error) throw error;
+  revalidatePath("/admin/email/templates");
+  redirect("/admin/email/templates?notice=default");
+}

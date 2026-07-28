@@ -1,67 +1,47 @@
 import { randomUUID } from "node:crypto";
-import Link from "next/link";
+import { EmailComposer } from "@/components/admin/email-center/email-composer";
+import { EmailSubnav } from "@/components/admin/email-center/email-subnav";
+import { AdminPage, AdminPageHeader } from "@/components/admin/admin-ui";
 import {
-  AdminPage,
-  AdminPageHeader,
-  AdminSection,
-  AdminSelectField,
-  AdminTextField
-} from "@/components/admin/admin-ui";
-import { createOutboundEmailAction } from "@/app/admin/email/actions";
+  listEmailRecipientOptions
+} from "@/lib/communications/email-center";
+import {
+  listEmailTemplates,
+  listPresentations
+} from "@/lib/communications/data";
 import { aroGoogleEmail } from "@/lib/communications/google-workspace";
 
-export default function ComposeEmailPage() {
-  return (
-    <AdminPage>
-      <AdminPageHeader
-        actions={<Link className="button secondary" href="/admin/email">Voltar</Link>}
-        description="Crie mensagens individuais. Durante a implantação, envio real é permitido somente para claudio@arolab.co."
-        eyebrow="Email Center"
-        title="Compor e-mail"
-      />
+export default async function ComposeEmailPage({
+  searchParams
+}: {
+  searchParams: Promise<{ name?: string; subject?: string; template?: string; to?: string }>;
+}) {
+  const query = await searchParams;
+  const [recipients, templates, presentations] = await Promise.all([
+    listEmailRecipientOptions(),
+    listEmailTemplates(),
+    listPresentations()
+  ]);
 
-      <AdminSection title="Mensagem">
-        <form action={createOutboundEmailAction} className="admin-form-grid">
-          <input name="idempotency_key" type="hidden" value={randomUUID()} />
-          <label className="admin-field">
-            <span>De</span>
-            <input readOnly value={`Claudio Mignoni <${aroGoogleEmail}>`} />
-          </label>
-          <AdminTextField label="Para" name="recipient_email" placeholder="nome@empresa.com" />
-          <AdminTextField label="Nome do destinatário" name="recipient_name" placeholder="Nome para personalização" />
-          <AdminTextField label="Assunto" name="subject" placeholder="ARO — Apresentação" />
-          <AdminSelectField
-            defaultValue="system_draft"
-            label="Modo"
-            name="mode"
-            options={[
-              { label: "Salvar no sistema", value: "system_draft" },
-              { label: "Criar rascunho no Gmail", value: "gmail_draft" },
-              { label: "Enviar agora (somente claudio@arolab.co)", value: "send_now" },
-              { label: "Agendar envio", value: "scheduled" }
-            ]}
-          />
-          <label className="admin-field">
-            <span>Data do agendamento</span>
-            <input name="scheduled_date" type="date" />
-          </label>
-          <label className="admin-field">
-            <span>Hora do agendamento</span>
-            <input name="scheduled_time" type="time" />
-          </label>
-          <AdminTextField label="Timezone" name="scheduled_timezone" placeholder="America/Sao_Paulo" />
-          <label className="admin-field span-2">
-            <span>Mensagem</span>
-            <textarea
-              name="body_text"
-              placeholder={"Claudio Mignoni\nDirector / Model Manager\nARO\n\nclaudio@arolab.co\nwww.arolab.co"}
-              required
-              rows={10}
-            />
-          </label>
-          <button className="button" type="submit">Salvar comunicação</button>
-        </form>
-      </AdminSection>
+  return (
+    <AdminPage className="email-center-subpage">
+      <AdminPageHeader
+        description="Crie uma comunicação individual, prepare no Gmail ou programe pela fila segura."
+        eyebrow="Email Center"
+        title="Novo e-mail"
+      />
+      <EmailSubnav active="/admin/email/compose" />
+      <EmailComposer
+        idempotencyKey={randomUUID()}
+        initialName={query.name?.slice(0, 160)}
+        initialRecipient={query.to?.slice(0, 320)}
+        initialSubject={query.subject?.slice(0, 240)}
+        initialTemplateId={query.template}
+        presentations={presentations}
+        recipients={recipients}
+        sender={`Claudio Mignoni <${aroGoogleEmail}>`}
+        templates={templates}
+      />
     </AdminPage>
   );
 }

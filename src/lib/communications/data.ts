@@ -25,9 +25,12 @@ export type EmailTemplate = {
   body_text: string;
   category: string;
   id: string;
+  is_active: boolean;
+  is_default: boolean;
   language: string;
   name: string;
   subject: string;
+  updated_at: string;
 };
 
 export type OutboundEmail = {
@@ -150,7 +153,7 @@ export async function listEmailTemplates() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("email_templates")
-    .select("id, name, category, language, subject, body_html, body_text")
+    .select("id, name, category, language, subject, body_html, body_text, is_default, is_active, updated_at")
     .eq("is_active", true)
     .order("category", { ascending: true });
 
@@ -158,6 +161,20 @@ export async function listEmailTemplates() {
   if (error) throw error;
 
   return (data ?? []) as EmailTemplate[];
+}
+
+export async function getEmailTemplate(id: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("email_templates")
+    .select("id, name, category, language, subject, body_html, body_text, is_default, is_active, updated_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error && isMissingSchemaError(error)) return null;
+  if (error) throw error;
+
+  return data as EmailTemplate | null;
 }
 
 export async function listOutboundEmails(status?: string) {
