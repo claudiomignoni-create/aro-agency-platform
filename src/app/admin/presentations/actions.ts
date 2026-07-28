@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createPublicToken } from "@/lib/communications/data";
 import { assertSafeRecipientForRealSend, getUsableGoogleAccessToken } from "@/lib/communications/google-server";
-import { randomToken, sha256 } from "@/lib/communications/security";
+import { deterministicToken, randomToken, sha256 } from "@/lib/communications/security";
 
 function textValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -105,33 +105,6 @@ function scheduledDateTime(id: string, formData: FormData) {
     scheduled_at: scheduledAt.toISOString(),
     scheduled_timezone: timezone
   };
-}
-
-function stableEmailIdempotencyKey({
-  mode,
-  presentationId,
-  recipientEmail,
-  requestNonce,
-  scheduledAt,
-  versionId
-}: {
-  mode: string;
-  presentationId: string;
-  recipientEmail: string;
-  requestNonce: string;
-  scheduledAt?: string;
-  versionId?: string | null;
-}) {
-  return `presentation-email-${sha256(
-    [
-      presentationId,
-      versionId ?? "current",
-      recipientEmail.toLowerCase(),
-      mode,
-      scheduledAt ?? "draft",
-      requestNonce
-    ].join("|")
-  )}`;
 }
 
 export async function createPresentationAction(formData: FormData) {
@@ -429,7 +402,7 @@ export async function createPresentationEmailsAction(id: string, formData: FormD
 
   const { data: presentation, error } = await supabase
     .from("presentations")
-    .select("id, title, language, status, snapshot, expires_at")
+    .select("id, title, language, status, snapshot, expires_at, version_number")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -450,80 +423,47 @@ export async function createPresentationEmailsAction(id: string, formData: FormD
   const snapshot = (presentation.snapshot ?? {}) as { models?: unknown[] };
   const subject = textValue(formData, "subject") || `ARO — ${presentation.title}`;
   const requestNonce = textValue(formData, "request_nonce") || `${id}-${Date.now()}`;
-  const { data: version, error: versionError } = await supabase
-    .from("presentation_versions")
-    .select("id")
-    .eq("presentation_id", id)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (versionError) throw versionError;
+  const schedule: Partial<{ scheduled_at: string; scheduled_timezone: string }> =
+    mode === "scheduled" ? scheduledDateTime(id, formData) : {};
   let firstToken: string | null = null;
 
   for (const recipientEmail of recipients) {
     const recipientName = recipientEmail.split("@")[0] ?? "contato";
-    const { hash, token } = createPublicToken();
+    const token = deterministicToken(
+      "presentation-delivery",
+      [
+        id,
+        presentation.version_number,
+        recipientEmail,
+        mode,
+        schedule.scheduled_at ?? "draft",
+        requestNonce
+      ].join("|")
+    );
+    const hash = sha256(token);
     firstToken ??= token;
     const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://aro-agency-platform.vercel.app"}/p/${token}`;
-    const schedule: Partial<{ scheduled_at: string; scheduled_timezone: string }> =
-      mode === "scheduled" ? scheduledDateTime(id, formData) : {};
     const bodyText = bodyFromPresentation({
       link: publicUrl,
       modelCount: snapshot.models?.length ?? 0,
       recipientName,
       title: presentation.title
     });
-    const status =
-      mode === "scheduled" ? "scheduled" : mode === "send_now" || mode === "gmail_draft" ? "queued" : "draft";
-
-    const { data: recipient, error: recipientCreateError } = await supabase.from("presentation_recipients").insert({
-      presentation_id: id,
-      recipient_email: recipientEmail,
-      recipient_name: recipientName
-    }).select("id").single();
-    if (recipientCreateError) throw recipientCreateError;
-
-    const { data: shareLink, error: shareLinkError } = await supabase.from("presentation_share_links").insert({
-      expires_at: presentation.expires_at,
-      presentation_id: id,
-      presentation_version_id: version?.id ?? null,
-      public_token_hash: hash,
-      recipient_id: recipient.id
-    }).select("id").single();
-    if (shareLinkError) throw shareLinkError;
-
-    const { data: email, error: emailError } = await supabase
-      .from("outbound_emails")
-      .upsert({
-        body_html: htmlFromText(bodyText),
-        body_text: bodyText,
-        created_by: profile.id,
-        idempotency_key: stableEmailIdempotencyKey({
-          mode,
-          presentationId: id,
-          recipientEmail,
-          requestNonce,
-          scheduledAt: "scheduled_at" in schedule ? schedule.scheduled_at : undefined,
-          versionId: version?.id ?? null
-        }),
-        mode,
-        presentation_id: id,
-        presentation_share_link_id: shareLink.id,
-        recipient_email: recipientEmail,
-        recipient_name: recipientName,
-        ...schedule,
-        sender_connection_id: connection?.connectionId ?? null,
-        status,
-        subject
-      }, { onConflict: "idempotency_key" })
-      .select("id")
-      .single();
-    if (emailError) throw emailError;
-
-    const { error: recipientError } = await supabase.from("presentation_recipients").update({
-      outbound_email_id: email.id,
-    }).eq("id", recipient.id);
-    if (recipientError) throw recipientError;
+    const { error: deliveryError } = await supabase.rpc("create_presentation_delivery", {
+      p_body_html: htmlFromText(bodyText),
+      p_body_text: bodyText,
+      p_mode: mode,
+      p_presentation_id: id,
+      p_public_token_hash: hash,
+      p_recipient_email: recipientEmail,
+      p_recipient_name: recipientName,
+      p_request_nonce: requestNonce,
+      p_scheduled_at: schedule.scheduled_at ?? null,
+      p_scheduled_timezone: schedule.scheduled_timezone ?? null,
+      p_sender_connection_id: connection?.connectionId ?? null,
+      p_subject: subject
+    });
+    if (deliveryError) throw deliveryError;
   }
 
   revalidatePath(`/admin/presentations/${id}`);

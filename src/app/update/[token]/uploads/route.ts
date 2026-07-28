@@ -6,8 +6,10 @@ import { checkCommunicationRateLimit } from "@/lib/communications/rate-limit";
 import { sanitizeError, sha256 } from "@/lib/communications/security";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const bytesInMb = 1024 * 1024;
+const maxSynchronousVideoBytes = 25 * bytesInMb;
 const fieldRules: Record<
   string,
   {
@@ -57,7 +59,7 @@ const fieldRules: Record<
     bucket: "model-videos",
     folder: "videos",
     extensions: [".mov", ".mp4", ".webm"],
-    maxBytes: 200 * bytesInMb,
+    maxBytes: maxSynchronousVideoBytes,
     mediaType: "video",
     mime: /^video\/(mp4|quicktime|webm)$/
   }
@@ -78,7 +80,7 @@ async function getRequest(token: string) {
     .from("model_update_requests")
     .select("id, model_id, status, expires_at, model:models(id, email)")
     .eq("public_token_hash", sha256(token))
-    .not("status", "in", "(expired,canceled,applied)")
+    .not("status", "in", "(expired,canceled,applied,submitted,review_required)")
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
 
@@ -148,6 +150,32 @@ async function objectExists(bucket: string, objectPath: string) {
   return Boolean(data?.some((item) => item.name === name));
 }
 
+function normalizeMimeType(value: string) {
+  return value === "image/jpg" ? "image/jpeg" : value;
+}
+
+function detectFileSignature(bytes: Buffer) {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "image/png";
+  }
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") {
+    return "image/webp";
+  }
+  if (bytes.length >= 5 && bytes.subarray(0, 5).toString("ascii") === "%PDF-") {
+    return "application/pdf";
+  }
+  if (bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp") {
+    return bytes.subarray(8, 12).toString("ascii") === "qt  " ? "video/quicktime" : "video/mp4";
+  }
+  if (bytes.length >= 4 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) {
+    return "video/webm";
+  }
+  return null;
+}
+
 async function validateStoredObject({
   bucket,
   expectedMimeType,
@@ -170,22 +198,40 @@ async function validateStoredObject({
   const response = await fetch(signed.signedUrl, { cache: "no-store" });
   if (!response.ok || !response.body) throw new Error("Arquivo não encontrado no Storage.");
 
-  const actualMimeType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  const actualMimeType = normalizeMimeType(
+    (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase()
+  );
+  const normalizedExpectedMimeType = normalizeMimeType(expectedMimeType);
   const contentLength = Number(response.headers.get("content-length") ?? 0);
   if (!actualMimeType || !rule.mime.test(actualMimeType)) throw new Error("Tipo real do arquivo não permitido.");
-  if (actualMimeType !== expectedMimeType) throw new Error("Tipo real do arquivo difere do envio autorizado.");
+  if (actualMimeType !== normalizedExpectedMimeType) throw new Error("Tipo real do arquivo difere do envio autorizado.");
   if (contentLength && contentLength !== expectedSizeBytes) throw new Error("Tamanho real do arquivo difere do envio autorizado.");
 
   const hash = crypto.createHash("sha256");
   let actualSizeBytes = 0;
+  let signatureBytes = Buffer.alloc(0);
   const reader = response.body.getReader();
 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (signatureBytes.length < 32) {
+      signatureBytes = Buffer.concat([
+        signatureBytes,
+        Buffer.from(value.subarray(0, 32 - signatureBytes.length))
+      ]);
+    }
     actualSizeBytes += value.byteLength;
     if (actualSizeBytes > rule.maxBytes) throw new Error("Arquivo maior que o limite permitido.");
     hash.update(value);
+  }
+
+  const signatureMimeType = detectFileSignature(signatureBytes);
+  if (!signatureMimeType || !rule.mime.test(signatureMimeType)) {
+    throw new Error("Assinatura real do arquivo não permitida.");
+  }
+  if (signatureMimeType !== normalizedExpectedMimeType || signatureMimeType !== actualMimeType) {
+    throw new Error("Assinatura real do arquivo difere do tipo autorizado.");
   }
 
   const actualSha256 = hash.digest("hex");
@@ -203,10 +249,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const tokenHash = sha256(token);
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: 30,
       operation: "update_upload",
-      tokenHash,
-      windowSeconds: 60
+      tokenHash
     });
     if (!allowed) throw new Error("Rate limit exceeded");
 
@@ -327,7 +371,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
             mime_type: validated.actualMimeType,
             sha256: validated.actualSha256,
             size_bytes: validated.actualSizeBytes,
-            status: "pending_review"
+            status: "pending_review",
+            validation_error_sanitized: null
           })
           .eq("id", fileId);
       }
@@ -336,7 +381,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       if (fileId) {
         await admin
           .from("model_update_files")
-          .update({ status: "rejected" })
+          .update({
+            status: "rejected",
+            validation_error_sanitized: sanitizeError(validationError)
+          })
           .eq("id", fileId);
       }
       throw validationError;

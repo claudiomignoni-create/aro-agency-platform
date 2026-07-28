@@ -20,7 +20,10 @@ export default async function ModelUpdatePortalPage({ params }: { params: Promis
     notFound();
   }
 
-  await startUpdateRequestByToken(token, ipHash);
+  const submitted = ["submitted", "review_required"].includes(request.status) || Boolean(request.submitted_at);
+  if (!submitted) {
+    await startUpdateRequestByToken(token, ipHash);
+  }
 
   return (
     <main className="model-update-portal">
@@ -36,14 +39,23 @@ export default async function ModelUpdatePortalPage({ params }: { params: Promis
           Olá, {request.model.stage_name || request.model.display_name}. Este link é exclusivo, expirável e envia
           suas respostas para revisão da ARO.
         </p>
-        <ol>
-          <li>Boas-vindas</li>
-          <li>Dados solicitados</li>
-          <li>Materiais</li>
-          <li>Revisão</li>
-          <li>Enviado</li>
-        </ol>
-        <ModelUpdateForm request={request} token={token} />
+        {submitted ? (
+          <div className="model-update-confirmation" role="status">
+            <h2>Atualização enviada</h2>
+            <p>Recebemos suas informações. A equipe ARO fará a revisão administrativa antes de aplicar qualquer alteração.</p>
+          </div>
+        ) : (
+          <>
+            <ol>
+              <li>Boas-vindas</li>
+              <li>Dados solicitados</li>
+              <li>Materiais</li>
+              <li>Revisão</li>
+              <li>Enviado</li>
+            </ol>
+            <ModelUpdateForm request={request} token={token} />
+          </>
+        )}
       </section>
       <style>{`
         .model-update-portal {
@@ -220,6 +232,21 @@ export default async function ModelUpdatePortalPage({ params }: { params: Promis
         .model-update-file-status {
           display: grid;
           gap: 4px;
+        }
+
+        .model-update-confirmation {
+          display: grid;
+          gap: 8px;
+          margin-top: 22px;
+          border: 1px solid rgba(153, 202, 255, 0.28);
+          border-radius: 14px;
+          background: rgba(4, 24, 60, 0.62);
+          padding: 18px;
+        }
+
+        .model-update-confirmation h2,
+        .model-update-confirmation p {
+          margin: 0;
         }
 
         .model-update-file-status small,

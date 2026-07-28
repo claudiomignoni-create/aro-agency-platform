@@ -166,6 +166,7 @@ create table if not exists public.outbound_emails (
   subject text not null,
   body_html text not null,
   body_text text not null,
+  encrypted_payload text,
   status text not null default 'draft',
   mode text not null default 'system_draft',
   scheduled_at timestamptz,
@@ -202,7 +203,8 @@ on public.outbound_emails (status, scheduled_at, created_at);
 
 alter table public.outbound_emails
   add column if not exists scheduled_timezone text,
-  add column if not exists presentation_share_link_id uuid references public.presentation_share_links(id) on delete set null;
+  add column if not exists presentation_share_link_id uuid references public.presentation_share_links(id) on delete set null,
+  add column if not exists encrypted_payload text;
 
 create table if not exists public.model_update_requests (
   id uuid primary key default gen_random_uuid(),
@@ -328,6 +330,7 @@ create table if not exists public.model_update_files (
   mime_type text not null,
   size_bytes bigint not null,
   sha256 text,
+  validation_error_sanitized text,
   status text not null default 'pending_review',
   position integer not null default 0,
   created_at timestamptz not null default now(),
@@ -605,6 +608,24 @@ create trigger set_outbound_emails_updated_at
 before update on public.outbound_emails
 for each row execute function public.set_updated_at();
 
+create or replace function public.redact_finalized_outbound_email_payload()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status in ('sent', 'failed', 'canceled') then
+    new.encrypted_payload := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists redact_finalized_outbound_email_payload on public.outbound_emails;
+create trigger redact_finalized_outbound_email_payload
+before update on public.outbound_emails
+for each row execute function public.redact_finalized_outbound_email_payload();
+
 drop trigger if exists set_model_update_requests_updated_at on public.model_update_requests;
 create trigger set_model_update_requests_updated_at
 before update on public.model_update_requests
@@ -814,7 +835,49 @@ begin
       ) filter (where f.id is not null),
       '[]'::jsonb
     ),
-    'draft_payload', coalesce(s.draft_payload, '{}'::jsonb),
+    'draft_payload', case
+      when r.status in ('submitted', 'review_required')
+        or s.status in ('submitted', 'applied', 'review_required')
+      then null
+      else coalesce((
+        select jsonb_object_agg(draft_entry.key, draft_entry.value)
+        from jsonb_each(coalesce(s.draft_payload, '{}'::jsonb)) draft_entry
+        where lower(draft_entry.key) not in (
+          'address',
+          'banking',
+          'bank_account',
+          'bank_data',
+          'cpf',
+          'documents',
+          'health',
+          'passport',
+          'pix',
+          'rg',
+          'visa'
+        )
+          and exists (
+            select 1
+            from public.model_update_request_fields safe_field
+            where safe_field.request_id = r.id
+              and safe_field.is_sensitive = false
+              and (
+                safe_field.field_key = draft_entry.key
+                or (
+                  safe_field.field_key = 'measurements'
+                  and draft_entry.key in (
+                    'height_cm',
+                    'bust_cm',
+                    'waist_cm',
+                    'hips_cm',
+                    'shoe_size',
+                    'shoe_size_br',
+                    'dress_size_br'
+                  )
+                )
+              )
+          )
+      ), '{}'::jsonb)
+    end,
     'submitted_at', s.submitted_at
   )
   into payload
@@ -845,7 +908,7 @@ begin
   select id, model_id into request_uuid, model_uuid
   from public.model_update_requests
   where public_token_hash = p_token_hash
-    and status not in ('expired', 'canceled', 'applied')
+    and status not in ('expired', 'canceled', 'applied', 'submitted', 'review_required')
     and expires_at > now()
   limit 1;
 
@@ -878,7 +941,7 @@ begin
   select id, model_id into request_uuid, model_uuid
   from public.model_update_requests
   where public_token_hash = p_token_hash
-    and status not in ('expired', 'canceled', 'applied')
+    and status not in ('expired', 'canceled', 'applied', 'submitted', 'review_required')
     and expires_at > now()
   limit 1;
 
@@ -905,9 +968,7 @@ $$;
 create or replace function public.check_communication_rate_limit(
   p_token_hash text,
   p_ip_hash text,
-  p_operation text,
-  p_limit integer,
-  p_window_seconds integer
+  p_operation text
 )
 returns boolean
 language plpgsql
@@ -917,12 +978,41 @@ as $$
 declare
   current_window timestamptz;
   current_count integer;
+  operation_limit integer;
+  window_seconds integer;
 begin
-  if p_token_hash is null or p_ip_hash is null or p_operation is null then
+  if p_token_hash is null
+    or p_ip_hash is null
+    or p_operation is null
+    or length(p_token_hash) <> 64
+    or length(p_ip_hash) <> 64
+    or length(p_operation) > 64
+    or p_token_hash !~ '^[a-f0-9]{64}$'
+    or p_ip_hash !~ '^[a-f0-9]{64}$'
+  then
     return false;
   end if;
 
-  current_window := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+  select limits.operation_limit, limits.window_seconds
+    into operation_limit, window_seconds
+  from (
+    values
+      ('presentation_open', 60, 60),
+      ('update_open', 40, 60),
+      ('update_start', 20, 60),
+      ('update_autosave', 20, 60),
+      ('update_submit', 5, 300),
+      ('otp_request', 3, 900),
+      ('otp_verify', 6, 300),
+      ('update_upload', 30, 60)
+  ) as limits(operation, operation_limit, window_seconds)
+  where limits.operation = p_operation;
+
+  if operation_limit is null or window_seconds is null then
+    raise exception 'unsupported_rate_limit_operation';
+  end if;
+
+  current_window := to_timestamp(floor(extract(epoch from now()) / window_seconds) * window_seconds);
 
   insert into public.communication_rate_limits (
     token_hash,
@@ -944,7 +1034,12 @@ begin
     updated_at = now()
   returning attempt_count into current_count;
 
-  return current_count <= p_limit;
+  if random() < 0.01 then
+    delete from public.communication_rate_limits
+    where window_start < now() - interval '24 hours';
+  end if;
+
+  return current_count <= operation_limit;
 end;
 $$;
 
@@ -966,7 +1061,7 @@ begin
   from public.model_update_verification_codes vc
   join public.model_update_requests r on r.id = vc.request_id
   where r.public_token_hash = p_token_hash
-    and r.status not in ('expired', 'canceled', 'applied')
+    and r.status not in ('expired', 'canceled', 'applied', 'submitted', 'review_required')
     and r.expires_at > now()
     and vc.verified_at is null
     and vc.consumed_at is null
@@ -1289,6 +1384,201 @@ begin
   );
 
   return next_version;
+end;
+$$;
+
+create or replace function public.create_presentation_delivery(
+  p_presentation_id uuid,
+  p_recipient_name text,
+  p_recipient_email text,
+  p_mode text,
+  p_subject text,
+  p_body_html text,
+  p_body_text text,
+  p_public_token_hash text,
+  p_request_nonce text,
+  p_scheduled_at timestamptz,
+  p_scheduled_timezone text,
+  p_sender_connection_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  presentation_record record;
+  presentation_version_uuid uuid;
+  idempotency_key_value text;
+  delivery_status text;
+  recipient_uuid uuid;
+  share_link_uuid uuid;
+  outbound_email_uuid uuid;
+  existing_token_hash text;
+begin
+  if public.current_user_role() <> 'admin' then
+    raise exception 'admin_required';
+  end if;
+
+  if p_recipient_email is null
+    or length(p_recipient_email) > 320
+    or p_recipient_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+  then
+    raise exception 'invalid_recipient_email';
+  end if;
+
+  if p_request_nonce is null or length(p_request_nonce) < 16 or length(p_request_nonce) > 200 then
+    raise exception 'invalid_request_nonce';
+  end if;
+
+  if p_public_token_hash is null or p_public_token_hash !~ '^[a-f0-9]{64}$' then
+    raise exception 'invalid_public_token_hash';
+  end if;
+
+  if p_mode not in ('system_draft', 'gmail_draft', 'send_now', 'scheduled') then
+    raise exception 'invalid_delivery_mode';
+  end if;
+
+  if p_mode = 'scheduled' and (p_scheduled_at is null or p_scheduled_at <= now()) then
+    raise exception 'invalid_schedule';
+  end if;
+
+  select p.id, p.expires_at, p.status
+    into presentation_record
+  from public.presentations p
+  where p.id = p_presentation_id
+  for update;
+
+  if not found or presentation_record.status not in ('published', 'sent') then
+    raise exception 'presentation_not_published';
+  end if;
+
+  select id
+    into presentation_version_uuid
+  from public.presentation_versions
+  where presentation_id = p_presentation_id
+  order by version_number desc
+  limit 1;
+
+  idempotency_key_value := 'presentation-email-' || encode(
+    digest(
+      concat_ws(
+        '|',
+        p_presentation_id::text,
+        coalesce(presentation_version_uuid::text, 'current'),
+        lower(p_recipient_email),
+        p_mode,
+        coalesce(p_scheduled_at::text, 'draft'),
+        p_request_nonce
+      ),
+      'sha256'
+    ),
+    'hex'
+  );
+
+  perform pg_advisory_xact_lock(hashtextextended(idempotency_key_value, 0));
+
+  select e.id, e.presentation_share_link_id, sl.recipient_id, sl.public_token_hash
+    into outbound_email_uuid, share_link_uuid, recipient_uuid, existing_token_hash
+  from public.outbound_emails e
+  join public.presentation_share_links sl on sl.id = e.presentation_share_link_id
+  where e.idempotency_key = idempotency_key_value
+    and e.presentation_id = p_presentation_id
+  limit 1;
+
+  if found then
+    if existing_token_hash <> p_public_token_hash then
+      raise exception 'idempotency_token_mismatch';
+    end if;
+
+    return jsonb_build_object(
+      'created', false,
+      'idempotency_key', idempotency_key_value,
+      'outbound_email_id', outbound_email_uuid,
+      'recipient_id', recipient_uuid,
+      'share_link_id', share_link_uuid
+    );
+  end if;
+
+  delivery_status := case
+    when p_mode = 'scheduled' then 'scheduled'
+    when p_mode in ('send_now', 'gmail_draft') then 'queued'
+    else 'draft'
+  end;
+
+  insert into public.presentation_recipients (
+    presentation_id,
+    recipient_email,
+    recipient_name
+  )
+  values (
+    p_presentation_id,
+    lower(p_recipient_email),
+    nullif(trim(p_recipient_name), '')
+  )
+  returning id into recipient_uuid;
+
+  insert into public.presentation_share_links (
+    expires_at,
+    presentation_id,
+    presentation_version_id,
+    public_token_hash,
+    recipient_id
+  )
+  values (
+    presentation_record.expires_at,
+    p_presentation_id,
+    presentation_version_uuid,
+    p_public_token_hash,
+    recipient_uuid
+  )
+  returning id into share_link_uuid;
+
+  insert into public.outbound_emails (
+    body_html,
+    body_text,
+    created_by,
+    idempotency_key,
+    mode,
+    presentation_id,
+    presentation_share_link_id,
+    recipient_email,
+    recipient_name,
+    scheduled_at,
+    scheduled_timezone,
+    sender_connection_id,
+    status,
+    subject
+  )
+  values (
+    p_body_html,
+    p_body_text,
+    auth.uid(),
+    idempotency_key_value,
+    p_mode,
+    p_presentation_id,
+    share_link_uuid,
+    lower(p_recipient_email),
+    nullif(trim(p_recipient_name), ''),
+    p_scheduled_at,
+    nullif(p_scheduled_timezone, ''),
+    p_sender_connection_id,
+    delivery_status,
+    p_subject
+  )
+  returning id into outbound_email_uuid;
+
+  update public.presentation_recipients
+  set outbound_email_id = outbound_email_uuid
+  where id = recipient_uuid;
+
+  return jsonb_build_object(
+    'created', true,
+    'idempotency_key', idempotency_key_value,
+    'outbound_email_id', outbound_email_uuid,
+    'recipient_id', recipient_uuid,
+    'share_link_id', share_link_uuid
+  );
 end;
 $$;
 
@@ -1877,26 +2167,29 @@ revoke all on function public.current_model_id() from public;
 revoke all on function public.get_my_model_update_requests() from public;
 revoke all on function public.get_my_model_update_request(uuid) from public;
 revoke all on function public.get_my_model_update_submission(uuid) from public;
-revoke all on function public.check_communication_rate_limit(text, text, text, integer, integer) from public;
+revoke all on function public.check_communication_rate_limit(text, text, text) from public;
 revoke all on function public.sanitize_model_update_payload(uuid, jsonb, boolean) from public;
 revoke all on function public.update_presentation_draft(uuid, uuid, jsonb) from public;
 revoke all on function public.publish_presentation_snapshot(uuid, uuid, jsonb) from public;
+revoke all on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) from public;
 revoke all on function public.claim_outbound_emails(integer) from public;
+revoke all on function public.redact_finalized_outbound_email_payload() from public;
 
-grant execute on function public.get_public_presentation_by_token(text) to anon, authenticated;
-grant execute on function public.mark_public_presentation_opened(text) to anon, authenticated;
-grant execute on function public.get_public_model_update_request_by_token(text) to anon, authenticated;
-grant execute on function public.mark_model_update_request_opened(text) to anon, authenticated;
-grant execute on function public.start_model_update_request(text) to anon, authenticated;
-grant execute on function public.save_model_update_request_draft(text, jsonb) to anon, authenticated;
-grant execute on function public.submit_model_update_request(text, jsonb) to anon, authenticated;
-grant execute on function public.verify_model_update_code(text, text) to anon, authenticated;
+grant execute on function public.get_public_presentation_by_token(text) to service_role;
+grant execute on function public.mark_public_presentation_opened(text) to service_role;
+grant execute on function public.get_public_model_update_request_by_token(text) to service_role;
+grant execute on function public.mark_model_update_request_opened(text) to service_role;
+grant execute on function public.start_model_update_request(text) to service_role;
+grant execute on function public.save_model_update_request_draft(text, jsonb) to service_role;
+grant execute on function public.submit_model_update_request(text, jsonb) to service_role;
+grant execute on function public.verify_model_update_code(text, text) to service_role;
 grant execute on function public.apply_model_update_submission(uuid, text[], uuid[]) to authenticated;
 grant execute on function public.current_model_id() to authenticated;
 grant execute on function public.get_my_model_update_requests() to authenticated;
 grant execute on function public.get_my_model_update_request(uuid) to authenticated;
 grant execute on function public.get_my_model_update_submission(uuid) to authenticated;
-grant execute on function public.check_communication_rate_limit(text, text, text, integer, integer) to anon, authenticated;
+grant execute on function public.check_communication_rate_limit(text, text, text) to service_role;
 grant execute on function public.update_presentation_draft(uuid, uuid, jsonb) to authenticated;
 grant execute on function public.publish_presentation_snapshot(uuid, uuid, jsonb) to authenticated;
+grant execute on function public.create_presentation_delivery(uuid, text, text, text, text, text, text, text, text, timestamptz, text, uuid) to authenticated;
 grant execute on function public.claim_outbound_emails(integer) to service_role;

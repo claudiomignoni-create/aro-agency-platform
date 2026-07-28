@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { aroGoogleEmail } from "@/lib/communications/google-workspace";
 import { externalEmailSendEnabled } from "@/lib/communications/google-server";
 import { checkCommunicationRateLimit, requestIpHash } from "@/lib/communications/rate-limit";
-import { sanitizeError, sha256 } from "@/lib/communications/security";
+import { encryptSecret, sanitizeError, sha256 } from "@/lib/communications/security";
 
 function html(body: string) {
   return body
@@ -19,7 +19,7 @@ async function getRequest(token: string) {
     .from("model_update_requests")
     .select("id, model_id, title, status, expires_at, model:models(id, display_name, stage_name, email, status)")
     .eq("public_token_hash", sha256(token))
-    .not("status", "in", "(expired,canceled,applied)")
+    .not("status", "in", "(expired,canceled,applied,submitted,review_required)")
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
   if (error) throw error;
@@ -36,10 +36,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const tokenHash = sha256(token);
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: mode === "request" ? 3 : 6,
       operation: mode === "request" ? "otp_request" : "otp_verify",
-      tokenHash,
-      windowSeconds: mode === "request" ? 900 : 300
+      tokenHash
     });
     if (!allowed) throw new Error("Rate limit exceeded");
 
@@ -78,12 +76,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (!connection?.id) throw new Error("Google Workspace não conectado.");
 
     const code = String(crypto.randomInt(100000, 1000000));
-    const bodyText = [
+    const privateBodyText = [
       `Olá, ${model.stage_name || model.display_name}.`,
       `Seu código de verificação da ARO é: ${code}`,
       "Ele expira em 10 minutos. Se você não solicitou este código, ignore este e-mail.",
       "Claudio Mignoni\nARO"
     ].join("\n\n");
+    const genericBodyText = "ARO — Código de verificação";
 
     const { data: verification, error: verificationError } = await admin
       .from("model_update_verification_codes")
@@ -98,8 +97,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (verificationError) throw verificationError;
 
     await admin.from("outbound_emails").insert({
-      body_html: html(bodyText),
-      body_text: bodyText,
+      body_html: html(genericBodyText),
+      body_text: genericBodyText,
+      encrypted_payload: encryptSecret(JSON.stringify({
+        bodyHtml: html(privateBodyText),
+        bodyText: privateBodyText
+      })),
       idempotency_key: `otp-${verification.id}`,
       mode: "send_now",
       model_update_request_id: updateRequest.id,

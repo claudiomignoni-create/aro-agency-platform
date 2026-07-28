@@ -278,7 +278,7 @@ export function ModelUpdateForm({ request, token }: ModelUpdateFormProps) {
                 ) : definition.type === "file" ? (
                   <>
                     <input
-                      accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime"
+                      accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime,video/webm"
                       onChange={(event) => uploadFiles(field.field_key, event.target.files)}
                       type="file"
                       multiple

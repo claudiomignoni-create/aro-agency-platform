@@ -14,6 +14,7 @@ type QueueEmail = {
   attempt_count: number;
   body_html: string;
   body_text: string;
+  encrypted_payload: string | null;
   id: string;
   idempotency_key: string;
   model_update_request_id: string | null;
@@ -31,6 +32,21 @@ type ConnectionRecord = {
   id: string;
   token_expires_at: string | null;
 };
+
+function resolveEmailContent(email: QueueEmail) {
+  if (!email.encrypted_payload) {
+    return { bodyHtml: email.body_html, bodyText: email.body_text };
+  }
+
+  const decrypted = decryptSecret(email.encrypted_payload);
+  if (!decrypted) throw new Error("Encrypted email payload is unavailable.");
+  const payload = JSON.parse(decrypted) as { bodyHtml?: unknown; bodyText?: unknown };
+  if (typeof payload.bodyHtml !== "string" || typeof payload.bodyText !== "string") {
+    throw new Error("Encrypted email payload is invalid.");
+  }
+
+  return { bodyHtml: payload.bodyHtml, bodyText: payload.bodyText };
+}
 
 function authorized(request: Request) {
   const secret = process.env.COMMUNICATIONS_CRON_SECRET;
@@ -95,11 +111,12 @@ export async function POST(request: Request) {
       if (!connection) throw new Error("Conexão Google indisponível.");
 
       const accessToken = await getQueueAccessToken(connection as ConnectionRecord);
+      const content = resolveEmailContent(email);
 
       if (email.mode === "gmail_draft") {
         const draft = await createGmailDraft(accessToken, {
-          bodyHtml: email.body_html,
-          bodyText: email.body_text,
+          bodyHtml: content.bodyHtml,
+          bodyText: content.bodyText,
           subject: email.subject,
           to: email.recipient_email
         });
@@ -109,6 +126,7 @@ export async function POST(request: Request) {
             gmail_draft_id: draft.id,
             gmail_message_id: draft.message?.id ?? null,
             gmail_thread_id: draft.message?.threadId ?? null,
+            encrypted_payload: null,
             status: "draft"
           })
           .eq("id", email.id);
@@ -116,8 +134,8 @@ export async function POST(request: Request) {
       } else {
         assertSafeRecipientForRealSend(email.recipient_email);
         const sent = await sendGmailMessage(accessToken, {
-          bodyHtml: email.body_html,
-          bodyText: email.body_text,
+          bodyHtml: content.bodyHtml,
+          bodyText: content.bodyText,
           subject: email.subject,
           to: email.recipient_email
         });
@@ -126,6 +144,7 @@ export async function POST(request: Request) {
           .update({
             gmail_message_id: sent.id,
             gmail_thread_id: sent.threadId ?? null,
+            encrypted_payload: null,
             status: "sent",
             sent_at: new Date().toISOString()
           })
@@ -155,6 +174,7 @@ export async function POST(request: Request) {
         .from("outbound_emails")
         .update({
           error_message_sanitized: sanitizeError(error),
+          encrypted_payload: retry ? email.encrypted_payload : null,
           failed_at: retry ? null : new Date().toISOString(),
           scheduled_at: retry ? new Date(Date.now() + delayMinutes * 60 * 1000).toISOString() : null,
           status: retry ? "retry_pending" : "failed"

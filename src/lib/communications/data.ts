@@ -98,7 +98,7 @@ export type PublicPresentationPayload = {
 };
 
 export type PublicModelUpdateRequestPayload = {
-  draft_payload: Record<string, unknown>;
+  draft_payload: Record<string, unknown> | null;
   due_at: string | null;
   expires_at: string;
   fields: Array<{
@@ -205,7 +205,7 @@ export async function listModelUpdateRequests() {
 }
 
 export async function findPresentationByToken(token: string) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const tokenHash = sha256(token);
   const { data, error } = await supabase.rpc("get_public_presentation_by_token", {
     p_token_hash: tokenHash
@@ -225,10 +225,8 @@ export async function findPresentationByTokenWithRateLimit(token: string, ipHash
   const tokenHash = sha256(token);
   const allowed = await checkCommunicationRateLimit({
     ipHash,
-    limit: 60,
     operation: "presentation_open",
-    tokenHash,
-    windowSeconds: 60
+    tokenHash
   });
   if (!allowed) return null;
   return findPresentationByToken(token);
@@ -310,15 +308,13 @@ function privateMediaMapFromSnapshot(snapshotValue: unknown) {
 }
 
 export async function findUpdateRequestByToken(token: string, ipHash?: string) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const tokenHash = sha256(token);
   if (ipHash) {
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: 40,
       operation: "update_open",
-      tokenHash,
-      windowSeconds: 60
+      tokenHash
     });
     if (!allowed) return null;
   }
@@ -329,7 +325,7 @@ export async function findUpdateRequestByToken(token: string, ipHash?: string) {
   if (error && isMissingSchemaError(error)) return null;
   if (error) throw error;
 
-  if (data) {
+  if (data && !["submitted", "review_required"].includes(String(data.status))) {
     await supabase.rpc("mark_model_update_request_opened", { p_token_hash: tokenHash });
   }
 
@@ -340,56 +336,53 @@ export async function startUpdateRequestByToken(token: string, ipHash?: string) 
   if (ipHash) {
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: 20,
       operation: "update_start",
-      tokenHash: sha256(token),
-      windowSeconds: 60
+      tokenHash: sha256(token)
     });
     if (!allowed) throw new Error("Rate limit exceeded");
   }
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("start_model_update_request", {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("start_model_update_request", {
     p_token_hash: sha256(token)
   });
   if (error) throw error;
+  if (!data) throw new Error("Update request cannot be started.");
 }
 
 export async function saveUpdateRequestDraftByToken(token: string, draft: Record<string, unknown>, ipHash?: string) {
   if (ipHash) {
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: 20,
       operation: "update_autosave",
-      tokenHash: sha256(token),
-      windowSeconds: 60
+      tokenHash: sha256(token)
     });
     if (!allowed) throw new Error("Rate limit exceeded");
   }
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("save_model_update_request_draft", {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("save_model_update_request_draft", {
     draft,
     p_token_hash: sha256(token)
   });
   if (error) throw error;
+  if (!data) throw new Error("Update request draft cannot be saved.");
 }
 
 export async function submitUpdateRequestByToken(token: string, submission: Record<string, unknown>, ipHash?: string) {
   if (ipHash) {
     const allowed = await checkCommunicationRateLimit({
       ipHash,
-      limit: 5,
       operation: "update_submit",
-      tokenHash: sha256(token),
-      windowSeconds: 300
+      tokenHash: sha256(token)
     });
     if (!allowed) throw new Error("Rate limit exceeded");
   }
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("submit_model_update_request", {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("submit_model_update_request", {
     p_token_hash: sha256(token),
     submission
   });
   if (error) throw error;
+  if (!data) throw new Error("Update request cannot be submitted.");
 }
 
 export function createPublicToken() {

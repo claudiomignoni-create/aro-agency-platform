@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sha256 } from "@/lib/communications/security";
 
 export async function requestIpHash() {
@@ -16,24 +16,18 @@ export async function requestIpHash() {
 
 export async function checkCommunicationRateLimit({
   ipHash,
-  limit,
   operation,
-  tokenHash,
-  windowSeconds
+  tokenHash
 }: {
   ipHash: string;
-  limit: number;
   operation: string;
   tokenHash: string;
-  windowSeconds: number;
 }) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.rpc("check_communication_rate_limit", {
     p_ip_hash: ipHash,
-    p_limit: limit,
     p_operation: operation,
-    p_token_hash: tokenHash,
-    p_window_seconds: windowSeconds
+    p_token_hash: tokenHash
   });
 
   if (error) throw error;

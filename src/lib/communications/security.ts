@@ -18,6 +18,15 @@ export function randomToken(bytes = 32) {
   return base64Url(crypto.randomBytes(bytes));
 }
 
+export function deterministicToken(namespace: string, value: string) {
+  return base64Url(
+    crypto
+      .createHmac("sha256", encryptionKey())
+      .update(`${namespace}:${value}`)
+      .digest()
+  );
+}
+
 export function sha256(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
