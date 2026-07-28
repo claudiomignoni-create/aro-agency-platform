@@ -10,7 +10,8 @@
     "test": "node --import tsx --test tests/**/*.test.ts",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:communications:db": "tsx scripts/validate-communications-real-db.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

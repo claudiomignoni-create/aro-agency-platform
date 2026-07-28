@@ -227,12 +227,14 @@ export default async function AdminModelsPage({ searchParams }: AdminModelsPageP
         </AdminFilterBar>
       </AdminToolbar>
 
-      <AdminSection className="models-planned-section" title="Ações planejadas" meta="Em breve">
+      <AdminSection className="models-planned-section" title="Ações de atualização" meta="Portal do modelo">
         <div className="models-planned-actions">
           <label>
             <input aria-label="Selecionar todos os modelos" type="checkbox" /> Selecionar visualmente
           </label>
-          <button className="button secondary" disabled type="button">Solicitar atualização</button>
+          <Link className="button secondary" href="/admin/model-updates/new">Solicitar atualização</Link>
+          <Link className="button secondary" href="/admin/model-updates">Histórico de atualizações</Link>
+          <Link className="button secondary" href="/model">Visualizar como modelo</Link>
           <button className="button secondary" disabled type="button">Exportar seleção</button>
           <button className="button secondary" disabled type="button">Criar shortlist</button>
         </div>

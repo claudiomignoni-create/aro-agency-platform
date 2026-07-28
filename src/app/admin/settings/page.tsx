@@ -3,7 +3,10 @@ import Link from "next/link";
 import { getAdminUserProfile, getProfilePreferencesStatus } from "@/lib/admin-profile";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { getBuildShortSha } from "@/lib/build-info";
+import { getCommunicationSchemaState, getGoogleConnection } from "@/lib/communications/data";
+import { aroGoogleEmail, googleOAuthConfigured, googleScopes } from "@/lib/communications/google-workspace";
 import { createClient } from "@/lib/supabase/server";
+import { GoogleTestEmailForm } from "@/app/admin/settings/google-test-email-form";
 import {
   updateAdminEmailAction,
   updateAdminProfileAction,
@@ -22,6 +25,7 @@ const tabs = [
   { id: "profile", label: "Perfil" },
   { id: "appearance", label: "Aparência" },
   { id: "account", label: "Conta" },
+  { id: "integrations", label: "Integrações" },
   { id: "preferences", label: "Preferências" }
 ] as const;
 
@@ -47,9 +51,11 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     return null;
   }
 
-  const [profileSchema, storedTheme] = await Promise.all([
+  const [profileSchema, storedTheme, communicationSchema, googleConnection] = await Promise.all([
     getProfilePreferencesStatus(),
-    getStoredTheme(profile.id)
+    getStoredTheme(profile.id),
+    getCommunicationSchemaState(),
+    getGoogleConnection(profile.id)
   ]);
   const activeTab = tabs.some((tab) => tab.id === params.tab) ? params.tab : "profile";
   const buildShortSha = getBuildShortSha();
@@ -175,6 +181,45 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         </section>
       ) : null}
 
+      {activeTab === "integrations" ? (
+        <section className="aro-glass-card settings-panel">
+          <div className="settings-integration-card">
+            <div>
+              <span className="eyebrow">Google Workspace</span>
+              <h2>Gmail API</h2>
+              <p className="muted">
+                Envia e cria rascunhos somente pela conta Claudio Mignoni &lt;{aroGoogleEmail}&gt;.
+              </p>
+            </div>
+            <div className="settings-integration-status">
+              <span>Schema</span>
+              <strong>{communicationSchema.ready ? "Ativo" : "Migration 025 pendente"}</strong>
+              <span>OAuth</span>
+              <strong>{googleOAuthConfigured() ? "Configurado" : "Variáveis pendentes"}</strong>
+              <span>Conta</span>
+              <strong>{googleConnection?.connected_email ?? "Desconectado"}</strong>
+              <span>Status</span>
+              <strong>{googleConnection?.status ?? "desconectado"}</strong>
+              <span>Escopos</span>
+              <strong>{(googleConnection?.scopes?.length ? googleConnection.scopes : [...googleScopes]).join(", ")}</strong>
+              <span>Último uso</span>
+              <strong>{googleConnection?.last_used_at ? new Date(googleConnection.last_used_at).toLocaleString("pt-BR") : "—"}</strong>
+              <span>Último erro</span>
+              <strong>{googleConnection?.last_error ?? "—"}</strong>
+            </div>
+            <div className="settings-integration-actions">
+              <Link className="button" href="/api/integrations/google/connect">
+                {googleConnection?.status === "connected" ? "Reconectar" : "Conectar"}
+              </Link>
+              <GoogleTestEmailForm />
+              <form action="/api/integrations/google/disconnect" method="post">
+                <button className="button secondary" type="submit">Desconectar</button>
+              </form>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {activeTab === "preferences" ? (
         <section className="aro-glass-card settings-panel">
           <h2>Preferências</h2>
@@ -290,6 +335,30 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         .settings-form select:disabled {
           cursor: not-allowed;
           opacity: 0.62;
+        }
+
+        .settings-integration-card {
+          display: grid;
+          gap: 14px;
+        }
+
+        .settings-integration-status {
+          display: grid;
+          grid-template-columns: minmax(120px, 0.3fr) minmax(0, 1fr);
+          gap: 8px 12px;
+          color: var(--admin-muted);
+          font-size: var(--admin-font-body);
+        }
+
+        .settings-integration-status strong {
+          color: var(--admin-text);
+          overflow-wrap: anywhere;
+        }
+
+        .settings-integration-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
         }
 
         .settings-build {

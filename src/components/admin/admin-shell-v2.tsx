@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Plane,
   Search,
+  Send,
   Settings,
   Sun,
   User,
@@ -26,6 +27,14 @@ import type { ComponentType, ReactNode, SVGProps } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "@/app/(auth)/login/actions";
 import type { AdminUserProfile } from "@/lib/admin-profile";
+import {
+  ADMIN_THEME_BOOTSTRAP_SCRIPT,
+  persistAdminThemePreference,
+  readAdminThemePreference,
+  resolveAdminTheme,
+  subscribeToSystemTheme
+} from "@/lib/admin-theme";
+import type { AdminThemePreference, ResolvedAdminTheme } from "@/lib/admin-theme";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -60,11 +69,11 @@ const adminNavItems: Array<{
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/admin/models", icon: UserRound, label: "Models" },
   { href: "/admin/clients", icon: UsersRound, label: "Clients" },
-  { href: "/admin/agencies", icon: Landmark, label: "Agencies" },
   { href: "/admin/jobs", icon: BriefcaseBusiness, label: "Jobs" },
   { href: "/admin/accounting", icon: Landmark, label: "Accounting" },
   { href: "/admin/travel", icon: Plane, label: "Travel" },
   { href: "/admin/calendar", icon: CalendarDays, label: "Calendar" },
+  { href: "/admin/email", icon: Send, label: "Email Center" },
   { href: "/admin/messages", icon: MessageCircle, label: "Messages" },
   { href: "/admin/settings", icon: Settings, label: "Settings" }
 ];
@@ -101,7 +110,9 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [theme, setTheme] = useState<"system" | "light" | "dark">("dark");
+  const [theme, setTheme] = useState<AdminThemePreference>("system");
+  const [systemTheme, setSystemTheme] = useState<ResolvedAdminTheme>("dark");
+  const [isThemeReady, setIsThemeReady] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -111,6 +122,7 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
   const displayName = profile.full_name || profile.email || "Administrador";
   const title = profile.title || "Administrador";
   const avatar = profile.avatar_url;
+  const resolvedTheme = resolveAdminTheme(theme, systemTheme === "light");
 
   const groupedResults = useMemo(
     () =>
@@ -125,15 +137,19 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
   );
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("aro-admin-theme");
-    if (storedTheme === "system" || storedTheme === "light" || storedTheme === "dark") {
-      setTheme(storedTheme);
-    }
+    const systemThemeQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const unsubscribe = subscribeToSystemTheme(systemThemeQuery, setSystemTheme);
+
+    setTheme(readAdminThemePreference(window.localStorage));
+    setIsThemeReady(true);
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("aro-admin-theme", theme);
-  }, [theme]);
+    if (!isThemeReady) return;
+    persistAdminThemePreference(window.localStorage, theme);
+  }, [isThemeReady, theme]);
 
   useEffect(() => {
     setIsDrawerOpen(false);
@@ -241,9 +257,16 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
             <span>Fashion Agency</span>
           </div>
         </div>
-        <div className="admin-v2-theme-card" aria-label="Tema">
+        <div className="admin-v2-theme-card" aria-label="Aparencia" role="group">
           {(["system", "light", "dark"] as const).map((option) => (
             <button
+              aria-label={
+                option === "system"
+                  ? "Usar tema do sistema"
+                  : option === "light"
+                    ? "Usar tema claro"
+                    : "Usar tema escuro"
+              }
               aria-pressed={theme === option}
               className={theme === option ? "active" : ""}
               key={option}
@@ -259,7 +282,12 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
   );
 
   return (
-    <main className={`admin-v2 admin-v2-${theme}`}>
+    <main
+      className={`admin-v2 admin-v2-${resolvedTheme}`}
+      data-theme-preference={theme}
+      suppressHydrationWarning
+    >
+      <script dangerouslySetInnerHTML={{ __html: ADMIN_THEME_BOOTSTRAP_SCRIPT }} />
       <div className="admin-v2-orb one" />
       <div className="admin-v2-orb two" />
       <button
@@ -449,6 +477,7 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
             radial-gradient(circle at 92% 6%, rgba(107, 179, 255, 0.18), transparent 20rem),
             linear-gradient(135deg, #052968 0%, #041f4e 42%, #020c25 100%);
           color: var(--admin-text);
+          color-scheme: dark;
         }
 
         .admin-v2-light {
@@ -464,6 +493,7 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
           background:
             radial-gradient(circle at 52% 12%, rgba(114, 180, 255, 0.3), transparent 22rem),
             linear-gradient(135deg, #eef6ff 0%, #d9eaff 48%, #c6dcf7 100%);
+          color-scheme: light;
         }
 
         .admin-v2::before {
@@ -668,14 +698,23 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
           border-radius: 10px;
           background: transparent;
           color: var(--admin-muted);
+          cursor: pointer;
           font-size: 12px;
           font-weight: 800;
+          transition:
+            background 160ms ease,
+            border-color 160ms ease,
+            color 160ms ease,
+            box-shadow 160ms ease;
         }
 
         .admin-v2-theme-card button.active {
-          border-color: var(--admin-border-strong);
-          background: rgba(45, 133, 255, 0.2);
+          border-color: rgba(105, 180, 255, 0.72);
+          background: rgba(105, 180, 255, 0.22);
           color: var(--admin-text);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.18),
+            0 8px 20px rgba(20, 104, 222, 0.16);
         }
 
         .admin-v2-workspace {
