@@ -60,3 +60,18 @@ test("admin controls define no pure white field surfaces", async () => {
   assert.doesNotMatch(css, /admin-control-trigger[^}]*background:\s*(white|#fff|#ffffff)/i);
   assert.doesNotMatch(css, /admin-control-popover[^}]*background:\s*(white|#fff|#ffffff)/i);
 });
+
+test("admin appearance selector persists and resolves the device theme", async () => {
+  const shell = await file("src/components/admin/admin-shell-v2.tsx");
+
+  assert.match(shell, /const ADMIN_THEME_STORAGE_KEY = "aro-admin-theme"/);
+  assert.match(shell, /window\.matchMedia\("\(prefers-color-scheme: light\)"\)/);
+  assert.match(shell, /systemThemeQuery\.addEventListener\("change", syncSystemTheme\)/);
+  assert.match(shell, /window\.localStorage\.getItem\(ADMIN_THEME_STORAGE_KEY\)/);
+  assert.match(shell, /window\.localStorage\.setItem\(ADMIN_THEME_STORAGE_KEY, theme\)/);
+  assert.match(shell, /theme === "system" \? systemTheme : theme/);
+  assert.match(shell, /admin-v2-\$\{resolvedTheme\}/);
+  for (const label of ["Sistema", "Claro", "Escuro"]) {
+    assert.ok(shell.includes(`"${label}"`));
+  }
+});
