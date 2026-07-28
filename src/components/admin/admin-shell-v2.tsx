@@ -9,7 +9,6 @@ import {
   CalendarDays,
   ChevronDown,
   Command,
-  FileText,
   Landmark,
   LayoutDashboard,
   Menu,
@@ -28,6 +27,14 @@ import type { ComponentType, ReactNode, SVGProps } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "@/app/(auth)/login/actions";
 import type { AdminUserProfile } from "@/lib/admin-profile";
+import {
+  ADMIN_THEME_BOOTSTRAP_SCRIPT,
+  persistAdminThemePreference,
+  readAdminThemePreference,
+  resolveAdminTheme,
+  subscribeToSystemTheme
+} from "@/lib/admin-theme";
+import type { AdminThemePreference, ResolvedAdminTheme } from "@/lib/admin-theme";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -35,9 +42,6 @@ type AdminShellV2Props = {
   children: ReactNode;
   profile: AdminUserProfile;
 };
-
-type AdminThemePreference = "system" | "light" | "dark";
-type ResolvedAdminTheme = Exclude<AdminThemePreference, "system">;
 
 type SearchResult = {
   href: string;
@@ -64,14 +68,13 @@ const adminNavItems: Array<{
 }> = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/admin/models", icon: UserRound, label: "Models" },
-  { href: "/admin/presentations", icon: FileText, label: "Presentations" },
   { href: "/admin/clients", icon: UsersRound, label: "Clients" },
-  { href: "/admin/agencies", icon: Landmark, label: "Agencies" },
   { href: "/admin/jobs", icon: BriefcaseBusiness, label: "Jobs" },
   { href: "/admin/accounting", icon: Landmark, label: "Accounting" },
   { href: "/admin/travel", icon: Plane, label: "Travel" },
   { href: "/admin/calendar", icon: CalendarDays, label: "Calendar" },
   { href: "/admin/email", icon: Send, label: "Email Center" },
+  { href: "/admin/messages", icon: MessageCircle, label: "Messages" },
   { href: "/admin/settings", icon: Settings, label: "Settings" }
 ];
 
@@ -83,12 +86,6 @@ const typeLabels: Record<SearchResult["type"], string> = {
   model: "Modelo",
   travel: "Viagem"
 };
-
-const ADMIN_THEME_STORAGE_KEY = "aro-admin-theme";
-
-function isAdminThemePreference(value: string | null): value is AdminThemePreference {
-  return value === "system" || value === "light" || value === "dark";
-}
 
 function initials(name: string | null | undefined) {
   return (
@@ -125,7 +122,7 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
   const displayName = profile.full_name || profile.email || "Administrador";
   const title = profile.title || "Administrador";
   const avatar = profile.avatar_url;
-  const resolvedTheme = theme === "system" ? systemTheme : theme;
+  const resolvedTheme = resolveAdminTheme(theme, systemTheme === "light");
 
   const groupedResults = useMemo(
     () =>
@@ -141,32 +138,17 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
 
   useEffect(() => {
     const systemThemeQuery = window.matchMedia("(prefers-color-scheme: light)");
-    const syncSystemTheme = () => setSystemTheme(systemThemeQuery.matches ? "light" : "dark");
+    const unsubscribe = subscribeToSystemTheme(systemThemeQuery, setSystemTheme);
 
-    syncSystemTheme();
+    setTheme(readAdminThemePreference(window.localStorage));
+    setIsThemeReady(true);
 
-    try {
-      const storedTheme = window.localStorage.getItem(ADMIN_THEME_STORAGE_KEY);
-      if (isAdminThemePreference(storedTheme)) {
-        setTheme(storedTheme);
-      }
-    } catch {
-      setTheme("system");
-    } finally {
-      setIsThemeReady(true);
-    }
-
-    systemThemeQuery.addEventListener("change", syncSystemTheme);
-    return () => systemThemeQuery.removeEventListener("change", syncSystemTheme);
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
     if (!isThemeReady) return;
-    try {
-      window.localStorage.setItem(ADMIN_THEME_STORAGE_KEY, theme);
-    } catch {
-      // The selected theme still applies for the current session.
-    }
+    persistAdminThemePreference(window.localStorage, theme);
   }, [isThemeReady, theme]);
 
   useEffect(() => {
@@ -303,7 +285,9 @@ export function AdminShellV2({ children, profile }: AdminShellV2Props) {
     <main
       className={`admin-v2 admin-v2-${resolvedTheme}`}
       data-theme-preference={theme}
+      suppressHydrationWarning
     >
+      <script dangerouslySetInnerHTML={{ __html: ADMIN_THEME_BOOTSTRAP_SCRIPT }} />
       <div className="admin-v2-orb one" />
       <div className="admin-v2-orb two" />
       <button

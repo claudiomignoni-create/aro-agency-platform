@@ -154,26 +154,28 @@ test("email operations do not resend sent messages or reuse idempotency keys", a
   assert.doesNotMatch(actions, /\.eq\("status", "sent"\)[^]*\.update/);
 });
 
-test("email sidebar order keeps one Email Center entry and no duplicate shell", async () => {
+test("admin sidebar preserves Email Center and Messages as separate modules", async () => {
   const shell = await file("src/components/admin/admin-shell-v2.tsx");
-  const labels = [
+  const expectedLabels = [
     "Dashboard",
     "Models",
-    "Presentations",
     "Clients",
-    "Agencies",
     "Jobs",
     "Accounting",
     "Travel",
     "Calendar",
     "Email Center",
+    "Messages",
     "Settings"
   ];
-  let lastIndex = -1;
-  for (const label of labels) {
-    const index = shell.indexOf(`label: "${label}"`);
-    assert.ok(index > lastIndex, `${label} is out of order`);
-    lastIndex = index;
-  }
+  const actualLabels = Array.from(
+    shell.matchAll(/\{ href: "\/admin[^"]*", icon: [^,]+, label: "([^"]+)" \}/g),
+    (match) => match[1]
+  );
+
+  assert.deepEqual(actualLabels, expectedLabels);
+  assert.match(shell, /\{ href: "\/admin\/email", icon: Send, label: "Email Center" \}/);
+  assert.match(shell, /\{ href: "\/admin\/messages", icon: MessageCircle, label: "Messages" \}/);
   assert.equal(shell.match(/label: "Email Center"/g)?.length, 1);
+  assert.equal(shell.match(/label: "Messages"/g)?.length, 1);
 });
