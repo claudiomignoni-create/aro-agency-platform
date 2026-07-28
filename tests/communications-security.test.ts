@@ -55,6 +55,7 @@ test("Google Workspace integration is restricted to compose scope and ARO accoun
 
 test("communication migration creates token hashes, queue states and RLS", async () => {
   const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
+  const digestCalls = Array.from(sql.matchAll(/(?:([a-z_]+)\.)?digest\s*\(/gi));
 
   assert.match(sql, /google_workspace_connections/);
   assert.match(sql, /outbound_emails/);
@@ -66,6 +67,8 @@ test("communication migration creates token hashes, queue states and RLS", async
   assert.doesNotMatch(sql, /DROP TABLE/i);
   assert.doesNotMatch(sql, /DROP TYPE/i);
   assert.doesNotMatch(sql, /TRUNCATE/i);
+  assert.equal(digestCalls.length, 2);
+  assert.equal(digestCalls.every((match) => match[1] === "extensions"), true);
 });
 
 test("public presentation snapshots strip private media paths", async () => {

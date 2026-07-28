@@ -276,7 +276,7 @@ set
   expires_at = coalesce(expires_at, sent_at + interval '30 days', now() + interval '30 days'),
   public_token_hash = coalesce(
     public_token_hash,
-    encode(digest(id::text || clock_timestamp()::text || gen_random_uuid()::text, 'sha256'), 'hex')
+    encode(extensions.digest(id::text || clock_timestamp()::text || gen_random_uuid()::text, 'sha256'), 'hex')
   )
 where title is null
    or expires_at is null
@@ -1477,7 +1477,7 @@ begin
   limit 1;
 
   idempotency_key_value := 'presentation-email-' || encode(
-    digest(
+    extensions.digest(
       concat_ws(
         '|',
         p_presentation_id::text,
