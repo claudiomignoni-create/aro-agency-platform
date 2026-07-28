@@ -714,6 +714,8 @@ select public.create_presentation_delivery(
   null
 );
 
+reset role;
+
 update public.outbound_emails
 set status = 'sent',
     sent_at = now()
@@ -737,6 +739,11 @@ select
   jsonb_build_object('share_link_id', sl.id::text)
 from public.presentation_share_links sl
 where sl.public_token_hash = repeat('5', 64);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', false);
+select set_config('request.jwt.claim.role', 'authenticated', false);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
 
 do $$
 declare
