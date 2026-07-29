@@ -154,10 +154,12 @@ export async function createPresentationAction(formData: FormData) {
   if (error) throw error;
 
   revalidatePath("/admin/presentations");
-  redirect(`/admin/presentations/${data.id}?token=${encodeURIComponent(token)}`);
+  redirect(
+    `/admin/presentations/${data.id}/edit?step=models&token=${encodeURIComponent(token)}`
+  );
 }
 
-export async function updatePresentationAction(id: string, formData: FormData) {
+async function savePresentationDraft(id: string, formData: FormData) {
   const profile = await requireRole(["admin"]);
   const supabase = await createClient();
   const title = textValue(formData, "title");
@@ -202,7 +204,22 @@ export async function updatePresentationAction(id: string, formData: FormData) {
 
   revalidatePath(`/admin/presentations/${id}`);
   revalidatePath(`/admin/presentations/${id}/edit`);
-  redirect(`/admin/presentations/${id}`);
+}
+
+function presentationEditRedirect(id: string, formData: FormData) {
+  const requestedStep = textValue(formData, "next_step");
+  const step = ["info", "materials", "models", "review"].includes(requestedStep)
+    ? requestedStep
+    : "models";
+  const token = textValue(formData, "public_token");
+  return `/admin/presentations/${id}/edit?step=${step}&notice=saved${
+    token ? `&token=${encodeURIComponent(token)}` : ""
+  }`;
+}
+
+export async function updatePresentationAction(id: string, formData: FormData) {
+  await savePresentationDraft(id, formData);
+  redirect(presentationEditRedirect(id, formData));
 }
 
 async function buildPresentationSnapshot(id: string) {
@@ -376,6 +393,35 @@ export async function publishPresentationAction(id: string) {
   revalidatePath(`/admin/presentations/${id}`);
   revalidatePath(`/admin/presentations/${id}/preview`);
   redirect(`/admin/presentations/${id}`);
+}
+
+export async function publishUpdatedPresentationAction(id: string, formData: FormData) {
+  await savePresentationDraft(id, formData);
+  const profile = await requireRole(["admin"]);
+  const supabase = await createClient();
+  const snapshot = await buildPresentationSnapshot(id);
+  const token = textValue(formData, "public_token");
+
+  if (!snapshot.models.length) {
+    redirect(
+      `/admin/presentations/${id}/edit?step=models&error=no-models${
+        token ? `&token=${encodeURIComponent(token)}` : ""
+      }`
+    );
+  }
+
+  const { error } = await supabase.rpc("publish_presentation_snapshot", {
+    p_admin_id: profile.id,
+    p_presentation_id: id,
+    p_snapshot: snapshot
+  });
+  if (error) throw error;
+
+  revalidatePath(`/admin/presentations/${id}`);
+  revalidatePath(`/admin/presentations/${id}/preview`);
+  redirect(
+    `/admin/presentations/${id}${token ? `?token=${encodeURIComponent(token)}` : ""}`
+  );
 }
 
 export async function revokePresentationAction(id: string) {

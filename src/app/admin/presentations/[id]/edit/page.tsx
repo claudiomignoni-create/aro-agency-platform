@@ -3,20 +3,31 @@ import {
   AdminEmptyState,
   AdminPage,
   AdminPageHeader,
-  AdminSearchField,
-  AdminSection,
-  AdminSelectField,
-  AdminTextField
+  AdminSection
 } from "@/components/admin/admin-ui";
+import {
+  PresentationEditor,
+  type PresentationEditorConfig,
+  type PresentationEditorModel,
+  type PresentationEditorStep
+} from "@/components/admin/presentation-editor";
 import { requireRole } from "@/lib/auth";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createClient } from "@/lib/supabase/server";
 import { createModelMainImageUrls, listModels } from "@/lib/models";
-import { updatePresentationAction } from "@/app/admin/presentations/actions";
+import {
+  publishUpdatedPresentationAction,
+  updatePresentationAction
+} from "@/app/admin/presentations/actions";
 
 type EditPresentationPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string; q?: string }>;
+  searchParams?: Promise<{
+    error?: string;
+    notice?: string;
+    step?: string;
+    token?: string;
+  }>;
 };
 
 type PresentationModelRow = {
@@ -28,26 +39,31 @@ type PresentationModelRow = {
   position: number;
 };
 
-type MediaRow = {
-  id: string;
-  media_type: string;
-  model_id: string;
-  storage_path: string;
-  thumbnail_path: string | null;
-  title: string | null;
+type SelectedMediaRow = {
+  media: { media_type: string } | Array<{ media_type: string }> | null;
+  model_media_id: string | null;
+  presentation_model:
+    | { model_id: string; presentation_id: string }
+    | Array<{ model_id: string; presentation_id: string }>;
 };
 
 function option(label: string, value: string) {
   return { label, value };
 }
 
-function includesQuery(values: Array<string | null | undefined>, q: string) {
-  if (!q) return true;
-  const normalized = q.toLowerCase();
-  return values.some((value) => value?.toLowerCase().includes(normalized));
+function editorStep(value?: string): PresentationEditorStep {
+  if (value === "info" || value === "materials" || value === "review") return value;
+  return "models";
 }
 
-export default async function EditPresentationPage({ params, searchParams }: EditPresentationPageProps) {
+function relation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function EditPresentationPage({
+  params,
+  searchParams
+}: EditPresentationPageProps) {
   await requireRole(["admin"]);
   const { id } = await params;
   const query = (await searchParams) ?? {};
@@ -73,7 +89,7 @@ export default async function EditPresentationPage({ params, searchParams }: Edi
       .eq("presentation_id", id),
     supabase
       .from("presentation_model_media")
-      .select("model_media_id, presentation_model:presentation_models!inner(presentation_id, model_id)")
+      .select("model_media_id, media:model_media(media_type), presentation_model:presentation_models!inner(presentation_id, model_id)")
       .eq("presentation_model.presentation_id", id),
     supabase.from("clients").select("id, company_name").order("company_name", { ascending: true }).limit(100),
     supabase.from("partner_agencies").select("id, display_name").order("display_name", { ascending: true }).limit(100),
@@ -87,8 +103,8 @@ export default async function EditPresentationPage({ params, searchParams }: Edi
         <AdminPageHeader eyebrow="Presentation" title="Editar apresentação" />
         <AdminSection>
           <AdminEmptyState
-            description="O editor será ativado após a migration 025."
-            title="Schema pendente"
+            description="O editor ainda não está disponível neste ambiente."
+            title="Apresentações indisponíveis"
           />
         </AdminSection>
       </AdminPage>
@@ -106,59 +122,58 @@ export default async function EditPresentationPage({ params, searchParams }: Edi
   if (!presentation) {
     return (
       <AdminPage>
-        <AdminPageHeader eyebrow="Presentation" title="Apresentação não encontrada" />
+        <AdminPageHeader
+          actions={<Link className="button secondary" href="/admin/presentations">Voltar</Link>}
+          description="O registro solicitado não existe ou não está mais disponível."
+          eyebrow="Presentation"
+          title="Apresentação não encontrada"
+        />
       </AdminPage>
     );
   }
 
-  const selectedByModel = new Map<string, PresentationModelRow>();
+  const configs: Record<string, PresentationEditorConfig> = {};
+  for (const [index, model] of models.entries()) {
+    configs[model.id] = {
+      highlighted: false,
+      includeLocation: true,
+      includeMeasurements: true,
+      includeSocialLinks: false,
+      media: {},
+      position: index,
+      selected: false
+    };
+  }
   for (const row of (selectedResult.data ?? []) as PresentationModelRow[]) {
-    selectedByModel.set(row.model_id, row);
+    configs[row.model_id] = {
+      highlighted: Boolean(row.model_snapshot?.highlighted),
+      includeLocation: row.include_location,
+      includeMeasurements: row.include_measurements,
+      includeSocialLinks: row.include_social_links,
+      media: {},
+      position: row.position,
+      selected: true
+    };
+  }
+  for (const row of (selectedMediaResult.data ?? []) as SelectedMediaRow[]) {
+    const presentationModel = relation(row.presentation_model);
+    const media = relation(row.media);
+    if (!row.model_media_id || !presentationModel || !configs[presentationModel.model_id]) continue;
+    configs[presentationModel.model_id].media[row.model_media_id] =
+      media?.media_type ?? "portfolio";
   }
 
-  const selectedMediaIds = new Set(
-    (selectedMediaResult.data ?? [])
-      .map((row) => row.model_media_id as string | null)
-      .filter(Boolean) as string[]
-  );
-
-  const filteredModels = models.filter((model) =>
-    includesQuery(
-      [
-        model.display_name,
-        model.stage_name,
-        model.email,
-        model.current_city,
-        model.current_country,
-        model.base_city,
-        model.base_country,
-        model.nationality
-      ],
-      query.q ?? ""
-    )
-  );
-  const modelIds = filteredModels.map((model) => model.id);
-  const mainImageUrls = await createModelMainImageUrls(filteredModels);
-  const mediaResult = modelIds.length
-    ? await supabase
-        .from("model_media")
-        .select("id, model_id, media_type, storage_path, thumbnail_path, title")
-        .in("model_id", modelIds)
-        .eq("status", "approved")
-        .neq("visibility", "private")
-        .order("sort_order", { ascending: true, nullsFirst: false })
-    : { data: [], error: null };
-
-  if (mediaResult.error) throw mediaResult.error;
-
-  const mediaByModel = new Map<string, MediaRow[]>();
-  for (const media of (mediaResult.data ?? []) as MediaRow[]) {
-    const bucket = mediaByModel.get(media.model_id) ?? [];
-    bucket.push(media);
-    mediaByModel.set(media.model_id, bucket);
-  }
-
-  const saveAction = updatePresentationAction.bind(null, id);
+  const mainImageUrls = await createModelMainImageUrls(models);
+  const editorModels: PresentationEditorModel[] = models.map((model) => ({
+    categories: model.categories ?? [],
+    city: model.current_city || model.base_city || model.city,
+    country: model.current_country || model.base_country || model.country,
+    gender: model.gender,
+    heightCm: model.height_cm,
+    id: model.id,
+    imageUrl: mainImageUrls[model.id] ?? null,
+    name: model.stage_name || model.display_name
+  }));
   const clientOptions = [
     option("Sem cliente", "none"),
     ...((clientsResult.data ?? []) as Array<{ company_name: string; id: string }>).map((client) =>
@@ -167,168 +182,72 @@ export default async function EditPresentationPage({ params, searchParams }: Edi
   ];
   const agencyOptions = [
     option("Sem agência", "none"),
-    ...(((agenciesResult.data ?? []) as Array<{ display_name: string; id: string }>).map((agency) =>
+    ...((agenciesResult.data ?? []) as Array<{ display_name: string; id: string }>).map((agency) =>
       option(agency.display_name, agency.id)
-    ))
+    )
   ];
   const jobOptions = [
     option("Sem job", "none"),
-    ...((jobsResult.data ?? []) as Array<{ brand_name: string | null; id: string; project_name: string | null; start_at: string }>).map((job) =>
-      option(job.project_name || job.brand_name || new Date(job.start_at).toLocaleDateString("pt-BR"), job.id)
+    ...((jobsResult.data ?? []) as Array<{
+      brand_name: string | null;
+      id: string;
+      project_name: string | null;
+      start_at: string;
+    }>).map((job) =>
+      option(
+        job.project_name || job.brand_name || new Date(job.start_at).toLocaleDateString("pt-BR"),
+        job.id
+      )
     )
   ];
+  const saveAction = updatePresentationAction.bind(null, id);
+  const publishAction = publishUpdatedPresentationAction.bind(null, id);
+  const detailHref = `/admin/presentations/${id}${query.token ? `?token=${encodeURIComponent(query.token)}` : ""}`;
 
   return (
     <AdminPage>
       <AdminPageHeader
-        actions={<Link className="button secondary" href={`/admin/presentations/${id}`}>Voltar</Link>}
-        description="Selecione modelos e materiais. Ao publicar, o sistema gera um snapshot sanitizado e imutável."
+        actions={<Link className="button secondary" href={detailHref}>Voltar</Link>}
+        description="Selecione modelos diretamente pelas fotos e carregue os materiais somente quando precisar configurá-los."
         eyebrow="Presentation"
-        title="Editar apresentação"
+        title={presentation.title}
       />
 
       {query.error === "no-models" ? (
-        <AdminSection>
+        <AdminSection className="admin-notice">
           <p className="muted">Selecione pelo menos um modelo antes de publicar.</p>
         </AdminSection>
       ) : null}
+      {query.notice === "saved" ? (
+        <AdminSection className="admin-notice">
+          <p className="muted">Rascunho salvo.</p>
+        </AdminSection>
+      ) : null}
 
-      <AdminSection title="Buscar modelos">
-        <form className="admin-form-grid" method="get">
-          <AdminSearchField defaultValue={query.q} placeholder="Buscar por nome, e-mail, cidade, país..." />
-          <button className="button" type="submit">Buscar</button>
-          <Link className="button secondary" href={`/admin/presentations/${id}/edit`}>Limpar</Link>
-        </form>
-      </AdminSection>
-
-      <AdminSection title="Dados e seleção" meta={`${filteredModels.length} modelo(s)`}>
-        <form action={saveAction} className="admin-presentation-editor">
-          <div className="admin-form-grid">
-            <AdminTextField defaultValue={presentation.title} label="Título" name="title" />
-            <AdminTextField defaultValue={presentation.purpose ?? ""} label="Finalidade" name="purpose" />
-            <AdminSelectField
-              defaultValue={presentation.language}
-              label="Idioma"
-              name="language"
-              options={[option("Português", "pt-BR"), option("English", "en")]}
-            />
-            <AdminSelectField
-              defaultValue={presentation.client_id ?? "none"}
-              label="Cliente"
-              name="client_id"
-              options={clientOptions}
-            />
-            <AdminSelectField
-              defaultValue={presentation.agency_id ?? "none"}
-              label="Agência"
-              name="agency_id"
-              options={agencyOptions}
-            />
-            <AdminSelectField
-              defaultValue={presentation.job_id ?? "none"}
-              label="Job"
-              name="job_id"
-              options={jobOptions}
-            />
-            <AdminTextField
-              defaultValue={presentation.expires_at ? presentation.expires_at.slice(0, 16) : ""}
-              label="Expira em"
-              name="expires_at"
-            />
-            <label className="admin-field span-2">
-              <span>Descrição</span>
-              <textarea defaultValue={presentation.description ?? ""} name="description" rows={4} />
-            </label>
-            <label className="admin-field">
-              <span>Downloads</span>
-              <span className="admin-inline-check">
-                <input defaultChecked={presentation.allow_downloads} name="allow_downloads" type="checkbox" /> Permitir
-              </span>
-            </label>
-          </div>
-
-          <div className="admin-checkbox-grid presentation-model-grid">
-            {filteredModels.map((model, index) => {
-              const selected = selectedByModel.get(model.id);
-              const mediaItems = mediaByModel.get(model.id) ?? [];
-              const displayName = model.stage_name || model.display_name;
-              return (
-                <article className="admin-selection-card" key={model.id}>
-                  <label className="admin-inline-check">
-                    <input defaultChecked={Boolean(selected)} name="model_id" type="checkbox" value={model.id} />
-                    <strong>{displayName}</strong>
-                  </label>
-                  {mainImageUrls[model.id] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img alt={displayName} src={mainImageUrls[model.id]} />
-                  ) : (
-                    <span className="admin-selection-placeholder">{displayName.slice(0, 2).toUpperCase()}</span>
-                  )}
-                  <input
-                    aria-label={`Ordem de ${displayName}`}
-                    defaultValue={selected?.position ?? index}
-                    name={`position_${model.id}`}
-                    type="hidden"
-                  />
-                  <label className="admin-inline-check">
-                    <input
-                      defaultChecked={selected?.include_measurements ?? true}
-                      name={`include_measurements_${model.id}`}
-                      type="checkbox"
-                    /> Medidas
-                  </label>
-                  <label className="admin-inline-check">
-                    <input
-                      defaultChecked={selected?.include_location ?? true}
-                      name={`include_location_${model.id}`}
-                      type="checkbox"
-                    /> Localização
-                  </label>
-                  <label className="admin-inline-check">
-                    <input
-                      defaultChecked={selected?.include_social_links ?? false}
-                      name={`include_social_links_${model.id}`}
-                      type="checkbox"
-                    /> Redes sociais
-                  </label>
-                  <label className="admin-inline-check">
-                    <input
-                      defaultChecked={Boolean(selected?.model_snapshot?.highlighted)}
-                      name="highlighted_model_id"
-                      type="radio"
-                      value={model.id}
-                    /> Destaque
-                  </label>
-                  <div className="admin-media-select-list">
-                    <span>Materiais</span>
-                    {mediaItems.length ? (
-                      mediaItems.map((media) => (
-                        <label className="admin-inline-check" key={media.id}>
-                          <input
-                            defaultChecked={selectedMediaIds.has(media.id)}
-                            name={`media_${model.id}`}
-                            type="checkbox"
-                            value={media.id}
-                          />
-                          <input name={`media_type_${media.id}`} type="hidden" value={media.media_type} />
-                          {media.title || media.media_type}
-                        </label>
-                      ))
-                    ) : (
-                      <small className="muted">Sem mídia aprovada pública/client-only.</small>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          <div className="actions">
-            <button className="button" type="submit">Salvar seleção</button>
-            <Link className="button secondary" href={`/admin/presentations/${id}/preview`}>Preview</Link>
-          </div>
-        </form>
-      </AdminSection>
+      <PresentationEditor
+        action={saveAction}
+        agencyOptions={agencyOptions}
+        cancelHref={detailHref}
+        clientOptions={clientOptions}
+        configs={configs}
+        details={{
+          agencyId: presentation.agency_id,
+          allowDownloads: presentation.allow_downloads,
+          clientId: presentation.client_id,
+          description: presentation.description,
+          expiresAt: presentation.expires_at,
+          jobId: presentation.job_id,
+          language: presentation.language,
+          purpose: presentation.purpose,
+          title: presentation.title
+        }}
+        initialStep={editorStep(query.step)}
+        jobOptions={jobOptions}
+        models={editorModels}
+        presentationId={id}
+        publicToken={query.token}
+        publishAction={publishAction}
+      />
     </AdminPage>
   );
 }
