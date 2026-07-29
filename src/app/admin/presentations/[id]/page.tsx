@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { AdminDataTable, AdminPage, AdminPageHeader, AdminSection, AdminStatusPill } from "@/components/admin/admin-ui";
+import { EmailOperationFeedback } from "@/components/admin/email-center/email-operational-banner";
+import { PresentationPublicLinkActions } from "@/components/admin/presentation-public-link-actions";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -11,8 +13,16 @@ import {
 
 type PresentationDetailProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ token?: string }>;
+  searchParams?: Promise<{ notice?: string; token?: string }>;
 };
+
+function noticeCopy(notice?: string) {
+  if (notice === "sent") return "O Gmail confirmou o envio imediato.";
+  if (notice === "gmail-draft-created") return "O rascunho foi criado na conta Gmail conectada.";
+  if (notice === "scheduled") return "A entrega foi registrada na fila para a data escolhida.";
+  if (notice === "draft-saved") return "O envio seguro foi salvo somente no sistema.";
+  return null;
+}
 
 export default async function PresentationDetailPage({ params, searchParams }: PresentationDetailProps) {
   await requireRole(["admin"]);
@@ -42,12 +52,51 @@ export default async function PresentationDetailPage({ params, searchParams }: P
   const snapshot = (presentation.snapshot ?? {}) as {
     models?: Array<{ display_name: string; media?: unknown[] }>;
   };
+  const [recipientsResult, emailsResult, selectionsResult, opensResult] =
+    await Promise.all([
+      supabase
+        .from("presentation_recipients")
+        .select("id", { count: "exact", head: true })
+        .eq("presentation_id", id),
+      supabase
+        .from("outbound_emails")
+        .select("created_at, status")
+        .eq("presentation_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("presentation_model_selections")
+        .select("decision")
+        .eq("presentation_id", id)
+        .limit(500),
+      supabase
+        .from("presentation_access_events")
+        .select("id", { count: "exact", head: true })
+        .eq("presentation_id", id)
+        .eq("event_type", "opened")
+    ]);
+  if (recipientsResult.error) throw recipientsResult.error;
+  if (emailsResult.error) throw emailsResult.error;
+  if (selectionsResult.error) throw selectionsResult.error;
+  if (opensResult.error) throw opensResult.error;
+
+  const selectionCounts = { maybe: 0, no: 0, yes: 0 };
+  for (const selection of selectionsResult.data ?? []) {
+    if (selection.decision in selectionCounts) {
+      selectionCounts[selection.decision as keyof typeof selectionCounts] += 1;
+    }
+  }
+  const notice = noticeCopy(query.notice);
+  const publicUrl = query.token
+    ? `${process.env.NEXT_PUBLIC_APP_URL ?? "https://aro-agency-platform.vercel.app"}/p/${query.token}`
+    : null;
 
   return (
     <AdminPage>
       <AdminPageHeader
         actions={
           <>
+            <Link className="button secondary" href="/admin/presentations">Apresentações</Link>
             <Link className="button secondary" href={`/admin/presentations/${id}/edit`}>Editar</Link>
             <Link className="button secondary" href={`/admin/presentations/${id}/preview`}>Preview</Link>
             <Link className="button secondary" href={`/admin/presentations/${id}/email`}>Enviar</Link>
@@ -59,10 +108,15 @@ export default async function PresentationDetailPage({ params, searchParams }: P
         title={presentation.title}
       />
 
-      {query.token ? (
+      {notice ? (
+        <EmailOperationFeedback message={notice} success title="Operação concluída" />
+      ) : null}
+
+      {publicUrl ? (
         <AdminSection title="Link público criado">
           <p className="muted">Copie agora. Por segurança, o token completo não fica armazenado em texto puro.</p>
-          <code>{`${process.env.NEXT_PUBLIC_APP_URL ?? "https://aro-agency-platform.vercel.app"}/p/${query.token}`}</code>
+          <code>{publicUrl}</code>
+          <PresentationPublicLinkActions url={publicUrl} />
         </AdminSection>
       ) : null}
 
@@ -80,6 +134,16 @@ export default async function PresentationDetailPage({ params, searchParams }: P
           <strong>{presentation.expires_at ? new Date(presentation.expires_at).toLocaleString("pt-BR") : "Sem expiração"}</strong>
           <span>Downloads</span>
           <strong>{presentation.allow_downloads ? "Permitidos" : "Bloqueados"}</strong>
+          <span>Destinatários</span>
+          <strong>{recipientsResult.count ?? 0}</strong>
+          <span>Última entrega</span>
+          <strong>
+            {emailsResult.data?.[0]?.created_at
+              ? `${new Date(emailsResult.data[0].created_at).toLocaleString("pt-BR")} · ${emailsResult.data[0].status}`
+              : "—"}
+          </strong>
+          <span>Aberturas</span>
+          <strong>{opensResult.count ?? 0}</strong>
         </div>
         <div className="actions">
           <form action={publishAction}>
@@ -96,6 +160,35 @@ export default async function PresentationDetailPage({ params, searchParams }: P
           <form action={archiveAction}>
             <button className="button secondary" type="submit">Arquivar</button>
           </form>
+        </div>
+      </AdminSection>
+
+      <AdminSection title="Fluxo operacional">
+        <div className="admin-kv-grid">
+          <span>1. Criar</span>
+          <strong>Concluído</strong>
+          <span>2. Adicionar modelos</span>
+          <strong>{snapshot.models?.length ? "Concluído" : "Pendente"}</strong>
+          <span>3. Organizar materiais</span>
+          <strong>{snapshot.models?.some((model) => model.media?.length) ? "Concluído" : "Pendente"}</strong>
+          <span>4. Publicar</span>
+          <strong>{presentation.published_at ? "Concluído" : "Pendente"}</strong>
+          <span>5. Enviar</span>
+          <strong>{(recipientsResult.count ?? 0) > 0 ? "Iniciado" : "Pendente"}</strong>
+          <span>6. Acompanhar</span>
+          <strong>
+            {(opensResult.count ?? 0) > 0 || selectionsResult.data?.length
+              ? "Com atividade"
+              : "Aguardando"}
+          </strong>
+        </div>
+      </AdminSection>
+
+      <AdminSection title="Seleções recebidas">
+        <div className="admin-kv-grid">
+          <span>Yes</span><strong>{selectionCounts.yes}</strong>
+          <span>Maybe</span><strong>{selectionCounts.maybe}</strong>
+          <span>No</span><strong>{selectionCounts.no}</strong>
         </div>
       </AdminSection>
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 const aroGoogleEmail = "claudio@arolab.co";
 
-export function GoogleTestEmailForm() {
+export function GoogleTestEmailForm({ enabled = true }: { enabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
@@ -20,7 +20,12 @@ export function GoogleTestEmailForm() {
 
   return (
     <>
-      <button className="button secondary" onClick={() => setOpen(true)} type="button">
+      <button
+        className="button secondary"
+        disabled={!enabled}
+        onClick={() => setOpen(true)}
+        type="button"
+      >
         Enviar teste para {aroGoogleEmail}
       </button>
       {open ? (

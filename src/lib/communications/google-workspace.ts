@@ -10,6 +10,19 @@ export const googleScopes = [
   "https://www.googleapis.com/auth/gmail.compose"
 ] as const;
 
+export function googleOAuthRedirectConfigured() {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  if (!appUrl || !redirectUri) return false;
+
+  try {
+    const expected = new URL("/api/integrations/google/callback", appUrl);
+    return new URL(redirectUri).toString() === expected.toString();
+  } catch {
+    return false;
+  }
+}
+
 export type GoogleTokenResponse = {
   access_token: string;
   expires_in?: number;
@@ -32,7 +45,8 @@ export function googleOAuthConfigured() {
     process.env.GOOGLE_CLIENT_ID &&
       process.env.GOOGLE_CLIENT_SECRET &&
       process.env.GOOGLE_OAUTH_REDIRECT_URI &&
-      process.env.EMAIL_TOKEN_ENCRYPTION_KEY
+      process.env.EMAIL_TOKEN_ENCRYPTION_KEY &&
+      googleOAuthRedirectConfigured()
   );
 }
 

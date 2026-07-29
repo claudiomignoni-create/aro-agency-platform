@@ -6,7 +6,19 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createPublicToken } from "@/lib/communications/data";
-import { assertSafeRecipientForRealSend, getUsableGoogleAccessToken } from "@/lib/communications/google-server";
+import { deliverOutboundEmailNow } from "@/lib/communications/email-delivery-server";
+import {
+  classifyEmailDeliveryError,
+  EmailDeliveryError
+} from "@/lib/communications/email-delivery-errors";
+import {
+  assertSafeRecipientForRealSend,
+  getGoogleConnectionForDelivery
+} from "@/lib/communications/google-server";
+import {
+  communicationsSchedulerConfigured,
+  communicationsSchedulerEnabled
+} from "@/lib/communications/operational-state-server";
 import { deterministicToken, randomToken, sha256 } from "@/lib/communications/security";
 
 function textValue(formData: FormData, key: string) {
@@ -433,24 +445,48 @@ export async function createPresentationEmailsAction(id: string, formData: FormD
     redirect(`/admin/presentations/${id}/email?error=not-published`);
   }
 
-  const mode = textValue(formData, "mode") || "system_draft";
-  if (mode === "send_now" || mode === "scheduled") {
-    for (const recipient of recipients) assertSafeRecipientForRealSend(recipient);
+  const requestedMode = textValue(formData, "mode") || "system_draft";
+  const mode = ["gmail_draft", "scheduled", "send_now", "system_draft"].includes(
+    requestedMode
+  )
+    ? requestedMode
+    : "system_draft";
+  let connectionId: string | null = null;
+  try {
+    if (mode !== "system_draft" && process.env.VERCEL_ENV === "preview") {
+      throw new EmailDeliveryError("external-send-disabled");
+    }
+    if (mode === "scheduled") {
+      if (!communicationsSchedulerConfigured() || !communicationsSchedulerEnabled()) {
+        throw new EmailDeliveryError("queue-not-configured");
+      }
+    }
+    if (mode === "send_now" || mode === "scheduled") {
+      for (const recipient of recipients) assertSafeRecipientForRealSend(recipient);
+    }
+    if (mode !== "system_draft") {
+      connectionId = (await getGoogleConnectionForDelivery(profile.id)).id;
+    }
+  } catch (connectionError) {
+    const classified = classifyEmailDeliveryError(connectionError);
+    redirect(`/admin/presentations/${id}/email?error=${classified.code}`);
   }
 
-  const connection =
-    mode === "gmail_draft" || mode === "send_now" || mode === "scheduled"
-      ? await getUsableGoogleAccessToken(profile.id)
-      : null;
   const snapshot = (presentation.snapshot ?? {}) as { models?: unknown[] };
   const subject = textValue(formData, "subject") || `ARO — ${presentation.title}`;
   const requestNonce = textValue(formData, "request_nonce") || `${id}-${Date.now()}`;
   const schedule: Partial<{ scheduled_at: string; scheduled_timezone: string }> =
     mode === "scheduled" ? scheduledDateTime(id, formData) : {};
   let firstToken: string | null = null;
+  let deliveryErrorCode: string | null = null;
+  let completedDeliveries = 0;
+  const preferredRecipientName = textValue(formData, "recipient_name");
 
   for (const recipientEmail of recipients) {
-    const recipientName = recipientEmail.split("@")[0] ?? "contato";
+    const recipientName =
+      recipients.length === 1 && preferredRecipientName
+        ? preferredRecipientName.slice(0, 160)
+        : recipientEmail.split("@")[0] ?? "contato";
     const token = deterministicToken(
       "presentation-delivery",
       [
@@ -471,24 +507,62 @@ export async function createPresentationEmailsAction(id: string, formData: FormD
       recipientName,
       title: presentation.title
     });
-    const { error: deliveryError } = await supabase.rpc("create_presentation_delivery", {
-      p_body_html: htmlFromText(bodyText),
-      p_body_text: bodyText,
-      p_mode: mode,
-      p_presentation_id: id,
-      p_public_token_hash: hash,
-      p_recipient_email: recipientEmail,
-      p_recipient_name: recipientName,
-      p_request_nonce: requestNonce,
-      p_scheduled_at: schedule.scheduled_at ?? null,
-      p_scheduled_timezone: schedule.scheduled_timezone ?? null,
-      p_sender_connection_id: connection?.connectionId ?? null,
-      p_subject: subject
-    });
-    if (deliveryError) throw deliveryError;
+    try {
+      const { data: delivery, error: deliveryError } = await supabase.rpc(
+        "create_presentation_delivery",
+        {
+          p_body_html: htmlFromText(bodyText),
+          p_body_text: bodyText,
+          p_mode: mode,
+          p_presentation_id: id,
+          p_public_token_hash: hash,
+          p_recipient_email: recipientEmail,
+          p_recipient_name: recipientName,
+          p_request_nonce: requestNonce,
+          p_scheduled_at: schedule.scheduled_at ?? null,
+          p_scheduled_timezone: schedule.scheduled_timezone ?? null,
+          p_sender_connection_id: connectionId,
+          p_subject: subject
+        }
+      );
+      if (deliveryError) throw deliveryError;
+
+      const outboundEmailId = (
+        delivery as { outbound_email_id?: unknown } | null
+      )?.outbound_email_id;
+      if (
+        (mode === "send_now" || mode === "gmail_draft") &&
+        typeof outboundEmailId === "string"
+      ) {
+        await deliverOutboundEmailNow(outboundEmailId);
+      }
+      completedDeliveries += 1;
+    } catch (deliveryError) {
+      deliveryErrorCode = classifyEmailDeliveryError(deliveryError).code;
+      break;
+    }
+  }
+
+  if (deliveryErrorCode) {
+    redirect(
+      `/admin/presentations/${id}/email?error=${deliveryErrorCode}${
+        completedDeliveries ? "&partial=1" : ""
+      }`
+    );
   }
 
   revalidatePath(`/admin/presentations/${id}`);
   revalidatePath(`/admin/presentations/${id}/email`);
-  redirect(firstToken ? `/admin/presentations/${id}?token=${encodeURIComponent(firstToken)}` : `/admin/presentations/${id}`);
+  revalidatePath("/admin/email");
+  const notice =
+    mode === "send_now"
+      ? "sent"
+      : mode === "gmail_draft"
+        ? "gmail-draft-created"
+        : mode === "scheduled"
+          ? "scheduled"
+          : "draft-saved";
+  const query = new URLSearchParams({ notice });
+  if (firstToken) query.set("token", firstToken);
+  redirect(`/admin/presentations/${id}?${query.toString()}`);
 }

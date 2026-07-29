@@ -53,6 +53,13 @@ export type Presentation = {
   title: string;
 };
 
+export type PresentationOperationalSummary = Presentation & {
+  last_delivery_at: string | null;
+  model_count: number;
+  recipient_count: number;
+  selection_count: number;
+};
+
 export type ModelUpdateRequest = {
   created_at: string;
   due_at: string | null;
@@ -231,6 +238,73 @@ export async function listPresentations() {
   if (error) throw error;
 
   return (data ?? []) as Presentation[];
+}
+
+export async function listPresentationOperationalSummaries() {
+  const presentations = await listPresentations();
+  if (!presentations.length) return [] as PresentationOperationalSummary[];
+
+  const supabase = await createClient();
+  const presentationIds = presentations.map((presentation) => presentation.id);
+  const [modelsResult, recipientsResult, emailsResult, selectionsResult] =
+    await Promise.all([
+      supabase
+        .from("presentation_models")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000),
+      supabase
+        .from("presentation_recipients")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000),
+      supabase
+        .from("outbound_emails")
+        .select("presentation_id, created_at")
+        .in("presentation_id", presentationIds)
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("presentation_model_selections")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000)
+    ]);
+
+  for (const result of [modelsResult, recipientsResult, emailsResult]) {
+    if (result.error) throw result.error;
+  }
+  if (selectionsResult.error && !isMissingSchemaError(selectionsResult.error)) {
+    throw selectionsResult.error;
+  }
+
+  const counts = <T extends { presentation_id: string | null }>(rows: T[]) =>
+    rows.reduce<Record<string, number>>((result, row) => {
+      if (row.presentation_id) {
+        result[row.presentation_id] = (result[row.presentation_id] ?? 0) + 1;
+      }
+      return result;
+    }, {});
+  const modelCounts = counts(modelsResult.data ?? []);
+  const recipientCounts = counts(recipientsResult.data ?? []);
+  const selectionCounts = counts(selectionsResult.data ?? []);
+  const lastDeliveries = (emailsResult.data ?? []).reduce<Record<string, string>>(
+    (result, email) => {
+      if (email.presentation_id && !result[email.presentation_id]) {
+        result[email.presentation_id] = email.created_at;
+      }
+      return result;
+    },
+    {}
+  );
+
+  return presentations.map((presentation) => ({
+    ...presentation,
+    last_delivery_at: lastDeliveries[presentation.id] ?? null,
+    model_count: modelCounts[presentation.id] ?? 0,
+    recipient_count: recipientCounts[presentation.id] ?? 0,
+    selection_count: selectionCounts[presentation.id] ?? 0
+  }));
 }
 
 export async function listModelUpdateRequests() {

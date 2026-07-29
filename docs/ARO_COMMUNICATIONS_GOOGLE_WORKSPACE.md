@@ -19,6 +19,9 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=https://aro-agency-platform.vercel.app/api/integrations/google/callback
 EMAIL_TOKEN_ENCRYPTION_KEY=
 NEXT_PUBLIC_APP_URL=https://aro-agency-platform.vercel.app
+EMAIL_EXTERNAL_SEND_ENABLED=false
+COMMUNICATIONS_CRON_SECRET=
+COMMUNICATIONS_QUEUE_SCHEDULER_ENABLED=false
 ```
 
 `EMAIL_TOKEN_ENCRYPTION_KEY` should be a high-entropy 32-byte base64 or hex value. Tokens are encrypted with AES-256-GCM.
@@ -38,6 +41,21 @@ NEXT_PUBLIC_APP_URL=https://aro-agency-platform.vercel.app
 10. In Admin Settings, open Integrations and connect Google Workspace.
 
 The app expects the connected account to be exactly `claudio@arolab.co`. Any other account is rejected.
+
+## Queue scheduler
+
+The protected queue endpoint is shared by immediate administration and scheduled delivery:
+
+`/api/communications/process-email-queue`
+
+The repository includes `.github/workflows/arolab-communications-queue.yml`. It remains skipped until all of the following are configured:
+
+1. Add the same high-entropy `COMMUNICATIONS_CRON_SECRET` to Vercel Production and GitHub Actions.
+2. Set `COMMUNICATIONS_QUEUE_SCHEDULER_ENABLED=true` in Vercel Production.
+3. Set the GitHub Actions repository variable `COMMUNICATIONS_QUEUE_SCHEDULER_ENABLED=true`.
+4. Keep Preview with external sending and the scheduler disabled.
+
+The workflow processes a small batch every 15 minutes, does not print the response body or secret, and uses GitHub concurrency to avoid overlapping runs. Administrators can also use `Processar fila agora` without exposing the cron secret to the browser.
 
 ## Scopes
 

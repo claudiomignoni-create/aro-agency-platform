@@ -1,0 +1,47 @@
+name: AROLAB Communications Queue
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arolab-communications-queue
+  cancel-in-progress: false
+
+jobs:
+  process-email-queue:
+    if: ${{ vars.COMMUNICATIONS_QUEUE_SCHEDULER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate scheduler secret
+        env:
+          COMMUNICATIONS_CRON_SECRET: ${{ secrets.COMMUNICATIONS_CRON_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${COMMUNICATIONS_CRON_SECRET:-}" ]; then
+            echo "COMMUNICATIONS_CRON_SECRET is not configured."
+            exit 1
+          fi
+          echo "Scheduler secret is configured."
+
+      - name: Process protected email queue
+        env:
+          COMMUNICATIONS_CRON_SECRET: ${{ secrets.COMMUNICATIONS_CRON_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --output /dev/null \
+            --request POST \
+            --header "Authorization: Bearer ${COMMUNICATIONS_CRON_SECRET}" \
+            https://aro-agency-platform.vercel.app/api/communications/process-email-queue
+          echo "Protected queue endpoint completed successfully."

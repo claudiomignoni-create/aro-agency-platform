@@ -5,9 +5,14 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/accounting-schema";
-import { createGmailDraft, sendGmailMessage } from "@/lib/communications/google-workspace";
-import { assertSafeRecipientForRealSend, getUsableGoogleAccessToken } from "@/lib/communications/google-server";
-import { randomToken, sanitizeError } from "@/lib/communications/security";
+import {
+  processEmailQueue,
+  submitOutboundEmail
+} from "@/lib/communications/email-delivery-server";
+import { classifyEmailDeliveryError } from "@/lib/communications/email-delivery-errors";
+import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
+import { assertSafeRecipientForRealSend } from "@/lib/communications/google-server";
+import { randomToken } from "@/lib/communications/security";
 
 type EmailMode = "gmail_draft" | "scheduled" | "send_now" | "system_draft";
 
@@ -71,94 +76,99 @@ function zonedDateTimeToUtc(date: string, time: string, timeZone: string) {
 
 export async function createOutboundEmailAction(formData: FormData) {
   const profile = await requireRole(["admin"]);
-  const supabase = await createClient();
-  const mode = (textValue(formData, "mode") || "system_draft") as EmailMode;
+  const requestedMode = textValue(formData, "mode") || "system_draft";
+  const mode: EmailMode = ["gmail_draft", "scheduled", "send_now", "system_draft"].includes(
+    requestedMode
+  )
+    ? (requestedMode as EmailMode)
+    : "system_draft";
   const recipientEmail = textValue(formData, "recipient_email").toLowerCase();
   const bodyText = textValue(formData, "body_text");
   const subject = textValue(formData, "subject");
-  const record = {
-    body_html: htmlFromText(bodyText),
-    body_text: bodyText,
-    created_by: profile.id,
-    idempotency_key: textValue(formData, "idempotency_key") || randomToken(24),
-    mode,
-    recipient_email: recipientEmail,
-    recipient_name: textValue(formData, "recipient_name") || null,
-    status: mode === "scheduled" ? "scheduled" : "draft",
-    subject
-  };
 
   if (!recipientEmail || !subject || !bodyText) {
     redirect("/admin/email/compose?error=missing-fields");
   }
 
-  let insertRecord = record;
+  let schedule: Partial<{
+    scheduledAt: string;
+    scheduledTimezone: string;
+  }> = {};
   try {
-    if (mode === "gmail_draft" || mode === "send_now") {
-      const connection = await getUsableGoogleAccessToken(profile.id);
-      if (mode === "send_now") assertSafeRecipientForRealSend(recipientEmail);
-
-      if (mode === "gmail_draft") {
-        const draft = await createGmailDraft(connection.accessToken, {
-          bodyHtml: record.body_html,
-          bodyText: record.body_text,
-          subject,
-          to: recipientEmail
-        });
-        insertRecord = {
-          ...record,
-          gmail_draft_id: draft.id,
-          gmail_message_id: draft.message?.id ?? null,
-          gmail_thread_id: draft.message?.threadId ?? null,
-          sender_connection_id: connection.connectionId,
-          status: "draft"
-        } as never;
-      }
-
-      if (mode === "send_now") {
-        const message = await sendGmailMessage(connection.accessToken, {
-          bodyHtml: record.body_html,
-          bodyText: record.body_text,
-          subject,
-          to: recipientEmail
-        });
-        insertRecord = {
-          ...record,
-          gmail_message_id: message.id,
-          gmail_thread_id: message.threadId ?? null,
-          sender_connection_id: connection.connectionId,
-          sent_at: new Date().toISOString(),
-          status: "sent"
-        } as never;
-      }
-    }
-
     if (mode === "scheduled") {
-      assertSafeRecipientForRealSend(recipientEmail);
-      const connection = await getUsableGoogleAccessToken(profile.id);
-      insertRecord = {
-        ...record,
-        ...scheduledDateTime(formData),
-        sender_connection_id: connection.connectionId,
-        status: "scheduled"
-      } as never;
+      const scheduled = scheduledDateTime(formData);
+      schedule = {
+        scheduledAt: scheduled.scheduled_at,
+        scheduledTimezone: scheduled.scheduled_timezone
+      };
     }
-
-    const { error } = await supabase.from("outbound_emails").insert(insertRecord);
-    if (error) throw error;
   } catch (error) {
-    if (isMissingSchemaError(error)) redirect("/admin/email?schema=pending");
-
-    await supabase.from("outbound_emails").insert({
-      ...record,
-      error_message_sanitized: sanitizeError(error),
-      failed_at: new Date().toISOString(),
-      status: "failed"
-    });
+    const message = error instanceof Error ? error.message : "";
+    redirect(
+      `/admin/email/compose?error=${
+        /futuro/i.test(message) ? "invalid-schedule" : "missing-schedule"
+      }`
+    );
   }
 
+  let result: Awaited<ReturnType<typeof submitOutboundEmail>>;
+  try {
+    result = await submitOutboundEmail({
+      bodyHtml: htmlFromText(bodyText),
+      bodyText,
+      createdBy: profile.id,
+      idempotencyKey:
+        textValue(formData, "idempotency_key") || randomToken(24),
+      mode,
+      recipientEmail,
+      recipientName: textValue(formData, "recipient_name") || null,
+      ...schedule,
+      subject
+    });
+
+  } catch (error) {
+    if (isMissingSchemaError(error)) redirect("/admin/email?schema=pending");
+    const classified = classifyEmailDeliveryError(error);
+    redirect(`/admin/email/compose?error=${classified.code}`);
+  }
+
+  const notice =
+    result.status === "sent"
+      ? "sent"
+      : mode === "gmail_draft"
+        ? "gmail-draft-created"
+        : mode === "scheduled"
+          ? "scheduled"
+          : "draft-saved";
   revalidatePath("/admin/email");
-  redirect("/admin/email");
+  revalidatePath("/admin/email/queue");
+  redirect(`/admin/email/${result.id}?notice=${notice}`);
+}
+
+export async function processEmailQueueNowAction() {
+  const profile = await requireRole(["admin"]);
+  const operationalState = await getEmailOperationalState(profile.id);
+  if (process.env.VERCEL_ENV === "preview") {
+    redirect("/admin/email/queue?error=queue-not-configured");
+  }
+  if (!operationalState.gmailApiConfigured) {
+    redirect("/admin/email/queue?error=google-not-configured");
+  }
+  if (!operationalState.accountConnected) {
+    redirect("/admin/email/queue?error=google-not-connected");
+  }
+  let result: Awaited<ReturnType<typeof processEmailQueue>>;
+  try {
+    result = await processEmailQueue(5);
+  } catch (error) {
+    const classified = classifyEmailDeliveryError(error);
+    redirect(`/admin/email/queue?error=${classified.code}`);
+  }
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/email/queue");
+  redirect(
+    `/admin/email/queue?notice=processed&processed=${result.processed}&sent=${result.sent}&failed=${result.failed}`
+  );
 }
 
 export async function cancelOutboundEmailAction(id: string) {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { EmailStatusBadge } from "@/components/admin/email-center/email-status-badge";
 import { EmailSubnav } from "@/components/admin/email-center/email-subnav";
 import {
@@ -21,6 +22,8 @@ function dateTime(value: string | null) {
 
 export async function EmailListPage({
   active,
+  feedback,
+  headerActions,
   description,
   page = 1,
   statuses,
@@ -28,6 +31,8 @@ export async function EmailListPage({
 }: {
   active: string;
   description: string;
+  feedback?: ReactNode;
+  headerActions?: ReactNode;
   page?: number;
   statuses?: string[];
   title: string;
@@ -39,12 +44,18 @@ export async function EmailListPage({
   return (
     <AdminPage className="email-center-subpage">
       <AdminPageHeader
-        actions={<Link className="button" href="/admin/email/compose">Novo e-mail</Link>}
+        actions={
+          <>
+            <Link className="button" href="/admin/email/compose">Novo e-mail</Link>
+            {headerActions}
+          </>
+        }
         description={description}
         eyebrow="Email Center"
         title={title}
       />
       <EmailSubnav active={active} />
+      {feedback}
       <AdminSection title={title} meta={`${result.total} registro(s)`}>
         {result.items.length ? (
           <>

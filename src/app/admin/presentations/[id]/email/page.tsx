@@ -1,13 +1,26 @@
 import Link from "next/link";
 import crypto from "node:crypto";
 import { AdminPage, AdminPageHeader, AdminSection, AdminStatusPill } from "@/components/admin/admin-ui";
+import {
+  EmailOperationalBanner,
+  EmailOperationFeedback
+} from "@/components/admin/email-center/email-operational-banner";
 import { createPresentationEmailsAction } from "@/app/admin/presentations/actions";
 import { requireRole } from "@/lib/auth";
+import { emailDeliveryErrorMessage } from "@/lib/communications/email-delivery-errors";
+import { modeIsAvailable } from "@/lib/communications/email-operations";
+import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 import { createClient } from "@/lib/supabase/server";
 
 type PresentationEmailPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{
+    error?: string;
+    name?: string;
+    partial?: string;
+    subject?: string;
+    to?: string;
+  }>;
 };
 
 function errorMessage(error?: string) {
@@ -15,14 +28,15 @@ function errorMessage(error?: string) {
   if (error === "not-published") return "Publique a apresentação antes de enviar.";
   if (error === "missing-schedule") return "Informe data e hora para agendar.";
   if (error === "invalid-schedule") return "O agendamento precisa estar no futuro.";
-  return null;
+  return error ? emailDeliveryErrorMessage(error) : null;
 }
 
 export default async function PresentationEmailPage({ params, searchParams }: PresentationEmailPageProps) {
-  await requireRole(["admin"]);
+  const profile = await requireRole(["admin"]);
   const { id } = await params;
   const query = (await searchParams) ?? {};
   const supabase = await createClient();
+  const operationalStatePromise = getEmailOperationalState(profile.id);
   const { data: presentation, error } = await supabase
     .from("presentations")
     .select(`
@@ -67,6 +81,7 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
   if (clientContactsResult.error) throw clientContactsResult.error;
   if (agencyContactsResult.error) throw agencyContactsResult.error;
 
+  const operationalState = await operationalStatePromise;
   const createEmails = createPresentationEmailsAction.bind(null, id);
   const requestNonce = crypto.randomUUID();
   const suggestedRecipients = [
@@ -95,10 +110,17 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
         title="Enviar apresentação"
       />
 
+      <EmailOperationalBanner state={operationalState} />
+
       {message ? (
-        <AdminSection title="Atenção">
-          <p className="muted">{message}</p>
-        </AdminSection>
+        <EmailOperationFeedback
+          message={message}
+          title={
+            query.partial
+              ? "Envio parcialmente concluído; os demais destinatários não foram processados"
+              : "A apresentação não foi enviada"
+          }
+        />
       ) : null}
 
       <AdminSection
@@ -121,6 +143,11 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
         <AdminSection title="Destinatários e modo de envio">
           <form action={createEmails} className="admin-form-grid">
             <input name="request_nonce" type="hidden" value={requestNonce} />
+            <input
+              name="recipient_name"
+              type="hidden"
+              value={query.name?.slice(0, 160) ?? ""}
+            />
             {suggestedRecipients.length ? (
               <div className="admin-field">
                 <span>Destinatários sugeridos</span>
@@ -138,22 +165,51 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
 
             <label className="admin-field">
               <span>E-mail manual</span>
-              <input name="manual_email" placeholder="cliente@empresa.com" type="email" />
+              <input
+                defaultValue={query.to?.slice(0, 320) ?? ""}
+                name="manual_email"
+                placeholder="cliente@empresa.com"
+                type="email"
+              />
             </label>
 
             <label className="admin-field">
               <span>Assunto</span>
-              <input name="subject" placeholder={`ARO — ${presentation.title}`} />
+              <input
+                defaultValue={query.subject?.slice(0, 240) ?? ""}
+                name="subject"
+                placeholder={`ARO — ${presentation.title}`}
+              />
             </label>
 
             <label className="admin-field">
               <span>Modo</span>
               <select name="mode" defaultValue="system_draft">
                 <option value="system_draft">Rascunho interno</option>
-                <option value="gmail_draft">Criar rascunho Gmail</option>
-                <option value="send_now">Enviar agora pela fila</option>
-                <option value="scheduled">Agendar pela fila</option>
+                <option
+                  disabled={!modeIsAvailable("gmail_draft", operationalState)}
+                  value="gmail_draft"
+                >
+                  Criar rascunho Gmail
+                </option>
+                <option
+                  disabled={!modeIsAvailable("send_now", operationalState)}
+                  value="send_now"
+                >
+                  Enviar agora
+                </option>
+                <option
+                  disabled={!modeIsAvailable("scheduled", operationalState)}
+                  value="scheduled"
+                >
+                  Agendar pela fila
+                </option>
               </select>
+              {!operationalState.accountConnected ? (
+                <small>Conecte o Gmail para liberar os modos externos.</small>
+              ) : !operationalState.schedulingOperational ? (
+                <small>Agendamento bloqueado até o processador ser ativado.</small>
+              ) : null}
             </label>
 
             <label className="admin-field">
@@ -172,8 +228,15 @@ export default async function PresentationEmailPage({ params, searchParams }: Pr
             </label>
 
             <div className="admin-form-actions">
-              <button className="button" type="submit">Criar envio</button>
+              <button
+                className="button"
+                disabled={!["published", "sent"].includes(presentation.status)}
+                type="submit"
+              >
+                Criar envio seguro
+              </button>
               <Link className="button secondary" href="/admin/email">Ver Email Center</Link>
+              <Link className="button secondary" href="/admin/presentations">Ver apresentações</Link>
             </div>
           </form>
           <p className="muted">

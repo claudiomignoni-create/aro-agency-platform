@@ -1,8 +1,10 @@
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { createClient } from "@/lib/supabase/server";
+import { EmailDeliveryError } from "@/lib/communications/email-delivery-errors";
 import {
   aroGoogleEmail,
   encryptedGoogleTokenPayload,
+  googleOAuthConfigured,
   refreshGoogleAccessToken,
   shouldRefreshGoogleToken
 } from "@/lib/communications/google-workspace";
@@ -17,13 +19,16 @@ type GoogleConnectionRecord = {
   token_expires_at: string | null;
 };
 
-export async function getUsableGoogleAccessToken(profileId: string) {
+export async function getGoogleConnectionForDelivery(profileId: string) {
+  if (!googleOAuthConfigured()) {
+    throw new EmailDeliveryError("google-not-configured");
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("google_workspace_connections")
     .select("id, encrypted_access_token, encrypted_refresh_token, connected_email, status, token_expires_at")
     .eq("profile_id", profileId)
-    .eq("status", "connected")
     .maybeSingle();
 
   if (error && isMissingSchemaError(error)) {
@@ -33,15 +38,27 @@ export async function getUsableGoogleAccessToken(profileId: string) {
   if (error) throw error;
 
   const connection = data as GoogleConnectionRecord | null;
-  if (!connection) throw new Error("Google Workspace não conectado.");
+  if (!connection) throw new EmailDeliveryError("google-not-connected");
+  if (connection.status === "revoked") {
+    throw new EmailDeliveryError("google-token-revoked");
+  }
+  if (connection.status !== "connected") {
+    throw new EmailDeliveryError("google-not-connected");
+  }
   if (connection.connected_email !== aroGoogleEmail) {
-    throw new Error("A conta Google conectada não é claudio@arolab.co.");
+    throw new EmailDeliveryError("google-not-connected");
   }
 
+  return connection;
+}
+
+export async function getUsableGoogleAccessToken(profileId: string) {
+  const supabase = await createClient();
+  const connection = await getGoogleConnectionForDelivery(profileId);
   let accessToken = decryptSecret(connection.encrypted_access_token);
   if (!accessToken || shouldRefreshGoogleToken(connection.token_expires_at)) {
     if (!connection.encrypted_refresh_token) {
-      throw new Error("Refresh token Google indisponível. Reconecte a conta.");
+      throw new EmailDeliveryError("google-refresh-unavailable");
     }
 
     try {
@@ -69,7 +86,9 @@ export async function getUsableGoogleAccessToken(profileId: string) {
           status: /invalid_grant/i.test(message) ? "revoked" : "error"
         })
         .eq("id", connection.id);
-      throw error;
+      throw /invalid_grant/i.test(message)
+        ? new EmailDeliveryError("google-token-revoked")
+        : new EmailDeliveryError("google-refresh-unavailable");
     }
   } else {
     await supabase
@@ -78,7 +97,7 @@ export async function getUsableGoogleAccessToken(profileId: string) {
       .eq("id", connection.id);
   }
 
-  if (!accessToken) throw new Error("Token Google indisponível.");
+  if (!accessToken) throw new EmailDeliveryError("google-refresh-unavailable");
 
   return {
     accessToken,
@@ -92,6 +111,6 @@ export function externalEmailSendEnabled() {
 
 export function assertSafeRecipientForRealSend(recipientEmail: string) {
   if (!externalEmailSendEnabled() && recipientEmail.toLowerCase() !== aroGoogleEmail) {
-    throw new Error("Durante a implantação segura, envio real só é permitido para claudio@arolab.co.");
+    throw new EmailDeliveryError("external-send-disabled");
   }
 }

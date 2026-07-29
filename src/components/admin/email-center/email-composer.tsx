@@ -10,6 +10,10 @@ import type {
   EmailTemplate,
   Presentation
 } from "@/lib/communications/data";
+import {
+  modeIsAvailable,
+  type EmailOperationalState
+} from "@/lib/communications/email-operations";
 
 type ComposerProps = {
   idempotencyKey: string;
@@ -17,6 +21,7 @@ type ComposerProps = {
   initialRecipient?: string;
   initialSubject?: string;
   initialTemplateId?: string;
+  operationalState: EmailOperationalState;
   presentations: Presentation[];
   recipients: EmailRecipientOption[];
   sender: string;
@@ -38,6 +43,7 @@ export function EmailComposer({
   initialRecipient = "",
   initialSubject = "",
   initialTemplateId = "",
+  operationalState,
   presentations,
   recipients,
   sender,
@@ -64,6 +70,16 @@ export function EmailComposer({
       )
       .slice(0, 8);
   }, [recipient, recipients]);
+  const securePresentationHref = useMemo(() => {
+    if (!presentationId) return "/admin/presentations";
+    const params = new URLSearchParams();
+    if (recipient) params.set("to", recipient.slice(0, 320));
+    if (name) params.set("name", name.slice(0, 160));
+    if (subject) params.set("subject", subject.slice(0, 240));
+    const query = params.toString();
+    return `/admin/presentations/${presentationId}/email${query ? `?${query}` : ""}`;
+  }, [name, presentationId, recipient, subject]);
+  const selectedModeAvailable = modeIsAvailable(mode, operationalState);
 
   function applyTemplate(value: string) {
     setTemplateId(value);
@@ -89,7 +105,13 @@ export function EmailComposer({
           </div>
           <span>Envio individual</span>
         </header>
-        <form action={createOutboundEmailAction} className="email-composer-form">
+        <form
+          action={createOutboundEmailAction}
+          className="email-composer-form"
+          onSubmit={(event) => {
+            if (presentationId) event.preventDefault();
+          }}
+        >
           <input name="idempotency_key" type="hidden" value={idempotencyKey} />
           <div className="admin-form-grid">
             <label className="admin-field">
@@ -165,10 +187,30 @@ export function EmailComposer({
               <span>Modo</span>
               <select name="mode" onChange={(event) => setMode(event.target.value)} value={mode}>
                 <option value="system_draft">Salvar no sistema</option>
-                <option value="gmail_draft">Criar rascunho no Gmail</option>
-                <option value="send_now">Enviar agora</option>
-                <option value="scheduled">Agendar envio</option>
+                <option
+                  disabled={!modeIsAvailable("gmail_draft", operationalState)}
+                  value="gmail_draft"
+                >
+                  Criar rascunho no Gmail
+                </option>
+                <option
+                  disabled={!modeIsAvailable("send_now", operationalState)}
+                  value="send_now"
+                >
+                  Enviar agora
+                </option>
+                <option
+                  disabled={!modeIsAvailable("scheduled", operationalState)}
+                  value="scheduled"
+                >
+                  Agendar envio
+                </option>
               </select>
+              {!operationalState.accountConnected ? (
+                <small>Conecte o Gmail para liberar os modos externos.</small>
+              ) : !operationalState.schedulingOperational ? (
+                <small>O agendamento permanece bloqueado até o processador ser ativado.</small>
+              ) : null}
             </label>
             <label className="admin-field">
               <span>Apresentação</span>
@@ -218,16 +260,22 @@ export function EmailComposer({
                 <strong>Apresentação selecionada</strong>
                 O link individual e seguro deve ser criado no fluxo da apresentação.
               </span>
-              <Link className="button secondary" href={`/admin/presentations/${presentationId}/email`}>
+              <Link className="button secondary" href={securePresentationHref}>
                 Configurar envio seguro
               </Link>
             </div>
           ) : null}
 
           <div className="actions">
-            <button className="button" type="submit">
-              {mode === "system_draft" ? "Salvar rascunho" : mode === "gmail_draft" ? "Criar no Gmail" : mode === "scheduled" ? "Agendar" : "Enviar"}
-            </button>
+            {presentationId ? (
+              <Link className="button" href={securePresentationHref}>
+                Continuar no envio seguro
+              </Link>
+            ) : (
+              <button className="button" disabled={!selectedModeAvailable} type="submit">
+                {mode === "system_draft" ? "Salvar rascunho" : mode === "gmail_draft" ? "Criar no Gmail" : mode === "scheduled" ? "Agendar" : "Enviar"}
+              </button>
+            )}
             <Link className="button secondary" href="/admin/email">Cancelar</Link>
           </div>
         </form>
