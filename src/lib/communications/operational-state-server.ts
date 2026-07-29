@@ -30,7 +30,7 @@ export async function getEmailOperationalState(
     connectedEmail: connection?.connected_email,
     connectionLastError: connection?.last_error,
     connectionStatus: connection?.status,
-    externalOperationsAllowed: process.env.VERCEL_ENV !== "preview",
+    externalOperationsAllowed: true,
     externalSendEnabled: externalEmailSendEnabled(),
     gmailApiConfigured: googleOAuthConfigured(),
     schedulerEnabled: communicationsSchedulerEnabled(),

@@ -3,22 +3,30 @@ import { requireRole } from "@/lib/auth";
 import { submitOutboundEmail } from "@/lib/communications/email-delivery-server";
 import { classifyEmailDeliveryError } from "@/lib/communications/email-delivery-errors";
 import { aroGoogleEmail } from "@/lib/communications/google-workspace";
-import { randomToken } from "@/lib/communications/security";
+import { deterministicToken, randomToken } from "@/lib/communications/security";
 
 export async function POST(request: Request) {
   const profile = await requireRole(["admin"]);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const formData = await request.formData();
+  const requestNonce = String(formData.get("request_nonce") ?? "").trim();
+  const safeNonce = /^[0-9a-f-]{36}$/i.test(requestNonce)
+    ? requestNonce
+    : randomToken(24);
 
   try {
     const result = await submitOutboundEmail({
-      bodyHtml: "<p>Teste de envio do ARO Email Center.</p><p>Claudio Mignoni<br>ARO</p>",
-      bodyText: "Teste de envio do ARO Email Center.\n\nClaudio Mignoni\nARO",
+      bodyHtml: "<p>Esta é uma validação controlada do envio de e-mails da ARO.</p>",
+      bodyText: "Esta é uma validação controlada do envio de e-mails da ARO.",
       createdBy: profile.id,
-      idempotencyKey: randomToken(24),
+      idempotencyKey: deterministicToken(
+        "controlled-gmail-test",
+        `${profile.id}|${safeNonce}`
+      ),
       mode: "send_now",
       recipientEmail: aroGoogleEmail,
       recipientName: "Claudio Mignoni",
-      subject: "ARO — Teste de envio",
+      subject: "ARO Email Center — Teste de envio",
       scheduledAt: null,
       scheduledTimezone: null
     });

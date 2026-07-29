@@ -158,16 +158,12 @@ async function prepareSenderConnection(
   recipientEmail: string
 ) {
   if (mode === "system_draft") return null;
-  if (process.env.VERCEL_ENV === "preview") {
-    throw new EmailDeliveryError("external-send-disabled");
-  }
+  assertSafeRecipientForRealSend(recipientEmail);
   if (mode === "scheduled") {
     if (!communicationsSchedulerConfigured() || !communicationsSchedulerEnabled()) {
       throw new EmailDeliveryError("queue-not-configured");
     }
-    assertSafeRecipientForRealSend(recipientEmail);
   }
-  if (mode === "send_now") assertSafeRecipientForRealSend(recipientEmail);
 
   const connection = await getGoogleConnectionForDelivery(profileId);
   return connection.id;

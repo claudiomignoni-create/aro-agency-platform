@@ -64,10 +64,11 @@ test("operational state blocks Gmail modes until configuration and connection ex
 
   const preview = {
     ...connected,
-    externalOperationsAllowed: false
+    externalOperationsAllowed: true
   };
-  assert.equal(modeIsAvailable("gmail_draft", preview), false);
-  assert.equal(modeIsAvailable("send_now", preview), false);
+  assert.equal(modeIsAvailable("gmail_draft", preview), true);
+  assert.equal(modeIsAvailable("send_now", preview), true);
+  assert.equal(modeIsAvailable("scheduled", preview), false);
 });
 
 test("scheduler is operational only with connection, secret and explicit enablement", () => {
@@ -127,6 +128,24 @@ test("generic and presentation immediate delivery use the shared executor", asyn
   assert.match(delivery, /gmail_message_id/);
   assert.match(delivery, /gmail_thread_id/);
   assert.doesNotMatch(genericActions, /sendGmailMessage/);
+});
+
+test("Preview permits only the controlled ARO recipient for Gmail operations", async () => {
+  const [delivery, operationalState, testRoute, testForm] = await Promise.all([
+    readFile("src/lib/communications/email-delivery-server.ts", "utf8"),
+    readFile("src/lib/communications/operational-state-server.ts", "utf8"),
+    readFile("src/app/api/integrations/google/test-email/route.ts", "utf8"),
+    readFile("src/app/admin/settings/google-test-email-form.tsx", "utf8")
+  ]);
+
+  assert.doesNotMatch(delivery, /VERCEL_ENV === "preview"/);
+  assert.match(delivery, /assertSafeRecipientForRealSend\(recipientEmail\)/);
+  assert.match(operationalState, /externalOperationsAllowed: true/);
+  assert.match(testRoute, /controlled-gmail-test/);
+  assert.match(testRoute, /ARO Email Center — Teste de envio/);
+  assert.match(testRoute, /validação controlada do envio de e-mails da ARO/);
+  assert.match(testForm, /window\.crypto\.randomUUID\(\)/);
+  assert.match(testForm, /name="request_nonce"/);
 });
 
 test("manual and scheduled queue processing stay server-side and secret-protected", async () => {

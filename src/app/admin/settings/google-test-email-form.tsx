@@ -6,6 +6,7 @@ const aroGoogleEmail = "claudio@arolab.co";
 
 export function GoogleTestEmailForm({ enabled = true }: { enabled?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [requestNonce, setRequestNonce] = useState("");
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -23,7 +24,10 @@ export function GoogleTestEmailForm({ enabled = true }: { enabled?: boolean }) {
       <button
         className="button secondary"
         disabled={!enabled}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setRequestNonce(window.crypto.randomUUID());
+          setOpen(true);
+        }}
         type="button"
       >
         Enviar teste para {aroGoogleEmail}
@@ -31,6 +35,7 @@ export function GoogleTestEmailForm({ enabled = true }: { enabled?: boolean }) {
       {open ? (
         <div aria-modal="true" className="admin-dialog-backdrop" role="dialog">
           <form action="/api/integrations/google/test-email" className="admin-dialog" method="post">
+            <input name="request_nonce" type="hidden" value={requestNonce} />
             <span className="eyebrow">Confirmação</span>
             <h2>Enviar e-mail real de teste?</h2>
             <p>
