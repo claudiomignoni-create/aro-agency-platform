@@ -75,13 +75,27 @@ export default async function PresentationDetailPage({ params, searchParams }: P
         .eq("presentation_id", id)
         .eq("event_type", "opened")
     ]);
-  if (recipientsResult.error) throw recipientsResult.error;
-  if (emailsResult.error) throw emailsResult.error;
-  if (selectionsResult.error) throw selectionsResult.error;
-  if (opensResult.error) throw opensResult.error;
+  const unavailableMetrics = [
+    ["recipients", recipientsResult.error],
+    ["deliveries", emailsResult.error],
+    ["selections", selectionsResult.error],
+    ["opens", opensResult.error]
+  ].flatMap(([metric, metricError]) => {
+    if (!metricError) return [];
+    const errorCode =
+      typeof metricError === "object" && metricError && "code" in metricError
+        ? String(metricError.code)
+        : "unknown";
+    console.error("[presentations:detail-metric]", {
+      code: errorCode,
+      metric,
+      reference: `PRES-DETAIL-${String(metric).toUpperCase()}`
+    });
+    return [String(metric)];
+  });
 
   const selectionCounts = { maybe: 0, no: 0, yes: 0 };
-  for (const selection of selectionsResult.data ?? []) {
+  for (const selection of selectionsResult.error ? [] : selectionsResult.data ?? []) {
     if (selection.decision in selectionCounts) {
       selectionCounts[selection.decision as keyof typeof selectionCounts] += 1;
     }
@@ -112,6 +126,14 @@ export default async function PresentationDetailPage({ params, searchParams }: P
         <EmailOperationFeedback message={notice} success title="Operação concluída" />
       ) : null}
 
+      {unavailableMetrics.length ? (
+        <AdminSection className="admin-notice" title="Algumas métricas estão temporariamente indisponíveis">
+          <p className="muted">
+            A apresentação e suas ações continuam disponíveis. Os indicadores afetados aparecem como “—”.
+          </p>
+        </AdminSection>
+      ) : null}
+
       {publicUrl ? (
         <AdminSection title="Link público criado">
           <p className="muted">Copie agora. Por segurança, o token completo não fica armazenado em texto puro.</p>
@@ -135,15 +157,17 @@ export default async function PresentationDetailPage({ params, searchParams }: P
           <span>Downloads</span>
           <strong>{presentation.allow_downloads ? "Permitidos" : "Bloqueados"}</strong>
           <span>Destinatários</span>
-          <strong>{recipientsResult.count ?? 0}</strong>
+          <strong>{recipientsResult.error ? "—" : recipientsResult.count ?? 0}</strong>
           <span>Última entrega</span>
           <strong>
-            {emailsResult.data?.[0]?.created_at
+            {emailsResult.error
+              ? "—"
+              : emailsResult.data?.[0]?.created_at
               ? `${new Date(emailsResult.data[0].created_at).toLocaleString("pt-BR")} · ${emailsResult.data[0].status}`
               : "—"}
           </strong>
           <span>Aberturas</span>
-          <strong>{opensResult.count ?? 0}</strong>
+          <strong>{opensResult.error ? "—" : opensResult.count ?? 0}</strong>
         </div>
         <div className="actions">
           <form action={publishAction}>
@@ -174,10 +198,18 @@ export default async function PresentationDetailPage({ params, searchParams }: P
           <span>4. Publicar</span>
           <strong>{presentation.published_at ? "Concluído" : "Pendente"}</strong>
           <span>5. Enviar</span>
-          <strong>{(recipientsResult.count ?? 0) > 0 ? "Iniciado" : "Pendente"}</strong>
+          <strong>
+            {recipientsResult.error
+              ? "—"
+              : (recipientsResult.count ?? 0) > 0
+                ? "Iniciado"
+                : "Pendente"}
+          </strong>
           <span>6. Acompanhar</span>
           <strong>
-            {(opensResult.count ?? 0) > 0 || selectionsResult.data?.length
+            {opensResult.error || selectionsResult.error
+              ? "—"
+              : (opensResult.count ?? 0) > 0 || selectionsResult.data?.length
               ? "Com atividade"
               : "Aguardando"}
           </strong>
@@ -186,9 +218,9 @@ export default async function PresentationDetailPage({ params, searchParams }: P
 
       <AdminSection title="Seleções recebidas">
         <div className="admin-kv-grid">
-          <span>Yes</span><strong>{selectionCounts.yes}</strong>
-          <span>Maybe</span><strong>{selectionCounts.maybe}</strong>
-          <span>No</span><strong>{selectionCounts.no}</strong>
+          <span>Yes</span><strong>{selectionsResult.error ? "—" : selectionCounts.yes}</strong>
+          <span>Maybe</span><strong>{selectionsResult.error ? "—" : selectionCounts.maybe}</strong>
+          <span>No</span><strong>{selectionsResult.error ? "—" : selectionCounts.no}</strong>
         </div>
       </AdminSection>
 
