@@ -33,3 +33,31 @@ export async function checkCommunicationRateLimit({
   if (error) throw error;
   return Boolean(data);
 }
+
+export async function checkPresentationRateLimitWithLegacyFallback({
+  ipHash,
+  operation,
+  tokenHash
+}: {
+  ipHash: string;
+  operation:
+    | "presentation_download"
+    | "presentation_event"
+    | "presentation_selection_change"
+    | "presentation_selection_submit";
+  tokenHash: string;
+}) {
+  try {
+    return await checkCommunicationRateLimit({ ipHash, operation, tokenHash });
+  } catch (error) {
+    const message =
+      error && typeof error === "object" && "message" in error ? String(error.message) : "";
+    if (!/unsupported_rate_limit_operation/i.test(message)) throw error;
+
+    return checkCommunicationRateLimit({
+      ipHash,
+      operation: "presentation_open",
+      tokenHash
+    });
+  }
+}

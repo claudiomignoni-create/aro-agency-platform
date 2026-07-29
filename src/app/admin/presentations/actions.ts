@@ -222,14 +222,23 @@ async function buildPresentationSnapshot(id: string) {
         base_city,
         base_country,
         categories,
+        gender,
+        nationality,
         main_image_path,
         height_cm,
         bust_cm,
         waist_cm,
         hips_cm,
         shoe_size,
+        shoe_size_br,
+        shoe_size_eu,
+        shoe_size_us,
+        dress_size_br,
+        dress_size_eu,
+        dress_size_us,
         hair_color,
-        eye_color
+        eye_color,
+        social:model_social_links(instagram)
       )
     `)
     .eq("presentation_id", id)
@@ -272,6 +281,7 @@ async function buildPresentationSnapshot(id: string) {
   const models = (selectedModels ?? []).map((row) => {
     const model = Array.isArray(row.model) ? row.model[0] : row.model;
     const snapshot = (row.model_snapshot ?? {}) as { highlighted?: boolean };
+    const social = Array.isArray(model?.social) ? model.social[0] : model?.social;
     const media = (mediaByPresentationModel.get(row.id) ?? [])
       .map((mediaRow) => {
         const item = Array.isArray(mediaRow.media) ? mediaRow.media[0] : mediaRow.media;
@@ -290,22 +300,34 @@ async function buildPresentationSnapshot(id: string) {
 
     return {
       board: model?.categories?.[0] ?? null,
+      categories: model?.categories ?? [],
       city: row.include_location ? model?.current_city ?? model?.base_city ?? null : null,
       country: row.include_location ? model?.current_country ?? model?.base_country ?? null : null,
       display_name: model?.stage_name || model?.display_name || "Modelo ARO",
+      eye_color: model?.eye_color ?? null,
+      gender: model?.gender ?? null,
+      hair_color: model?.hair_color ?? null,
       highlighted: Boolean(snapshot.highlighted),
       id: model?.id,
+      instagram: row.include_social_links ? social?.instagram ?? null : null,
       main_image_path: model?.main_image_path ?? null,
       measurements: row.include_measurements
         ? {
             bust_cm: model?.bust_cm ?? null,
+            dress_size_br: model?.dress_size_br ?? null,
+            dress_size_eu: model?.dress_size_eu ?? null,
+            dress_size_us: model?.dress_size_us ?? null,
             height_cm: model?.height_cm ?? null,
             hips_cm: model?.hips_cm ?? null,
             shoe_size: model?.shoe_size ?? null,
+            shoe_size_br: model?.shoe_size_br ?? null,
+            shoe_size_eu: model?.shoe_size_eu ?? null,
+            shoe_size_us: model?.shoe_size_us ?? null,
             waist_cm: model?.waist_cm ?? null
           }
         : {},
       media,
+      nationality: model?.nationality ?? null,
       public_model_key: randomToken(12)
     };
   });

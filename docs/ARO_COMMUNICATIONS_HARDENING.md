@@ -51,5 +51,5 @@ The script:
 - refuses the known ARO production project ref;
 - requires an explicit host allowlist;
 - refuses databases with public tables, Auth users or Storage objects;
-- applies the complete sequence `001-025`;
+- applies the complete sequence `001-026`;
 - verifies RPC permissions, model isolation, OTP attempts, sensitive drafts, presentation links, delivery idempotency, concurrent queue claims and transactional rollback.

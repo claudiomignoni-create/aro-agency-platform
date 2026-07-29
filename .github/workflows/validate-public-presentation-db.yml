@@ -1,0 +1,86 @@
+name: Validate Public Presentation Database
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/validate-public-presentation-db.yml"
+      - "scripts/validate-communications-real-db.ts"
+      - "supabase/migrations/*.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-presentation-db-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-supabase:
+    name: Migrations 001-026 and upgrade 025-026
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: npm
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.109.1
+
+      - name: Prepare disposable Supabase project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test_workdir="${RUNNER_TEMP}/aro-public-presentation-db"
+          mkdir -p "${test_workdir}"
+          supabase init --workdir "${test_workdir}" --force
+          echo "SUPABASE_TEST_WORKDIR=${test_workdir}" >> "${GITHUB_ENV}"
+
+      - name: Start disposable Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          supabase start \
+            --workdir "${SUPABASE_TEST_WORKDIR}" \
+            --exclude studio,imgproxy,edge-runtime,logflare,vector
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+
+      - name: Validate migrations in real PostgreSQL
+        env:
+          ARO_TEST_DATABASE_ALLOWED_HOSTS: 127.0.0.1
+          ARO_TEST_DATABASE_CONFIRM: DISPOSABLE
+          ARO_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: npm run test:communications:db
+
+      - name: Stop disposable Supabase
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${SUPABASE_TEST_WORKDIR:-}" ]; then
+            supabase stop --workdir "${SUPABASE_TEST_WORKDIR}" --no-backup || true
+          fi
