@@ -140,6 +140,26 @@ function base64Url(value: string) {
     .replace(/=+$/g, "");
 }
 
+export function encodeMimeHeader(value: string) {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const character of value.replace(/[\r\n]+/g, " ")) {
+    if (Buffer.byteLength(current + character, "utf8") > 42 && current) {
+      chunks.push(current);
+      current = character;
+    } else {
+      current += character;
+    }
+  }
+
+  if (current) chunks.push(current);
+
+  return chunks
+    .map((chunk) => `=?UTF-8?B?${Buffer.from(chunk, "utf8").toString("base64")}?=`)
+    .join("\r\n ");
+}
+
 function rfc2822Message({
   bodyHtml,
   bodyText,
@@ -158,7 +178,7 @@ function rfc2822Message({
     `From: Claudio Mignoni <${from}>`,
     `Reply-To: ${from}`,
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeMimeHeader(subject)}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",

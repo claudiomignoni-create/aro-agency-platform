@@ -9,7 +9,10 @@ import {
   modeIsAvailable,
   resolveEmailOperationalState
 } from "../src/lib/communications/email-operations";
-import { googleOAuthRedirectConfigured } from "../src/lib/communications/google-workspace";
+import {
+  encodeMimeHeader,
+  googleOAuthRedirectConfigured
+} from "../src/lib/communications/google-workspace";
 
 test("email delivery errors are stable and do not expose provider responses", () => {
   assert.equal(
@@ -100,6 +103,22 @@ test("Google OAuth redirect must exactly match the configured production callbac
   else process.env.NEXT_PUBLIC_APP_URL = previousAppUrl;
   if (previousRedirect === undefined) delete process.env.GOOGLE_OAUTH_REDIRECT_URI;
   else process.env.GOOGLE_OAUTH_REDIRECT_URI = previousRedirect;
+});
+
+test("Gmail subjects use UTF-8 MIME encoding without corrupting non-ASCII text", () => {
+  const subject = "ARO Email Center — Teste de rascunho";
+  const encoded = encodeMimeHeader(subject);
+  const decoded = encoded
+    .split("\r\n ")
+    .map((word) => {
+      const match = /^=\?UTF-8\?B\?(.+)\?=$/.exec(word);
+      assert.ok(match);
+      return Buffer.from(match[1], "base64").toString("utf8");
+    })
+    .join("");
+
+  assert.equal(decoded, subject);
+  assert.doesNotMatch(encoded, /[\r\n](?! )/);
 });
 
 test("composer never ignores a selected presentation", async () => {
