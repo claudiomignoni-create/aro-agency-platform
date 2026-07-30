@@ -32,6 +32,10 @@ export function ArrowRight(props: IconProps) {
   return <Icon {...props}><path d="M5 12h14M13 6l6 6-6 6" /></Icon>;
 }
 
+export function ArrowLeft(props: IconProps) {
+  return <Icon {...props}><path d="M19 12H5M11 18l-6-6 6-6" /></Icon>;
+}
+
 export function BarChart3(props: IconProps) {
   return <Icon {...props}><path d="M3 3v18h18M8 17v-5M13 17V7M18 17V4" /></Icon>;
 }
@@ -84,6 +88,14 @@ export function Layers3(props: IconProps) {
   return <Icon {...props}><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 17l9 5 9-5" /></Icon>;
 }
 
+export function Link2(props: IconProps) {
+  return <Icon {...props}><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" /><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1" /></Icon>;
+}
+
+export function List(props: IconProps) {
+  return <Icon {...props}><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></Icon>;
+}
+
 export function Globe2(props: IconProps) {
   return <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.2 2.5 3.3 5.5 3.3 9S14.2 18.5 12 21c-2.2-2.5-3.3-5.5-3.3-9S9.8 5.5 12 3Z" /></Icon>;
 }
@@ -114,6 +126,14 @@ export function MessageCircle(props: IconProps) {
 
 export function Mail(props: IconProps) {
   return <Icon {...props}><rect height="16" rx="2" width="20" x="2" y="4" /><path d="m4 7 8 6 8-6" /></Icon>;
+}
+
+export function Paperclip(props: IconProps) {
+  return <Icon {...props}><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" /></Icon>;
+}
+
+export function PlaySquare(props: IconProps) {
+  return <Icon {...props}><rect height="18" rx="2" width="18" x="3" y="3" /><path d="m10 8 6 4-6 4Z" /></Icon>;
 }
 
 export function RefreshCw(props: IconProps) {

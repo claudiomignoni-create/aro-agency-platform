@@ -1,15 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createOutboundEmailAction } from "@/app/admin/email/actions";
-import type {
-  EmailRecipientOption
-} from "@/lib/communications/email-center";
-import type {
-  EmailTemplate,
-  Presentation
-} from "@/lib/communications/data";
+import {
+  ArrowRight,
+  FileText,
+  Layers3,
+  LayoutDashboard,
+  Link2,
+  List,
+  Paperclip,
+  PlaySquare,
+  Send,
+  UsersRound
+} from "@/components/admin/admin-icons";
+import {
+  emailPresentationLayouts,
+  filterEmailComposerRecipients,
+  formatEmailComposerSelection,
+  type EmailComposerRecipientTab,
+  type EmailPresentationLayout,
+  type EmailTextFormat
+} from "@/lib/communications/email-compose";
+import type { EmailRecipientOption } from "@/lib/communications/email-center";
+import type { EmailTemplate, Presentation } from "@/lib/communications/data";
 import {
   modeIsAvailable,
   type EmailOperationalState
@@ -37,6 +52,24 @@ const categoryLabels: Record<EmailRecipientOption["category"], string> = {
   model: "Modelo"
 };
 
+const layoutIcons = {
+  book: FileText,
+  grid: LayoutDashboard,
+  list: List,
+  polaroids: Layers3
+} satisfies Record<EmailPresentationLayout, typeof LayoutDashboard>;
+
+function initials(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "AR"
+  );
+}
+
 export function EmailComposer({
   idempotencyKey,
   initialName = "",
@@ -51,25 +84,32 @@ export function EmailComposer({
 }: ComposerProps) {
   const initialTemplate = templates.find((template) => template.id === initialTemplateId);
   const [body, setBody] = useState(initialTemplate?.body_text ?? "");
-  const [mode, setMode] = useState("system_draft");
   const [name, setName] = useState(initialName);
   const [presentationId, setPresentationId] = useState("");
   const [recipient, setRecipient] = useState(initialRecipient);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [recipientTab, setRecipientTab] =
+    useState<EmailComposerRecipientTab>("organizations");
+  const [selectedLayout, setSelectedLayout] =
+    useState<EmailPresentationLayout>("grid");
+  const [showAllRecipients, setShowAllRecipients] = useState(false);
   const [subject, setSubject] = useState(initialTemplate?.subject ?? initialSubject);
   const [templateId, setTemplateId] = useState(initialTemplate?.id ?? "");
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const recipientSearchRef = useRef<HTMLInputElement>(null);
 
-  const suggestions = useMemo(() => {
-    const query = recipient.trim().toLocaleLowerCase("pt-BR");
-    if (query.length < 2) return recipients.slice(0, 8);
-    return recipients
-      .filter((option) =>
-        [option.name, option.email, option.organization]
-          .filter(Boolean)
-          .some((value) => value!.toLocaleLowerCase("pt-BR").includes(query))
-      )
-      .slice(0, 8);
-  }, [recipient, recipients]);
+  const filteredRecipients = useMemo(
+    () => filterEmailComposerRecipients(recipients, recipientTab, recipientSearch),
+    [recipientSearch, recipientTab, recipients]
+  );
+  const visibleRecipients = showAllRecipients
+    ? filteredRecipients
+    : filteredRecipients.slice(0, 5);
+  const selectedRecipient = recipients.find((option) => option.email === recipient);
+  const messageComplete = Boolean(recipient.trim() && subject.trim() && body.trim());
+  const availablePresentations = presentations.filter((presentation) =>
+    ["published", "sent"].includes(presentation.status)
+  );
   const securePresentationHref = useMemo(() => {
     if (!presentationId) return "/admin/presentations";
     const params = new URLSearchParams();
@@ -79,7 +119,6 @@ export function EmailComposer({
     const query = params.toString();
     return `/admin/presentations/${presentationId}/email${query ? `?${query}` : ""}`;
   }, [name, presentationId, recipient, subject]);
-  const selectedModeAvailable = modeIsAvailable(mode, operationalState);
 
   function applyTemplate(value: string) {
     setTemplateId(value);
@@ -92,214 +131,422 @@ export function EmailComposer({
   function selectRecipient(option: EmailRecipientOption) {
     setRecipient(option.email);
     setName(option.name);
-    setShowSuggestions(false);
+  }
+
+  function applyBodyFormat(format: EmailTextFormat) {
+    const textarea = bodyRef.current;
+    if (!textarea) return;
+    const result = formatEmailComposerSelection(
+      body,
+      textarea.selectionStart,
+      textarea.selectionEnd,
+      format
+    );
+    setBody(result.value);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(result.selectionStart, result.selectionEnd);
+    });
   }
 
   return (
-    <div className="email-composer-shell">
-      <section className="email-panel">
-        <header>
-          <div>
-            <span className="email-section-index">01</span>
-            <h2>Mensagem</h2>
-          </div>
-          <span>Envio individual</span>
-        </header>
-        <form
-          action={createOutboundEmailAction}
-          className="email-composer-form"
-          onSubmit={(event) => {
-            if (presentationId) event.preventDefault();
-          }}
-        >
-          <input name="idempotency_key" type="hidden" value={idempotencyKey} />
-          <div className="admin-form-grid">
-            <label className="admin-field">
-              <span>De</span>
-              <input readOnly value={sender} />
-            </label>
-            <label className="admin-field email-recipient-combobox">
-              <span>Destinatário</span>
-              <input
-                autoComplete="off"
-                name="recipient_email"
-                onChange={(event) => {
-                  setRecipient(event.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Busque por nome, empresa ou e-mail"
-                required
-                value={recipient}
-              />
-              {showSuggestions && suggestions.length ? (
-                <div className="email-recipient-suggestions" role="listbox">
-                  {suggestions.map((option) => (
-                    <button
-                      aria-selected={recipient === option.email}
-                      key={option.id}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => selectRecipient(option)}
-                      role="option"
-                      type="button"
-                    >
-                      <span>
-                        <strong>{option.name}</strong>
-                        <small>{option.email}</small>
-                      </span>
-                      <em>{option.organization || categoryLabels[option.category]}</em>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </label>
-            <label className="admin-field">
-              <span>Nome para personalização</span>
-              <input
-                name="recipient_name"
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Nome do contato"
-                value={name}
-              />
-            </label>
-            <label className="admin-field">
-              <span>Template</span>
-              <select onChange={(event) => applyTemplate(event.target.value)} value={templateId}>
-                <option value="">Mensagem em branco</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name} · {template.language}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="admin-field span-2">
-              <span>Assunto</span>
-              <input
-                name="subject"
-                onChange={(event) => setSubject(event.target.value)}
-                placeholder="ARO — Assunto da comunicação"
-                required
-                value={subject}
-              />
-            </label>
-            <label className="admin-field">
-              <span>Modo</span>
-              <select name="mode" onChange={(event) => setMode(event.target.value)} value={mode}>
-                <option value="system_draft">Salvar no sistema</option>
-                <option
-                  disabled={!modeIsAvailable("gmail_draft", operationalState)}
-                  value="gmail_draft"
-                >
-                  Criar rascunho no Gmail
-                </option>
-                <option
-                  disabled={!modeIsAvailable("send_now", operationalState)}
-                  value="send_now"
-                >
-                  Enviar agora
-                </option>
-                <option
-                  disabled={!modeIsAvailable("scheduled", operationalState)}
-                  value="scheduled"
-                >
-                  Agendar envio
-                </option>
-              </select>
-              {!operationalState.accountConnected ? (
-                <small>Conecte o Gmail para liberar os modos externos.</small>
-              ) : !operationalState.schedulingOperational ? (
-                <small>O agendamento permanece bloqueado até o processador ser ativado.</small>
-              ) : null}
-            </label>
-            <label className="admin-field">
-              <span>Apresentação</span>
-              <select
-                onChange={(event) => setPresentationId(event.target.value)}
-                value={presentationId}
+    <form
+      action={createOutboundEmailAction}
+      className="email-composer-shell"
+      onSubmit={(event) => {
+        if (presentationId) event.preventDefault();
+      }}
+    >
+      <input name="idempotency_key" type="hidden" value={idempotencyKey} />
+      <input name="recipient_email" type="hidden" value={recipient} />
+      <input name="recipient_name" type="hidden" value={name} />
+      <input name="presentation_layout" type="hidden" value={selectedLayout} />
+
+      <section className="email-compose-main-panel">
+        <div className="email-compose-field">
+          <label htmlFor="email-compose-recipient">Destinatários</label>
+          <button
+            aria-controls="email-compose-recipient-panel"
+            className="email-compose-recipient-trigger"
+            id="email-compose-recipient"
+            onClick={() => recipientSearchRef.current?.focus()}
+            type="button"
+          >
+            <span>
+              {selectedRecipient?.name || name || recipient || "Selecione clientes, agências ou contatos..."}
+              {recipient ? <small>{recipient}</small> : null}
+            </span>
+            <strong>Selecionar</strong>
+            <ArrowRight aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="email-compose-field">
+          <label htmlFor="email-compose-subject">Assunto</label>
+          <input
+            id="email-compose-subject"
+            name="subject"
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder="Digite o assunto do e-mail..."
+            required
+            value={subject}
+          />
+        </div>
+
+        <div className="email-compose-field">
+          <label htmlFor="email-compose-body">Mensagem</label>
+          <div className="email-compose-editor">
+            <div aria-label="Formatação da mensagem" className="email-compose-toolbar" role="toolbar">
+              <button
+                aria-label="Negrito"
+                onClick={() => applyBodyFormat("bold")}
+                title="Negrito"
+                type="button"
               >
-                <option value="">Sem apresentação</option>
-                {presentations
-                  .filter((presentation) => ["published", "sent"].includes(presentation.status))
-                  .map((presentation) => (
-                    <option key={presentation.id} value={presentation.id}>
-                      {presentation.title}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {mode === "scheduled" ? (
-              <>
-                <label className="admin-field">
-                  <span>Data</span>
-                  <input name="scheduled_date" required type="date" />
-                </label>
-                <label className="admin-field">
-                  <span>Hora</span>
-                  <input name="scheduled_time" required type="time" />
-                </label>
-                <input name="scheduled_timezone" type="hidden" value="America/Sao_Paulo" />
-              </>
-            ) : null}
-            <label className="admin-field span-2">
-              <span>Corpo</span>
-              <textarea
-                name="body_text"
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Escreva uma mensagem direta, clara e adequada ao destinatário."
-                required
-                rows={13}
-                value={body}
-              />
-            </label>
-          </div>
-
-          {presentationId ? (
-            <div className="email-schema-notice">
-              <span>
-                <strong>Apresentação selecionada</strong>
-                O link individual e seguro deve ser criado no fluxo da apresentação.
-              </span>
-              <Link className="button secondary" href={securePresentationHref}>
-                Configurar envio seguro
-              </Link>
-            </div>
-          ) : null}
-
-          <div className="actions">
-            {presentationId ? (
-              <Link className="button" href={securePresentationHref}>
-                Continuar no envio seguro
-              </Link>
-            ) : (
-              <button className="button" disabled={!selectedModeAvailable} type="submit">
-                {mode === "system_draft" ? "Salvar rascunho" : mode === "gmail_draft" ? "Criar no Gmail" : mode === "scheduled" ? "Agendar" : "Enviar"}
+                <strong>B</strong>
               </button>
-            )}
-            <Link className="button secondary" href="/admin/email">Cancelar</Link>
+              <button
+                aria-label="Itálico"
+                onClick={() => applyBodyFormat("italic")}
+                title="Itálico"
+                type="button"
+              >
+                <em>I</em>
+              </button>
+              <button
+                aria-label="Lista"
+                onClick={() => applyBodyFormat("list")}
+                title="Lista"
+                type="button"
+              >
+                <List aria-hidden="true" />
+              </button>
+              <button
+                aria-label="Adicionar link"
+                onClick={() => applyBodyFormat("link")}
+                title="Adicionar link"
+                type="button"
+              >
+                <Link2 aria-hidden="true" />
+              </button>
+            </div>
+            <textarea
+              id="email-compose-body"
+              name="body_text"
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Escreva sua mensagem..."
+              ref={bodyRef}
+              required
+              rows={13}
+              value={body}
+            />
           </div>
-        </form>
+        </div>
+
+        <div className="email-compose-options">
+          <label>
+            <span>De</span>
+            <input aria-label="Conta remetente" readOnly value={sender} />
+          </label>
+          <label>
+            <span>Template</span>
+            <select
+              aria-label="Template de e-mail"
+              onChange={(event) => applyTemplate(event.target.value)}
+              value={templateId}
+            >
+              <option value="">Mensagem em branco</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name} · {template.language}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="email-compose-attachments">
+          <span>Anexos (opcional)</span>
+          <div>
+            <button disabled title="Upload de arquivos será ativado em uma próxima etapa" type="button">
+              <Paperclip aria-hidden="true" />
+              <span>
+                <strong>Selecionar arquivos</strong>
+                <small>Em breve</small>
+              </span>
+            </button>
+            <button disabled title="Upload de vídeos será ativado em uma próxima etapa" type="button">
+              <PlaySquare aria-hidden="true" />
+              <span>
+                <strong>Selecionar vídeos</strong>
+                <small>Em breve</small>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {!presentationId ? (
+          <details className="email-compose-schedule">
+            <summary>Agendar envio</summary>
+            <div>
+              <label>
+                <span>Data</span>
+                <input name="scheduled_date" type="date" />
+              </label>
+              <label>
+                <span>Hora</span>
+                <input name="scheduled_time" type="time" />
+              </label>
+              <input name="scheduled_timezone" type="hidden" value="America/Sao_Paulo" />
+              <button
+                className="email-compose-secondary-button"
+                disabled={!modeIsAvailable("scheduled", operationalState)}
+                name="mode"
+                type="submit"
+                value="scheduled"
+              >
+                Agendar
+              </button>
+            </div>
+            {!operationalState.schedulingOperational ? (
+              <small>O processador de agendamento ainda não está disponível.</small>
+            ) : null}
+          </details>
+        ) : null}
+
+        {presentationId ? (
+          <div className="email-compose-secure-notice">
+            <span>
+              <strong>Apresentação selecionada</strong>
+              O link individual deve ser criado no fluxo seguro da apresentação.
+            </span>
+            <Link href={securePresentationHref}>Configurar</Link>
+          </div>
+        ) : null}
+
+        <footer className="email-compose-footer">
+          {presentationId ? (
+            <Link className="email-compose-primary-button" href={securePresentationHref}>
+              <Send aria-hidden="true" />
+              Continuar no envio seguro
+            </Link>
+          ) : (
+            <>
+              <button
+                className="email-compose-primary-button"
+                disabled={!messageComplete || !modeIsAvailable("send_now", operationalState)}
+                name="mode"
+                type="submit"
+                value="send_now"
+              >
+                <Send aria-hidden="true" />
+                Enviar e-mail
+              </button>
+              <button
+                className="email-compose-secondary-button"
+                disabled={!messageComplete || !modeIsAvailable("gmail_draft", operationalState)}
+                name="mode"
+                type="submit"
+                value="gmail_draft"
+              >
+                Criar no Gmail
+              </button>
+              <button
+                className="email-compose-draft-button"
+                disabled={!messageComplete}
+                name="mode"
+                type="submit"
+                value="system_draft"
+              >
+                <FileText aria-hidden="true" />
+                Salvar rascunho
+              </button>
+            </>
+          )}
+        </footer>
       </section>
 
-      <aside className="email-panel email-composer-preview">
-        <header>
-          <div>
-            <span className="email-section-index">02</span>
-            <h2>Preview</h2>
+      <aside className="email-compose-side">
+        <section
+          aria-labelledby="email-compose-recipients-title"
+          className="email-compose-side-card"
+          id="email-compose-recipient-panel"
+        >
+          <header>
+            <span>1.</span>
+            <h2 id="email-compose-recipients-title">Selecionar destinatários</h2>
+          </header>
+          <div aria-label="Tipo de destinatário" className="email-compose-recipient-tabs" role="tablist">
+            <button
+              aria-controls="email-compose-recipient-list"
+              aria-selected={recipientTab === "organizations"}
+              onClick={() => {
+                setRecipientTab("organizations");
+                setShowAllRecipients(false);
+              }}
+              role="tab"
+              type="button"
+            >
+              Clientes/Agências
+            </button>
+            <button
+              aria-controls="email-compose-recipient-list"
+              aria-selected={recipientTab === "contacts"}
+              onClick={() => {
+                setRecipientTab("contacts");
+                setShowAllRecipients(false);
+              }}
+              role="tab"
+              type="button"
+            >
+              Contatos
+            </button>
           </div>
-          <span>{mode === "scheduled" ? "Agendado" : "Rascunho"}</span>
-        </header>
-        <div className="email-message-paper">
-          <small>Para: {recipient || "destinatário"}</small>
-          <strong>{subject || "Assunto da mensagem"}</strong>
-          <p>{body || "A prévia da comunicação aparecerá aqui enquanto você escreve."}</p>
-        </div>
-        <div className="admin-kv-grid compact">
-          <span>Privacidade</span><strong>Um destinatário por operação</strong>
-          <span>Tracking</span><strong>Somente link seguro de apresentação</strong>
-          <span>Anexos privados</span><strong>Não enviados por este composer</strong>
-        </div>
+          <label className="email-compose-recipient-search">
+            <span className="sr-only">Buscar destinatários</span>
+            <input
+              onChange={(event) => {
+                setRecipientSearch(event.target.value);
+                setShowAllRecipients(false);
+              }}
+              placeholder={
+                recipientTab === "organizations"
+                  ? "Buscar clientes ou agências..."
+                  : "Buscar contatos..."
+              }
+              ref={recipientSearchRef}
+              type="search"
+              value={recipientSearch}
+            />
+          </label>
+          <div
+            aria-labelledby="email-compose-recipients-title"
+            className="email-compose-recipient-list"
+            id="email-compose-recipient-list"
+            role="tabpanel"
+          >
+            {visibleRecipients.length ? (
+              visibleRecipients.map((option) => (
+                <label className="email-compose-recipient-row" key={option.id}>
+                  <input
+                    checked={recipient === option.email}
+                    onChange={() => selectRecipient(option)}
+                    type="checkbox"
+                  />
+                  <span className="email-compose-recipient-avatar">
+                    {initials(option.organization || option.name)}
+                  </span>
+                  <span>
+                    <strong>{option.name}</strong>
+                    <small>
+                      {option.organization || categoryLabels[option.category]} · {option.email}
+                    </small>
+                  </span>
+                </label>
+              ))
+            ) : (
+              <p className="email-compose-empty">Nenhum destinatário encontrado.</p>
+            )}
+          </div>
+          {filteredRecipients.length > 5 ? (
+            <button
+              className="email-compose-see-all"
+              onClick={() => setShowAllRecipients((current) => !current)}
+              type="button"
+            >
+              {showAllRecipients ? "Mostrar menos" : `Ver todos (${filteredRecipients.length})`}
+            </button>
+          ) : null}
+          <details className="email-compose-manual-recipient">
+            <summary>Usar outro e-mail</summary>
+            <div>
+              <label>
+                <span>E-mail</span>
+                <input
+                  onChange={(event) => setRecipient(event.target.value)}
+                  placeholder="contato@empresa.com"
+                  type="email"
+                  value={recipient}
+                />
+              </label>
+              <label>
+                <span>Nome</span>
+                <input
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Nome do contato"
+                  value={name}
+                />
+              </label>
+            </div>
+          </details>
+          <p className="email-compose-privacy-note">Um destinatário por envio protege a privacidade dos contatos.</p>
+        </section>
+
+        <section className="email-compose-side-card">
+          <header>
+            <span>2.</span>
+            <h2>Selecionar modelos</h2>
+          </header>
+          <label className="email-compose-presentation-select">
+            <UsersRound aria-hidden="true" />
+            <span>
+              <strong>Selecionar apresentação</strong>
+              <small>Adicionar modelos à comunicação</small>
+            </span>
+            <select
+              aria-label="Apresentação de modelos"
+              onChange={(event) => setPresentationId(event.target.value)}
+              value={presentationId}
+            >
+              <option value="">Sem apresentação</option>
+              {availablePresentations.map((presentation) => (
+                <option key={presentation.id} value={presentation.id}>
+                  {presentation.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link
+            className="email-compose-card-link"
+            href={
+              presentationId
+                ? `/admin/presentations/${presentationId}/edit`
+                : "/admin/presentations/new"
+            }
+          >
+            {presentationId ? "Editar seleção de modelos" : "Criar nova apresentação"}
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </section>
+
+        <section className="email-compose-side-card">
+          <header>
+            <span>3.</span>
+            <h2>Selecionar layout</h2>
+          </header>
+          <div className="email-compose-layout-grid">
+            {emailPresentationLayouts.map((layout) => {
+              const LayoutIcon = layoutIcons[layout.id];
+              return (
+                <button
+                  aria-pressed={selectedLayout === layout.id}
+                  key={layout.id}
+                  onClick={() => setSelectedLayout(layout.id)}
+                  type="button"
+                >
+                  <LayoutIcon aria-hidden="true" />
+                  <strong>{layout.label}</strong>
+                  <small>{layout.description}</small>
+                </button>
+              );
+            })}
+          </div>
+          <p className="email-compose-layout-note">
+            O layout escolhido será aplicado na apresentação dos modelos. Nesta etapa, a escolha
+            fica preparada no compositor.
+          </p>
+        </section>
       </aside>
-    </div>
+    </form>
   );
 }

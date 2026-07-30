@@ -13,18 +13,15 @@ import { classifyEmailDeliveryError } from "@/lib/communications/email-delivery-
 import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 import { assertSafeRecipientForRealSend } from "@/lib/communications/google-server";
 import { randomToken } from "@/lib/communications/security";
+import {
+  emailHtmlFromComposerText,
+  emailPlainTextFromComposerText
+} from "@/lib/communications/email-compose";
 
 type EmailMode = "gmail_draft" | "scheduled" | "send_now" | "system_draft";
 
 function textValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
-}
-
-function htmlFromText(value: string) {
-  return value
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${paragraph.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`)
-    .join("");
 }
 
 function scheduledDateTime(formData: FormData) {
@@ -83,12 +80,13 @@ export async function createOutboundEmailAction(formData: FormData) {
     ? (requestedMode as EmailMode)
     : "system_draft";
   const recipientEmail = textValue(formData, "recipient_email").toLowerCase();
-  const bodyText = textValue(formData, "body_text");
+  const composerBodyText = textValue(formData, "body_text");
   const subject = textValue(formData, "subject");
 
-  if (!recipientEmail || !subject || !bodyText) {
+  if (!recipientEmail || !subject || !composerBodyText) {
     redirect("/admin/email/compose?error=missing-fields");
   }
+  const bodyText = emailPlainTextFromComposerText(composerBodyText);
 
   let schedule: Partial<{
     scheduledAt: string;
@@ -114,7 +112,7 @@ export async function createOutboundEmailAction(formData: FormData) {
   let result: Awaited<ReturnType<typeof submitOutboundEmail>>;
   try {
     result = await submitOutboundEmail({
-      bodyHtml: htmlFromText(bodyText),
+      bodyHtml: emailHtmlFromComposerText(composerBodyText),
       bodyText,
       createdBy: profile.id,
       idempotencyKey:
@@ -301,7 +299,7 @@ function templatePayload(formData: FormData) {
   }
 
   return {
-    body_html: htmlFromText(bodyText),
+    body_html: emailHtmlFromComposerText(bodyText),
     body_text: bodyText,
     category,
     language,
