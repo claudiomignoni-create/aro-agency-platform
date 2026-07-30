@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ChevronDown,
   Command,
+  FileText,
   Landmark,
   LayoutDashboard,
   Menu,
@@ -73,6 +74,7 @@ const adminNavItems: Array<{
   { href: "/admin/accounting", icon: Landmark, label: "Accounting" },
   { href: "/admin/travel", icon: Plane, label: "Travel" },
   { href: "/admin/calendar", icon: CalendarDays, label: "Calendar" },
+  { href: "/admin/presentations", icon: FileText, label: "Presentations" },
   { href: "/admin/email", icon: Send, label: "Email Center" },
   { href: "/admin/messages", icon: MessageCircle, label: "Messages" },
   { href: "/admin/settings", icon: Settings, label: "Settings" }

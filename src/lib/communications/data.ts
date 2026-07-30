@@ -3,6 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkCommunicationRateLimit } from "@/lib/communications/rate-limit";
 import { randomToken, sha256 } from "@/lib/communications/security";
+import {
+  buildPresentationOperationalSummaries,
+  type PresentationOperationalMetric
+} from "@/lib/communications/presentation-operational-summary";
 
 export type CommunicationSchemaState = {
   ready: boolean;
@@ -51,6 +55,20 @@ export type Presentation = {
   language: string;
   status: string;
   title: string;
+};
+
+export type PresentationOperationalSummary = Presentation & {
+  last_delivery_at: string | null;
+  model_count: number | null;
+  recipient_count: number | null;
+  selection_count: number | null;
+};
+
+export type PresentationMetric = PresentationOperationalMetric;
+
+export type PresentationOperationalSummaryResult = {
+  presentations: PresentationOperationalSummary[];
+  unavailableMetrics: PresentationMetric[];
 };
 
 export type ModelUpdateRequest = {
@@ -231,6 +249,119 @@ export async function listPresentations() {
   if (error) throw error;
 
   return (data ?? []) as Presentation[];
+}
+
+export async function listPresentationOperationalSummaries() {
+  const supabase = await createClient();
+  const { data: presentationRows, error: presentationError } = await supabase
+    .from("presentations")
+    .select("id, title, description, language, status, created_at")
+    .order("created_at", { ascending: false })
+    .limit(80);
+
+  if (presentationError) {
+    console.error("[presentations:list]", {
+      code: presentationError.code ?? "unknown",
+      reference: "PRES-LIST-001"
+    });
+    throw new Error("PRES-LIST-001");
+  }
+
+  const presentations = (presentationRows ?? []) as Presentation[];
+  if (!presentations.length) {
+    return {
+      presentations: [],
+      unavailableMetrics: []
+    } satisfies PresentationOperationalSummaryResult;
+  }
+
+  const presentationIds = presentations.map((presentation) => presentation.id);
+  const metrics = {
+    models: () =>
+      supabase
+        .from("presentation_models")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000),
+    recipients: () =>
+      supabase
+        .from("presentation_recipients")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000),
+    deliveries: () =>
+      supabase
+        .from("outbound_emails")
+        .select("presentation_id, created_at")
+        .in("presentation_id", presentationIds)
+        .order("created_at", { ascending: false })
+        .limit(2000),
+    selections: () =>
+      supabase
+        .from("presentation_model_selections")
+        .select("presentation_id")
+        .in("presentation_id", presentationIds)
+        .limit(2000)
+  };
+  const metricEntries = Object.entries(metrics) as Array<
+    [PresentationMetric, () => PromiseLike<{ data: unknown[] | null; error: { code?: string } | null }>]
+  >;
+  const settledMetrics = await Promise.allSettled(
+    metricEntries.map(async ([metric, query]) => {
+      const result = await query();
+      if (result.error) {
+        throw {
+          code: result.error.code ?? "unknown",
+          metric
+        };
+      }
+      return { data: result.data ?? [], metric };
+    })
+  );
+  const metricRows = new Map<PresentationMetric, unknown[]>();
+  const unavailableMetrics: PresentationMetric[] = [];
+
+  settledMetrics.forEach((result, index) => {
+    const metric = metricEntries[index][0];
+    if (result.status === "fulfilled") {
+      metricRows.set(metric, result.value.data);
+      return;
+    }
+
+    unavailableMetrics.push(metric);
+    const code =
+      result.reason && typeof result.reason === "object" && "code" in result.reason
+        ? String(result.reason.code)
+        : "unknown";
+    console.error("[presentations:metric]", {
+      code,
+      metric,
+      reference: `PRES-METRIC-${metric.toUpperCase()}`
+    });
+  });
+
+  return {
+    presentations: buildPresentationOperationalSummaries(
+      presentations,
+      {
+        deliveries: (metricRows.get("deliveries") ?? []) as Array<{
+          created_at: string;
+          presentation_id: string | null;
+        }>,
+        models: (metricRows.get("models") ?? []) as Array<{
+          presentation_id: string | null;
+        }>,
+        recipients: (metricRows.get("recipients") ?? []) as Array<{
+          presentation_id: string | null;
+        }>,
+        selections: (metricRows.get("selections") ?? []) as Array<{
+          presentation_id: string | null;
+        }>
+      },
+      unavailableMetrics
+    ),
+    unavailableMetrics
+  } satisfies PresentationOperationalSummaryResult;
 }
 
 export async function listModelUpdateRequests() {

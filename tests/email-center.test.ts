@@ -145,16 +145,19 @@ test("email visual system covers status tokens, light theme and responsive break
 
 test("email operations do not resend sent messages or reuse idempotency keys", async () => {
   const actions = await file("src/app/admin/email/actions.ts");
+  const delivery = await file("src/lib/communications/email-delivery-server.ts");
 
-  assert.match(actions, /\.in\("status", \["draft", "scheduled", "queued", "retry_pending"\]\)/);
-  assert.match(actions, /idempotency_key: randomToken\(24\)/);
+  assert.match(actions, /submitOutboundEmail/);
+  assert.match(delivery, /if \(email\.status === "sent"\)/);
+  assert.match(delivery, /\.eq\("idempotency_key", idempotencyKey\)/);
+  assert.match(delivery, /error\.code === "23505"/);
   assert.match(actions, /mode: "system_draft"/);
   assert.match(actions, /status: "draft"/);
   assert.match(actions, /source\.subject === "ARO — Código de verificação"/);
-  assert.doesNotMatch(actions, /\.eq\("status", "sent"\)[^]*\.update/);
+  assert.doesNotMatch(delivery, /\.eq\("status", "sent"\)[^]*\.update/);
 });
 
-test("admin sidebar preserves Email Center and Messages as separate modules", async () => {
+test("admin sidebar exposes Presentations, Email Center and Messages as separate modules", async () => {
   const shell = await file("src/components/admin/admin-shell-v2.tsx");
   const expectedLabels = [
     "Dashboard",
@@ -164,6 +167,7 @@ test("admin sidebar preserves Email Center and Messages as separate modules", as
     "Accounting",
     "Travel",
     "Calendar",
+    "Presentations",
     "Email Center",
     "Messages",
     "Settings"
@@ -174,8 +178,12 @@ test("admin sidebar preserves Email Center and Messages as separate modules", as
   );
 
   assert.deepEqual(actualLabels, expectedLabels);
+  assert.match(shell, /\{ href: "\/admin\/presentations", icon: FileText, label: "Presentations" \}/);
   assert.match(shell, /\{ href: "\/admin\/email", icon: Send, label: "Email Center" \}/);
   assert.match(shell, /\{ href: "\/admin\/messages", icon: MessageCircle, label: "Messages" \}/);
   assert.equal(shell.match(/label: "Email Center"/g)?.length, 1);
   assert.equal(shell.match(/label: "Messages"/g)?.length, 1);
+  assert.ok(
+    actualLabels.indexOf("Presentations") < actualLabels.indexOf("Email Center")
+  );
 });

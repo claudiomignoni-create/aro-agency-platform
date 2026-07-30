@@ -4,9 +4,15 @@ import { getAdminUserProfile, getProfilePreferencesStatus } from "@/lib/admin-pr
 import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { getBuildShortSha } from "@/lib/build-info";
 import { getCommunicationSchemaState, getGoogleConnection } from "@/lib/communications/data";
+import { emailDeliveryErrorMessage } from "@/lib/communications/email-delivery-errors";
 import { aroGoogleEmail, googleOAuthConfigured, googleScopes } from "@/lib/communications/google-workspace";
+import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 import { createClient } from "@/lib/supabase/server";
 import { GoogleTestEmailForm } from "@/app/admin/settings/google-test-email-form";
+import {
+  EmailOperationalBanner,
+  EmailOperationFeedback
+} from "@/components/admin/email-center/email-operational-banner";
 import {
   updateAdminEmailAction,
   updateAdminProfileAction,
@@ -18,6 +24,8 @@ type SettingsPageProps = {
     saved?: string;
     tab?: string;
     theme?: string;
+    error?: string;
+    google?: string;
   }>;
 };
 
@@ -51,11 +59,18 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     return null;
   }
 
-  const [profileSchema, storedTheme, communicationSchema, googleConnection] = await Promise.all([
+  const [
+    profileSchema,
+    storedTheme,
+    communicationSchema,
+    googleConnection,
+    emailOperationalState
+  ] = await Promise.all([
     getProfilePreferencesStatus(),
     getStoredTheme(profile.id),
     getCommunicationSchemaState(),
-    getGoogleConnection(profile.id)
+    getGoogleConnection(profile.id),
+    getEmailOperationalState(profile.id)
   ]);
   const activeTab = tabs.some((tab) => tab.id === params.tab) ? params.tab : "profile";
   const buildShortSha = getBuildShortSha();
@@ -183,6 +198,35 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
       {activeTab === "integrations" ? (
         <section className="aro-glass-card settings-panel">
+          <EmailOperationalBanner state={emailOperationalState} />
+          {params.google === "connected" ? (
+            <EmailOperationFeedback
+              message="A conta ARO foi conectada. Faça o teste controlado antes de liberar destinatários externos."
+              success
+              title="Google Workspace conectado"
+            />
+          ) : params.google === "test-sent" ? (
+            <EmailOperationFeedback
+              message={`O Gmail confirmou o envio controlado para ${aroGoogleEmail}.`}
+              success
+              title="Teste enviado"
+            />
+          ) : params.google ? (
+            <EmailOperationFeedback
+              message={
+                params.error
+                  ? emailDeliveryErrorMessage(params.error)
+                  : params.google === "wrong-account"
+                    ? `Conecte somente a conta ${aroGoogleEmail}.`
+                    : params.google === "missing-env"
+                      ? "As variáveis da Gmail API ainda não estão configuradas."
+                      : params.google === "no-connection"
+                        ? "Conecte a conta Gmail antes de executar o teste."
+                        : "A operação com o Google não foi concluída. Revise o estado abaixo."
+              }
+              title="Integração requer atenção"
+            />
+          ) : null}
           <div className="settings-integration-card">
             <div>
               <span className="eyebrow">Google Workspace</span>
@@ -195,26 +239,45 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <span>Schema</span>
               <strong>{communicationSchema.ready ? "Ativo" : "Migration 025 pendente"}</strong>
               <span>OAuth</span>
-              <strong>{googleOAuthConfigured() ? "Configurado" : "Variáveis pendentes"}</strong>
+              <strong>{emailOperationalState.gmailApiConfigured ? "Configurado" : "Variáveis pendentes"}</strong>
               <span>Conta</span>
               <strong>{googleConnection?.connected_email ?? "Desconectado"}</strong>
               <span>Status</span>
               <strong>{googleConnection?.status ?? "desconectado"}</strong>
+              <span>Envio externo</span>
+              <strong>{emailOperationalState.externalSendEnabled ? "Ativado" : "Desativado"}</strong>
+              <span>Agendamento</span>
+              <strong>{emailOperationalState.schedulingOperational ? "Operacional" : "Não configurado"}</strong>
               <span>Escopos</span>
               <strong>{(googleConnection?.scopes?.length ? googleConnection.scopes : [...googleScopes]).join(", ")}</strong>
+              <span>Token expira</span>
+              <strong>{googleConnection?.token_expires_at ? new Date(googleConnection.token_expires_at).toLocaleString("pt-BR") : "—"}</strong>
               <span>Último uso</span>
               <strong>{googleConnection?.last_used_at ? new Date(googleConnection.last_used_at).toLocaleString("pt-BR") : "—"}</strong>
               <span>Último erro</span>
-              <strong>{googleConnection?.last_error ?? "—"}</strong>
+              <strong>{emailOperationalState.lastErrorMessage ?? "—"}</strong>
             </div>
             <div className="settings-integration-actions">
-              <Link className="button" href="/api/integrations/google/connect">
-                {googleConnection?.status === "connected" ? "Reconectar" : "Conectar"}
-              </Link>
-              <GoogleTestEmailForm />
-              <form action="/api/integrations/google/disconnect" method="post">
-                <button className="button secondary" type="submit">Desconectar</button>
-              </form>
+              {googleOAuthConfigured() ? (
+                <Link className="button" href="/api/integrations/google/connect">
+                  {googleConnection?.status === "connected" ? "Reconectar" : "Conectar"}
+                </Link>
+              ) : (
+                <button className="button" disabled type="button">
+                  Conectar
+                </button>
+              )}
+              <GoogleTestEmailForm
+                enabled={
+                  emailOperationalState.gmailApiConfigured &&
+                  emailOperationalState.accountConnected
+                }
+              />
+              {googleConnection ? (
+                <form action="/api/integrations/google/disconnect" method="post">
+                  <button className="button secondary" type="submit">Desconectar</button>
+                </form>
+              ) : null}
             </div>
           </div>
         </section>

@@ -5,6 +5,7 @@ import {
   duplicateOutboundEmailAction,
   updateQueuedRecipientAction
 } from "@/app/admin/email/actions";
+import { EmailOperationFeedback } from "@/components/admin/email-center/email-operational-banner";
 import { EmailStatusBadge } from "@/components/admin/email-center/email-status-badge";
 import { EmailSubnav } from "@/components/admin/email-center/email-subnav";
 import {
@@ -13,6 +14,7 @@ import {
   AdminSection
 } from "@/components/admin/admin-ui";
 import { getEmailCenterDetail } from "@/lib/communications/email-center";
+import { emailDeliveryErrorMessage } from "@/lib/communications/email-delivery-errors";
 
 function dateTime(value: string | null) {
   if (!value) return "—";
@@ -21,6 +23,49 @@ function dateTime(value: string | null) {
     timeStyle: "short",
     timeZone: "America/Sao_Paulo"
   }).format(new Date(value));
+}
+
+function noticeCopy(notice: string) {
+  if (notice === "sent") {
+    return {
+      message: "O Gmail confirmou a entrega e o registro foi atualizado para sent.",
+      title: "E-mail enviado"
+    };
+  }
+  if (notice === "gmail-draft-created") {
+    return {
+      message: "O rascunho foi criado na conta Gmail conectada.",
+      title: "Rascunho Gmail criado"
+    };
+  }
+  if (notice === "scheduled") {
+    return {
+      message: "O envio foi registrado na fila para a data informada.",
+      title: "E-mail agendado"
+    };
+  }
+  if (notice === "draft-saved") {
+    return {
+      message: "A mensagem foi salva somente no sistema e não foi enviada.",
+      title: "Rascunho interno salvo"
+    };
+  }
+  if (notice === "duplicated") {
+    return {
+      message: "A cópia foi salva somente no sistema.",
+      title: "Rascunho criado"
+    };
+  }
+  if (notice === "recipient-updated") {
+    return {
+      message: "O destinatário foi atualizado sem enviar a mensagem.",
+      title: "Destinatário atualizado"
+    };
+  }
+  return {
+    message: "A ação foi registrada sem enviar nenhuma mensagem automaticamente.",
+    title: "Operação concluída"
+  };
 }
 
 export default async function EmailDetailPage({
@@ -74,27 +119,15 @@ export default async function EmailDetailPage({
       />
       <EmailSubnav active="" />
 
-      {query.notice ? (
-        <div className="email-schema-notice" role="status">
-          <span>
-            <strong>
-              {query.notice === "duplicated"
-                ? "Rascunho criado"
-                : query.notice === "recipient-updated"
-                  ? "Destinatário atualizado"
-                  : "Operação cancelada"}
-            </strong>
-            A ação foi registrada sem enviar nenhuma mensagem automaticamente.
-          </span>
-        </div>
-      ) : null}
+      {query.notice ? (() => {
+        const copy = noticeCopy(query.notice);
+        return <EmailOperationFeedback message={copy.message} success title={copy.title} />;
+      })() : null}
       {query.error ? (
-        <div className="email-schema-notice" role="alert">
-          <span>
-            <strong>Ação não executada</strong>
-            O estado atual da mensagem não permite essa operação.
-          </span>
-        </div>
+        <EmailOperationFeedback
+          message={emailDeliveryErrorMessage(query.error)}
+          title="Ação não executada"
+        />
       ) : null}
 
       <div className="email-detail-grid">

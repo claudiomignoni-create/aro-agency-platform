@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 const aroGoogleEmail = "claudio@arolab.co";
 
-export function GoogleTestEmailForm() {
+export function GoogleTestEmailForm({ enabled = true }: { enabled?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [requestNonce, setRequestNonce] = useState("");
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -20,12 +21,21 @@ export function GoogleTestEmailForm() {
 
   return (
     <>
-      <button className="button secondary" onClick={() => setOpen(true)} type="button">
+      <button
+        className="button secondary"
+        disabled={!enabled}
+        onClick={() => {
+          setRequestNonce(window.crypto.randomUUID());
+          setOpen(true);
+        }}
+        type="button"
+      >
         Enviar teste para {aroGoogleEmail}
       </button>
       {open ? (
         <div aria-modal="true" className="admin-dialog-backdrop" role="dialog">
           <form action="/api/integrations/google/test-email" className="admin-dialog" method="post">
+            <input name="request_nonce" type="hidden" value={requestNonce} />
             <span className="eyebrow">Confirmação</span>
             <h2>Enviar e-mail real de teste?</h2>
             <p>

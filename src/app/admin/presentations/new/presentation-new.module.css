@@ -1,0 +1,79 @@
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: 14px;
+  background: rgba(4, 24, 60, 0.48);
+  list-style: none;
+  padding: 10px;
+}
+
+.stepper li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 9px;
+}
+
+.stepper b {
+  display: grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid var(--admin-border);
+  border-radius: 50%;
+}
+
+.stepper .active {
+  background: rgba(33, 126, 255, 0.2);
+  color: var(--admin-text);
+}
+
+.stepper .active b {
+  border-color: rgba(99, 175, 255, 0.72);
+  background: #146de0;
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+:global(.admin-v2-light) .stepper {
+  background: rgba(241, 247, 255, 0.88);
+}
+
+@media (max-width: 760px) {
+  .stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 390px) {
+  .stepper {
+    gap: 4px;
+    padding: 7px;
+  }
+
+  .stepper li {
+    align-items: start;
+    flex-direction: column;
+    font-size: 9px;
+    padding: 7px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}

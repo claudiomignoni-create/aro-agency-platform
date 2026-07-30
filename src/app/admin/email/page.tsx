@@ -15,12 +15,15 @@ import {
   FeaturedEmailCard,
   TopPresentedModels
 } from "@/components/admin/email-center/email-dashboard";
+import { EmailOperationalBanner } from "@/components/admin/email-center/email-operational-banner";
 import { EmailPeriodFilter } from "@/components/admin/email-center/email-period-filter";
 import { AdminPage, AdminPageHeader } from "@/components/admin/admin-ui";
+import { requireRole } from "@/lib/auth";
 import {
   getEmailCenterDashboard,
   resolveEmailCenterPeriod
 } from "@/lib/communications/email-center";
+import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 
 type EmailCenterSearchParams = Promise<{
   end?: string;
@@ -37,7 +40,11 @@ export default async function EmailCenterPage({
 }) {
   const query = await searchParams;
   const period = resolveEmailCenterPeriod(query);
-  const dashboard = await getEmailCenterDashboard(period);
+  const profile = await requireRole(["admin"]);
+  const [dashboard, operationalState] = await Promise.all([
+    getEmailCenterDashboard(period),
+    getEmailOperationalState(profile.id)
+  ]);
 
   return (
     <AdminPage className="email-center">
@@ -51,6 +58,10 @@ export default async function EmailCenterPage({
             <Link className="button secondary" href="/admin/presentations/new">
               <FileText aria-hidden="true" />
               Nova apresentação
+            </Link>
+            <Link className="button secondary" href="/admin/presentations">
+              <Eye aria-hidden="true" />
+              Ver apresentações
             </Link>
             <EmailPeriodFilter period={period} />
           </div>
@@ -71,6 +82,8 @@ export default async function EmailCenterPage({
           <Link href="/admin/email/settings">Google Workspace</Link>
         </nav>
       </AdminPageHeader>
+
+      <EmailOperationalBanner state={operationalState} />
 
       {!dashboard.ready ? (
         <div className="email-schema-notice" role="status">

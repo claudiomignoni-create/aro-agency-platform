@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EmailStatusBadge } from "@/components/admin/email-center/email-status-badge";
 import { EmailSubnav } from "@/components/admin/email-center/email-subnav";
+import { EmailOperationalBanner } from "@/components/admin/email-center/email-operational-banner";
 import {
   AdminPage,
   AdminPageHeader,
@@ -13,6 +14,7 @@ import {
   googleOAuthConfigured,
   googleScopes
 } from "@/lib/communications/google-workspace";
+import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 
 function dateTime(value: string | null | undefined) {
   if (!value) return "—";
@@ -25,7 +27,10 @@ function dateTime(value: string | null | undefined) {
 
 export default async function EmailSettingsPage() {
   const profile = await requireRole(["admin"]);
-  const connection = await getGoogleConnection(profile.id);
+  const [connection, operationalState] = await Promise.all([
+    getGoogleConnection(profile.id),
+    getEmailOperationalState(profile.id)
+  ]);
   const connected = connection?.status === "connected";
 
   return (
@@ -37,6 +42,7 @@ export default async function EmailSettingsPage() {
         title="Configurações"
       />
       <EmailSubnav active="/admin/email/settings" />
+      <EmailOperationalBanner state={operationalState} />
       <div className="email-detail-grid">
         <AdminSection
           title="Remetente oficial"
@@ -47,8 +53,11 @@ export default async function EmailSettingsPage() {
             <span>Reply-To</span><strong>{aroGoogleEmail}</strong>
             <span>OAuth configurado</span><strong>{googleOAuthConfigured() ? "Sim" : "Não"}</strong>
             <span>Conta conectada</span><strong>{connection?.connected_email ?? "—"}</strong>
+            <span>Envio externo</span><strong>{operationalState.externalSendEnabled ? "Ativado" : "Desativado"}</strong>
+            <span>Agendamento</span><strong>{operationalState.schedulingOperational ? "Operacional" : "Não configurado"}</strong>
+            <span>Token expira</span><strong>{dateTime(connection?.token_expires_at)}</strong>
             <span>Último uso</span><strong>{dateTime(connection?.last_used_at)}</strong>
-            <span>Último erro</span><strong>{connection?.last_error ?? "—"}</strong>
+            <span>Último erro</span><strong>{operationalState.lastErrorMessage ?? "—"}</strong>
           </div>
         </AdminSection>
 

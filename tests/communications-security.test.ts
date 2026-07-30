@@ -212,18 +212,20 @@ test("model update payloads, uploads and OTP are validated and rate limited", as
 test("email queue claims atomically and retries with backoff", async () => {
   const sql = await readFile("supabase/migrations/025_email_presentations_model_portal.sql", "utf8");
   const queue = await readFile("src/app/api/communications/process-email-queue/route.ts", "utf8");
+  const delivery = await readFile("src/lib/communications/email-delivery-server.ts", "utf8");
   const reminders = await readFile("src/app/api/communications/process-model-update-reminders/route.ts", "utf8");
 
   assert.match(sql, /claim_outbound_emails/);
   assert.match(sql, /for update skip locked/);
   assert.match(sql, /status = 'processing'/);
   assert.match(sql, /grant execute on function public\.claim_outbound_emails\(integer\) to service_role/);
-  assert.match(queue, /\.rpc\("claim_outbound_emails"/);
-  assert.match(queue, /retry_pending/);
-  assert.match(queue, /delayMinutes/);
-  assert.match(queue, /resolveEmailContent/);
-  assert.match(queue, /encrypted_payload: null/);
-  assert.match(queue, /encrypted_payload: retry \? email\.encrypted_payload : null/);
+  assert.match(queue, /processEmailQueue/);
+  assert.match(delivery, /\.rpc\("claim_outbound_emails"/);
+  assert.match(delivery, /retry_pending/);
+  assert.match(delivery, /delayMinutes/);
+  assert.match(delivery, /resolveEmailContent/);
+  assert.match(delivery, /encrypted_payload: null/);
+  assert.match(delivery, /encrypted_payload: retry \? email\.encrypted_payload : null/);
   assert.match(sql, /redact_finalized_outbound_email_payload/);
   assert.match(sql, /new\.status in \('sent', 'failed', 'canceled'\)/);
   assert.match(reminders, /onConflict: "idempotency_key"/);
@@ -269,7 +271,7 @@ test("presentation emails preserve links and create deliveries transactionally",
   assert.match(sql, /create_presentation_delivery/);
   assert.match(sql, /pg_advisory_xact_lock/);
   assert.match(sql, /if found then/);
-  assert.match(actions, /\.rpc\("create_presentation_delivery"/);
+  assert.match(actions, /\.rpc\(\s*"create_presentation_delivery"/);
   assert.match(actions, /deterministicToken/);
   assert.match(actions, /request_nonce/);
   assert.match(emailPage, /name="request_nonce"/);
@@ -328,6 +330,7 @@ test("Google refresh flow preserves refresh token and safe send mode", async () 
   const callback = await readFile("src/app/api/integrations/google/callback/route.ts", "utf8");
   const googleServer = await readFile("src/lib/communications/google-server.ts", "utf8");
   const queue = await readFile("src/app/api/communications/process-email-queue/route.ts", "utf8");
+  const delivery = await readFile("src/lib/communications/email-delivery-server.ts", "utf8");
 
   assert.match(callback, /existingConnection\?\.encrypted_refresh_token/);
   assert.match(callback, /revokeGoogleToken\(token\.access_token\)/);
@@ -335,7 +338,17 @@ test("Google refresh flow preserves refresh token and safe send mode", async () 
   assert.match(googleServer, /invalid_grant/i);
   assert.match(googleServer, /EMAIL_EXTERNAL_SEND_ENABLED/);
   assert.match(queue, /COMMUNICATIONS_CRON_SECRET/);
-  assert.match(queue, /retry_pending/);
+  assert.match(delivery, /retry_pending/);
+});
+
+test("Google OAuth redirect carries state and PKCE cookies on its response", async () => {
+  const connect = await readFile("src/app/api/integrations/google/connect/route.ts", "utf8");
+
+  assert.match(connect, /const response = NextResponse\.redirect\(url\)/);
+  assert.match(connect, /response\.cookies\.set\("aro_google_oauth_state"/);
+  assert.match(connect, /response\.cookies\.set\("aro_google_pkce_verifier"/);
+  assert.match(connect, /return response/);
+  assert.doesNotMatch(connect, /cookieStore\.set/);
 });
 
 test("admin email test uses ARO dialog instead of window confirm", async () => {
