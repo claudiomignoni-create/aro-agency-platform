@@ -73,6 +73,33 @@
   justify-self: start;
 }
 
+.compact {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+}
+
+.compact .grid {
+  display: none;
+}
+
+.compact .heading span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 7px;
+}
+
+.compact .heading strong {
+  white-space: nowrap;
+}
+
+.compact > a {
+  flex: 0 0 auto;
+}
+
 .feedback {
   display: grid;
   gap: 3px;

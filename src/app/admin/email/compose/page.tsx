@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import Link from "next/link";
+import { ArrowLeft } from "@/components/admin/admin-icons";
 import { EmailComposer } from "@/components/admin/email-center/email-composer";
 import {
   EmailOperationalBanner,
   EmailOperationFeedback
 } from "@/components/admin/email-center/email-operational-banner";
-import { EmailSubnav } from "@/components/admin/email-center/email-subnav";
-import { AdminPage, AdminPageHeader } from "@/components/admin/admin-ui";
+import { AdminPage } from "@/components/admin/admin-ui";
 import { requireRole } from "@/lib/auth";
 import { emailDeliveryErrorMessage } from "@/lib/communications/email-delivery-errors";
 import {
@@ -47,14 +48,19 @@ export default async function ComposeEmailPage({
   const errorMessage = composeErrorMessage(query.error);
 
   return (
-    <AdminPage className="email-center-subpage">
-      <AdminPageHeader
-        description="Crie uma comunicação individual, prepare no Gmail ou programe pela fila segura."
-        eyebrow="Email Center"
-        title="Novo e-mail"
-      />
-      <EmailSubnav active="/admin/email/compose" />
-      <EmailOperationalBanner state={operationalState} />
+    <AdminPage className="email-center-subpage email-compose-v2">
+      <header className="email-compose-page-header">
+        <Link aria-label="Voltar ao Email Center" href="/admin/email">
+          <ArrowLeft aria-hidden="true" />
+        </Link>
+        <div>
+          <h1>Novo e-mail</h1>
+          <span>Email Center</span>
+        </div>
+      </header>
+      <div className="email-compose-operational">
+        <EmailOperationalBanner compact state={operationalState} />
+      </div>
       {errorMessage ? (
         <EmailOperationFeedback
           message={errorMessage}

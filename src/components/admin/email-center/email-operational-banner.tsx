@@ -8,8 +8,10 @@ function answer(value: boolean) {
 }
 
 export function EmailOperationalBanner({
+  compact = false,
   state
 }: {
+  compact?: boolean;
   state: EmailOperationalState;
 }) {
   const ready = state.gmailApiConfigured && state.accountConnected;
@@ -17,7 +19,7 @@ export function EmailOperationalBanner({
   return (
     <section
       aria-label="Estado operacional do Email Center"
-      className={`${styles.banner}${ready ? "" : ` ${styles.needsAttention}`}`}
+      className={`${styles.banner}${compact ? ` ${styles.compact}` : ""}${ready ? "" : ` ${styles.needsAttention}`}`}
       role={ready ? "status" : "alert"}
     >
       <div className={styles.heading}>
