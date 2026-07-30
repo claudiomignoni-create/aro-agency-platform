@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createGoogleAuthorizationUrl, googleOAuthConfigured } from "@/lib/communications/google-workspace";
@@ -14,16 +13,16 @@ export async function GET() {
 
   const state = signOAuthState({ profileId: profile.id });
   const { url, verifier } = createGoogleAuthorizationUrl(state);
-  const cookieStore = await cookies();
+  const response = NextResponse.redirect(url);
 
-  cookieStore.set("aro_google_oauth_state", state, {
+  response.cookies.set("aro_google_oauth_state", state, {
     httpOnly: true,
     maxAge: 600,
     path: "/",
     sameSite: "lax",
     secure: true
   });
-  cookieStore.set("aro_google_pkce_verifier", verifier, {
+  response.cookies.set("aro_google_pkce_verifier", verifier, {
     httpOnly: true,
     maxAge: 600,
     path: "/",
@@ -31,5 +30,5 @@ export async function GET() {
     secure: true
   });
 
-  return NextResponse.redirect(url);
+  return response;
 }

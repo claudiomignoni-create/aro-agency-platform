@@ -341,6 +341,16 @@ test("Google refresh flow preserves refresh token and safe send mode", async () 
   assert.match(delivery, /retry_pending/);
 });
 
+test("Google OAuth redirect carries state and PKCE cookies on its response", async () => {
+  const connect = await readFile("src/app/api/integrations/google/connect/route.ts", "utf8");
+
+  assert.match(connect, /const response = NextResponse\.redirect\(url\)/);
+  assert.match(connect, /response\.cookies\.set\("aro_google_oauth_state"/);
+  assert.match(connect, /response\.cookies\.set\("aro_google_pkce_verifier"/);
+  assert.match(connect, /return response/);
+  assert.doesNotMatch(connect, /cookieStore\.set/);
+});
+
 test("admin email test uses ARO dialog instead of window confirm", async () => {
   const dialog = await readFile("src/app/admin/settings/google-test-email-form.tsx", "utf8");
 
