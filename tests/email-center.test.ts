@@ -87,36 +87,38 @@ test("email dashboard source excludes sensitive fields and fictional reference d
   }
 });
 
-test("email dashboard uses accessible SVG analytics and real semantic links", async () => {
-  const dashboard = await file("src/components/admin/email-center/email-dashboard.tsx");
+test("email root renders the real Gmail webmail instead of the analytics dashboard", async () => {
   const page = await file("src/app/admin/email/page.tsx");
+  const shell = await file("src/components/admin/email-center/email-webmail-shell.tsx");
 
-  assert.match(dashboard, /role="img"/);
-  assert.match(dashboard, /aria-label=/);
-  assert.match(dashboard, /Considerado aberto quando o destinatário acessa o link seguro/);
-  assert.match(dashboard, /href="\/admin\/email\/activity"/);
-  assert.match(dashboard, /href="\/admin\/email\/reports"/);
-  assert.match(page, /EmailPeriodFilter/);
-  assert.match(page, /EmailResponsesMetricCard/);
+  assert.match(page, /EmailWebmailPage/);
+  assert.match(shell, /Caixa de entrada/);
+  assert.match(shell, /Enviados/);
+  assert.match(shell, /Rascunhos/);
+  assert.match(shell, /Lixeira/);
+  assert.match(shell, /Com estrela/);
+  assert.match(shell, /Pré-visualização/);
+  assert.match(shell, /aria-label="Buscar e-mails com a sintaxe do Gmail"/);
 });
 
-test("email center routes are full pages instead of placeholder wrappers", async () => {
+test("email center routes delegate to the shared webmail page", async () => {
   const routes = [
     "src/app/admin/email/page.tsx",
+    "src/app/admin/email/inbox/page.tsx",
     "src/app/admin/email/compose/page.tsx",
-    "src/app/admin/email/activity/page.tsx",
     "src/app/admin/email/drafts/page.tsx",
     "src/app/admin/email/sent/page.tsx",
-    "src/app/admin/email/queue/page.tsx",
-    "src/app/admin/email/templates/page.tsx",
-    "src/app/admin/email/reports/page.tsx",
-    "src/app/admin/email/settings/page.tsx",
-    "src/app/admin/email/[id]/page.tsx"
+    "src/app/admin/email/scheduled/page.tsx",
+    "src/app/admin/email/trash/page.tsx",
+    "src/app/admin/email/starred/page.tsx",
+    "src/app/admin/email/label/[labelId]/page.tsx",
+    "src/app/admin/email/thread/[threadId]/page.tsx",
+    "src/app/admin/email/draft/[draftId]/page.tsx"
   ];
   const contents = await Promise.all(routes.map(file));
 
   for (const [index, content] of contents.entries()) {
-    assert.ok(content.length > 300, `${routes[index]} is still a placeholder`);
+    assert.match(content, /EmailWebmailPage/, `${routes[index]} does not use webmail`);
   }
 });
 
@@ -137,9 +139,12 @@ test("email visual system covers status tokens, light theme and responsive break
   }
   assert.match(css, /\.admin-v2-light \.email-center/);
   assert.match(css, /@media \(max-width: 1220px\)/);
+  assert.match(css, /@media \(max-width: 820px\)/);
   assert.match(css, /@media \(max-width: 960px\)/);
   assert.match(css, /@media \(max-width: 640px\)/);
   assert.match(css, /@media \(max-width: 410px\)/);
+  assert.match(css, /\.email-webmail/);
+  assert.match(css, /grid-template-columns: 188px 268px minmax\(370px, 1fr\) 300px/);
   assert.doesNotMatch(css, /background(?:-color)?:\s*(?:white|#fff(?:fff)?)(?:;|\s)/i);
 });
 

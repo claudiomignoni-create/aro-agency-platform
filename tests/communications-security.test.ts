@@ -9,7 +9,12 @@ import {
   signOAuthState,
   verifyOAuthState
 } from "../src/lib/communications/security";
-import { aroGoogleEmail, googleScopes } from "../src/lib/communications/google-workspace";
+import {
+  aroGoogleEmail,
+  googleMailboxScope,
+  googleScopes,
+  hasGoogleMailboxScope
+} from "../src/lib/communications/google-workspace";
 
 test("secure public tokens are random and stored by hash", () => {
   const first = randomToken();
@@ -47,10 +52,19 @@ test("PKCE pair uses S256-compatible values", () => {
   assert.notEqual(pair.verifier, pair.challenge);
 });
 
-test("Google Workspace integration is restricted to compose scope and ARO account", () => {
+test("Google Workspace integration uses gmail.modify without full mailbox deletion scope", () => {
   assert.equal(aroGoogleEmail, "claudio@arolab.co");
-  assert.ok(googleScopes.includes("https://www.googleapis.com/auth/gmail.compose"));
+  assert.ok(googleScopes.includes(googleMailboxScope));
+  assert.equal(
+    googleScopes.includes("https://www.googleapis.com/auth/gmail.compose" as never),
+    false
+  );
   assert.equal(googleScopes.includes("https://mail.google.com/" as never), false);
+  assert.equal(hasGoogleMailboxScope([...googleScopes]), true);
+  assert.equal(
+    hasGoogleMailboxScope(["https://www.googleapis.com/auth/gmail.compose"]),
+    false
+  );
 });
 
 test("communication migration creates token hashes, queue states and RLS", async () => {

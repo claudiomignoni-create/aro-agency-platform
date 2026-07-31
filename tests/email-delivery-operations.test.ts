@@ -43,6 +43,7 @@ test("operational state blocks Gmail modes until configuration and connection ex
     connectionStatus: null,
     externalSendEnabled: false,
     gmailApiConfigured: false,
+    mailboxAuthorized: false,
     schedulerEnabled: false,
     schedulerSecretConfigured: false
   });
@@ -57,6 +58,7 @@ test("operational state blocks Gmail modes until configuration and connection ex
     connectionStatus: "connected",
     externalSendEnabled: false,
     gmailApiConfigured: true,
+    mailboxAuthorized: true,
     schedulerEnabled: false,
     schedulerSecretConfigured: true
   });
@@ -80,6 +82,7 @@ test("scheduler is operational only with connection, secret and explicit enablem
     connectionStatus: "connected",
     externalSendEnabled: false,
     gmailApiConfigured: true,
+    mailboxAuthorized: true,
     schedulerEnabled: true,
     schedulerSecretConfigured: true
   });
@@ -121,16 +124,16 @@ test("Gmail subjects use UTF-8 MIME encoding without corrupting non-ASCII text",
   assert.doesNotMatch(encoded, /[\r\n](?! )/);
 });
 
-test("composer never ignores a selected presentation", async () => {
+test("webmail composer routes selected presentations through the secure delivery flow", async () => {
   const composer = await readFile(
-    "src/components/admin/email-center/email-composer.tsx",
+    "src/components/admin/email-center/email-webmail-shell.tsx",
     "utf8"
   );
 
-  assert.match(composer, /if \(presentationId\) event\.preventDefault\(\)/);
-  assert.match(composer, /Continuar no envio seguro/);
+  assert.match(composer, /Enviar apresentação/);
   assert.match(composer, /\/admin\/presentations\/\$\{presentationId\}\/email/);
   assert.doesNotMatch(composer, /name="presentation_id"/);
+  assert.match(composer, /!presentationId \? \(/);
 });
 
 test("generic and presentation immediate delivery use the shared executor", async () => {
@@ -188,16 +191,17 @@ test("manual and scheduled queue processing stay server-side and secret-protecte
   assert.doesNotMatch(workflow, /echo.*\$\{COMMUNICATIONS_CRON_SECRET/);
 });
 
-test("operational banner is present on all required email entry points", async () => {
+test("webmail connection state is present on email entry points", async () => {
   const pages = await Promise.all(
     [
       "src/app/admin/email/page.tsx",
       "src/app/admin/email/compose/page.tsx",
-      "src/app/admin/presentations/[id]/email/page.tsx"
+      "src/app/admin/email/email-webmail-page.tsx"
     ].map((path) => readFile(path, "utf8"))
   );
 
-  for (const page of pages) {
-    assert.match(page, /EmailOperationalBanner/);
-  }
+  assert.match(pages[0], /EmailWebmailPage/);
+  assert.match(pages[1], /EmailWebmailPage/);
+  assert.match(pages[2], /connectionCode/);
+  assert.match(pages[2], /gmailMailboxErrorMessage/);
 });
