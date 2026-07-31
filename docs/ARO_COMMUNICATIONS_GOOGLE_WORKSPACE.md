@@ -64,9 +64,15 @@ The app requests only:
 - `openid`
 - `email`
 - `profile`
-- `https://www.googleapis.com/auth/gmail.compose`
+- `https://www.googleapis.com/auth/gmail.modify`
 
-It does not request full mailbox read access.
+The integration deliberately does not request `https://mail.google.com/`.
+Connections created with the earlier compose-only scope must be reauthorized
+before Inbox, Sent, labels or thread actions are available.
+
+It does not request the unrestricted `mail.google.com` scope or permanent
+message deletion. `gmail.modify` does allow mailbox reads and label-based
+organization, so the reauthorization must be treated as privileged.
 
 ## Migration
 

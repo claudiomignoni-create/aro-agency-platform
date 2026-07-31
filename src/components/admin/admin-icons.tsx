@@ -28,6 +28,10 @@ export function AlertTriangle(props: IconProps) {
   return <Icon {...props}><path d="M10.3 3.6 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.6a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></Icon>;
 }
 
+export function Archive(props: IconProps) {
+  return <Icon {...props}><rect height="5" rx="1" width="18" x="3" y="3" /><path d="M5 8v12h14V8M10 12h4" /></Icon>;
+}
+
 export function ArrowRight(props: IconProps) {
   return <Icon {...props}><path d="M5 12h14M13 6l6 6-6 6" /></Icon>;
 }
@@ -46,6 +50,14 @@ export function CalendarDays(props: IconProps) {
 
 export function ChevronDown(props: IconProps) {
   return <Icon {...props}><path d="m6 9 6 6 6-6" /></Icon>;
+}
+
+export function ChevronLeft(props: IconProps) {
+  return <Icon {...props}><path d="m15 18-6-6 6-6" /></Icon>;
+}
+
+export function ChevronRight(props: IconProps) {
+  return <Icon {...props}><path d="m9 18 6-6-6-6" /></Icon>;
 }
 
 export function CheckCircle(props: IconProps) {
@@ -104,6 +116,10 @@ export function MapPin(props: IconProps) {
   return <Icon {...props}><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></Icon>;
 }
 
+export function MoreHorizontal(props: IconProps) {
+  return <Icon {...props}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></Icon>;
+}
+
 export function Menu(props: IconProps) {
   return <Icon {...props}><path d="M4 6h16M4 12h16M4 18h16" /></Icon>;
 }
@@ -128,6 +144,10 @@ export function Plane(props: IconProps) {
   return <Icon {...props}><path d="M22 2 11 13" /><path d="m22 2-7 20-4-9-9-4Z" /></Icon>;
 }
 
+export function Paperclip(props: IconProps) {
+  return <Icon {...props}><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.4-9.4a4 4 0 0 1 5.7 5.7l-9.4 9.4a2 2 0 0 1-2.8-2.8l8.7-8.7" /></Icon>;
+}
+
 export function Plus(props: IconProps) {
   return <Icon {...props}><path d="M12 5v14M5 12h14" /></Icon>;
 }
@@ -142,6 +162,10 @@ export function Send(props: IconProps) {
 
 export function Star(props: IconProps) {
   return <Icon {...props}><path d="m12 2 3 6 6.5 1-4.7 4.6 1.1 6.4-5.9-3.1L6.1 20l1.1-6.4L2.5 9 9 8l3-6Z" /></Icon>;
+}
+
+export function Trash2(props: IconProps) {
+  return <Icon {...props}><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v5M14 11v5" /></Icon>;
 }
 
 export function Settings(props: IconProps) {

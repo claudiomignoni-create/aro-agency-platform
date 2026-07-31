@@ -12,7 +12,8 @@ import { getGoogleConnection } from "@/lib/communications/data";
 import {
   aroGoogleEmail,
   googleOAuthConfigured,
-  googleScopes
+  googleScopes,
+  hasGoogleMailboxScope
 } from "@/lib/communications/google-workspace";
 import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 
@@ -65,10 +66,12 @@ export default async function EmailSettingsPage() {
           <div className="admin-kv-grid">
             <span>Escopo ativo</span>
             <strong>{(connection?.scopes?.length ? connection.scopes : [...googleScopes]).join(", ")}</strong>
-            <span>Criar rascunhos</span><strong>Permitido pelo escopo compose</strong>
-            <span>Enviar mensagens</span><strong>Permitido pelo escopo compose</strong>
-            <span>Ler caixa de entrada</span><strong>Não autorizado</strong>
-            <span>Sincronizar respostas</span><strong>Não ativado</strong>
+            <span>Webmail Gmail</span>
+            <strong>{hasGoogleMailboxScope(connection?.scopes) ? "Autorizado" : "Reconexão necessária"}</strong>
+            <span>Criar rascunhos</span><strong>Permitido por gmail.modify</strong>
+            <span>Enviar mensagens</span><strong>Permitido por gmail.modify</strong>
+            <span>Ler caixa de entrada</span><strong>Permitido por gmail.modify</strong>
+            <span>Organizar mensagens</span><strong>Permitido sem exclusão permanente</strong>
           </div>
         </AdminSection>
       </div>

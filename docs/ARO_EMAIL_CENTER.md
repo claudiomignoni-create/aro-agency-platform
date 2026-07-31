@@ -2,11 +2,12 @@
 
 ## Purpose
 
-`/admin/email` is the administrative communication command center for ARO. It
-combines outbound email operations, presentation delivery, secure presentation
-access, model profile update requests and Google Workspace connection state.
+`/admin/email` is the administrative Gmail webmail for ARO. It combines the
+real connected mailbox, outbound operations, presentation delivery, secure
+presentation access and Google Workspace connection state.
 
-The dashboard never invents data. Empty databases render explicit empty states.
+The webmail never invents data. Unavailable or empty Gmail data renders an
+explicit operational state.
 
 ## Dashboard data
 
@@ -15,8 +16,8 @@ The dashboard never invents data. Empty databases render explicit empty states.
   snapshots linked to sent outbound emails.
 - **Apresentações realizadas:** distinct sent presentations linked to a
   recipient and share link.
-- **Respostas recebidas:** unavailable until ARO explicitly authorizes an
-  additional Gmail read scope.
+- **Respostas recebidas:** visible in the real Gmail thread after the ARO
+  account authorizes `gmail.modify`.
 - **Atividade:** outbound email state changes, presentation access events and
   model update request state, always identifying the recorded ARO sender.
 - **Desempenho:** presentation-link access, unopened presentation links, failed
@@ -38,11 +39,15 @@ No tracking pixel is used. No raw IP address is stored for analytics.
 
 ## Routes
 
-- `/admin/email`: dashboard.
-- `/admin/email/compose`: individual composer and preview.
+- `/admin/email` and `/admin/email/inbox`: Gmail Inbox.
+- `/admin/email/compose`: individual composer and presentation preview.
+- `/admin/email/thread/[threadId]`: complete sanitized Gmail thread.
+- `/admin/email/draft/[draftId]`: Gmail draft editor.
+- `/admin/email/trash`, `/starred`, `/label/[labelId]`: Gmail folders.
+- `/admin/email/scheduled`: ARO scheduled delivery records.
 - `/admin/email/activity`: recent operational timeline.
-- `/admin/email/drafts`: system and Gmail drafts.
-- `/admin/email/sent`: completed deliveries.
+- `/admin/email/drafts`: real Gmail drafts.
+- `/admin/email/sent`: real Gmail Sent threads.
 - `/admin/email/queue`: scheduled, queued, processing, retry and failed items.
 - `/admin/email/templates`: reusable templates.
 - `/admin/email/reports`: period analytics and model ranking.
@@ -63,11 +68,12 @@ link and outbound email transactionally.
 - Scheduled or queued real delivery remains restricted by the existing safe
   recipient gate.
 - Errors displayed to administrators are sanitized.
-- Gmail inbox and reply synchronization remain disabled.
+- Gmail Inbox, Sent, drafts, labels, thread reads and safe mailbox actions are
+  available through the server-only webmail layer.
+- Incremental synchronization with `users.watch`, Pub/Sub and `history.list`
+  remains a future phase.
 
 ## Migration
 
-All schema work remains inside
-`supabase/migrations/025_email_presentations_model_portal.sql` because migration
-025 has not yet been applied remotely. No migration in this branch is applied
-automatically.
+This webmail release adds no migration. The existing encrypted connection and
+outbound delivery schema is sufficient for direct Gmail API reads.

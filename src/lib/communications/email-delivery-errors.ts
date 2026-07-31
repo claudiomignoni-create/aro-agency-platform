@@ -1,6 +1,7 @@
 export const emailDeliveryErrorCodes = [
   "google-not-configured",
   "google-not-connected",
+  "google-scope-insufficient",
   "google-token-revoked",
   "google-refresh-unavailable",
   "external-send-disabled",
@@ -23,6 +24,7 @@ const messages: Record<EmailDeliveryErrorCode, string> = {
   "gmail-send-failed": "O Gmail não confirmou o envio. A mensagem foi marcada como falha e não será reenviada automaticamente.",
   "google-not-configured": "A Gmail API ainda não está configurada no ambiente.",
   "google-not-connected": "Nenhuma conta Gmail está conectada. Conecte a conta ARO antes de continuar.",
+  "google-scope-insufficient": "Reconecte o Gmail para habilitar Caixa de entrada e Enviados.",
   "google-refresh-unavailable": "A autorização do Gmail não pode ser renovada. Reconecte a conta ARO.",
   "google-token-revoked": "O acesso do Gmail foi revogado. Reconecte a conta ARO.",
   "invalid-recipient": "Informe um endereço de e-mail válido.",
@@ -75,6 +77,9 @@ export function classifyEmailDeliveryError(
   }
   if (/google workspace.*não conectado|google.*not.*connected|conexão google indisponível|conta gmail.*conectada/.test(normalized)) {
     return new EmailDeliveryError("google-not-connected");
+  }
+  if (/insufficient.*scope|gmail\.modify|scope.*insufficient|escopo.*insuficiente/.test(normalized)) {
+    return new EmailDeliveryError("google-scope-insufficient");
   }
   if (/queue.*not.*configured|cron.*not.*configured|processador.*agendamento/.test(normalized)) {
     return new EmailDeliveryError("queue-not-configured");

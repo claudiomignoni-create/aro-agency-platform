@@ -12,7 +12,8 @@ export function EmailOperationalBanner({
 }: {
   state: EmailOperationalState;
 }) {
-  const ready = state.gmailApiConfigured && state.accountConnected;
+  const ready =
+    state.gmailApiConfigured && state.accountConnected && state.mailboxAuthorized;
 
   return (
     <section
@@ -23,7 +24,7 @@ export function EmailOperationalBanner({
       <div className={styles.heading}>
         {ready ? <CheckCircle aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
         <span>
-          <strong>{ready ? "Integração Gmail conectada" : "Envio Gmail indisponível"}</strong>
+          <strong>{ready ? "Webmail Gmail conectado" : "Webmail Gmail indisponível"}</strong>
           {!ready
             ? "Salvar no sistema continua disponível. Conecte o Gmail antes de preparar ou enviar mensagens externas."
             : "O estado abaixo é verificado no servidor antes de cada operação."}
@@ -41,6 +42,10 @@ export function EmailOperationalBanner({
         <div>
           <dt>Conta</dt>
           <dd>{state.connectedEmail ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Caixa postal</dt>
+          <dd>{state.mailboxAuthorized ? "Autorizada" : "Reconexão necessária"}</dd>
         </div>
         <div>
           <dt>Envio externo</dt>
