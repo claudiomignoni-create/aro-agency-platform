@@ -5,7 +5,12 @@ import { isMissingSchemaError } from "@/lib/accounting-schema";
 import { getBuildShortSha } from "@/lib/build-info";
 import { getCommunicationSchemaState, getGoogleConnection } from "@/lib/communications/data";
 import { emailDeliveryErrorMessage } from "@/lib/communications/email-delivery-errors";
-import { aroGoogleEmail, googleOAuthConfigured, googleScopes } from "@/lib/communications/google-workspace";
+import {
+  aroGoogleEmail,
+  googleOAuthConfigured,
+  googleScopes,
+  hasGoogleMailboxScope
+} from "@/lib/communications/google-workspace";
 import { getEmailOperationalState } from "@/lib/communications/operational-state-server";
 import { createClient } from "@/lib/supabase/server";
 import { GoogleTestEmailForm } from "@/app/admin/settings/google-test-email-form";
@@ -232,7 +237,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <span className="eyebrow">Google Workspace</span>
               <h2>Gmail API</h2>
               <p className="muted">
-                Envia e cria rascunhos somente pela conta Claudio Mignoni &lt;{aroGoogleEmail}&gt;.
+                Webmail, rascunhos e envios usam somente a conta Claudio Mignoni &lt;{aroGoogleEmail}&gt;.
               </p>
             </div>
             <div className="settings-integration-status">
@@ -250,6 +255,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <strong>{emailOperationalState.schedulingOperational ? "Operacional" : "Não configurado"}</strong>
               <span>Escopos</span>
               <strong>{(googleConnection?.scopes?.length ? googleConnection.scopes : [...googleScopes]).join(", ")}</strong>
+              <span>Caixa postal</span>
+              <strong>{hasGoogleMailboxScope(googleConnection?.scopes) ? "Autorizada" : "Reconexão necessária"}</strong>
               <span>Token expira</span>
               <strong>{googleConnection?.token_expires_at ? new Date(googleConnection.token_expires_at).toLocaleString("pt-BR") : "—"}</strong>
               <span>Último uso</span>

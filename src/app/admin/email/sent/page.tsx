@@ -1,18 +1,12 @@
-import { EmailListPage } from "@/app/admin/email/email-list-page";
+import {
+  EmailWebmailPage,
+  type EmailWebmailSearchParams
+} from "@/app/admin/email/email-webmail-page";
 
 export default async function SentPage({
   searchParams
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<EmailWebmailSearchParams>;
 }) {
-  const query = await searchParams;
-  return (
-    <EmailListPage
-      active="/admin/email/sent"
-      description="Histórico de mensagens concluídas. Cada destinatário permanece registrado individualmente."
-      page={Number(query.page) || 1}
-      statuses={["sent"]}
-      title="Enviados"
-    />
-  );
+  return <EmailWebmailPage currentFolder="sent" searchParams={await searchParams} />;
 }

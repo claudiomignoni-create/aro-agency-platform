@@ -1,18 +1,12 @@
-import { EmailListPage } from "@/app/admin/email/email-list-page";
+import {
+  EmailWebmailPage,
+  type EmailWebmailSearchParams
+} from "@/app/admin/email/email-webmail-page";
 
 export default async function DraftsPage({
   searchParams
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<EmailWebmailSearchParams>;
 }) {
-  const query = await searchParams;
-  return (
-    <EmailListPage
-      active="/admin/email/drafts"
-      description="Mensagens ainda não enviadas, incluindo rascunhos locais e rascunhos criados no Gmail."
-      page={Number(query.page) || 1}
-      statuses={["draft"]}
-      title="Rascunhos"
-    />
-  );
+  return <EmailWebmailPage currentFolder="drafts" searchParams={await searchParams} />;
 }
