@@ -2,13 +2,18 @@ import { requireEnv } from "@/lib/env";
 import { createPkcePair, decryptSecret, encryptSecret, sanitizeError } from "@/lib/communications/security";
 
 export const aroGoogleEmail = "claudio@arolab.co";
+export const googleMailboxScope = "https://www.googleapis.com/auth/gmail.modify";
 
 export const googleScopes = [
   "openid",
   "email",
   "profile",
-  "https://www.googleapis.com/auth/gmail.compose"
+  googleMailboxScope
 ] as const;
+
+export function hasGoogleMailboxScope(scopes: string[] | null | undefined) {
+  return Boolean(scopes?.includes(googleMailboxScope));
+}
 
 export function googleOAuthRedirectConfigured() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -132,7 +137,7 @@ export async function fetchGoogleUserInfo(accessToken: string) {
   return (await response.json()) as GoogleUserInfo;
 }
 
-function base64Url(value: string) {
+export function base64Url(value: string) {
   return Buffer.from(value, "utf8")
     .toString("base64")
     .replace(/\+/g, "-")
@@ -160,35 +165,55 @@ export function encodeMimeHeader(value: string) {
     .join("\r\n ");
 }
 
-function rfc2822Message({
-  bodyHtml,
-  bodyText,
-  from,
-  subject,
-  to
-}: {
+export type GmailOutgoingMessage = {
+  bcc?: string;
   bodyHtml: string;
   bodyText: string;
-  from: string;
+  cc?: string;
+  inReplyTo?: string;
+  references?: string;
   subject: string;
+  threadId?: string;
   to: string;
-}) {
+};
+
+export function rfc2822Message({
+  bcc,
+  bodyHtml,
+  bodyText,
+  cc,
+  from,
+  inReplyTo,
+  references,
+  subject,
+  to
+}: GmailOutgoingMessage & { from: string }) {
   const boundary = `aro-${Date.now().toString(36)}`;
-  return [
+  const headers = [
     `From: Claudio Mignoni <${from}>`,
     `Reply-To: ${from}`,
     `To: ${to}`,
+    ...(cc ? [`Cc: ${cc}`] : []),
+    ...(bcc ? [`Bcc: ${bcc}`] : []),
     `Subject: ${encodeMimeHeader(subject)}`,
+    ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`] : []),
+    ...(references ? [`References: ${references}`] : []),
     "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`
+  ];
+
+  return [
+    ...headers,
     "",
     `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
     "",
     bodyText,
     "",
     `--${boundary}`,
     "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
     "",
     bodyHtml,
     "",
@@ -198,12 +223,13 @@ function rfc2822Message({
 
 export async function createGmailDraft(
   accessToken: string,
-  message: { bodyHtml: string; bodyText: string; subject: string; to: string }
+  message: GmailOutgoingMessage
 ) {
   const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
     body: JSON.stringify({
       message: {
-        raw: base64Url(rfc2822Message({ ...message, from: aroGoogleEmail }))
+        raw: base64Url(rfc2822Message({ ...message, from: aroGoogleEmail })),
+        ...(message.threadId ? { threadId: message.threadId } : {})
       }
     }),
     headers: {
@@ -220,13 +246,70 @@ export async function createGmailDraft(
   return (await response.json()) as { id: string; message?: { id?: string; threadId?: string } };
 }
 
+export async function updateGmailDraftMessage(
+  accessToken: string,
+  draftId: string,
+  message: GmailOutgoingMessage
+) {
+  const response = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/drafts/${encodeURIComponent(draftId)}`,
+    {
+      body: JSON.stringify({
+        id: draftId,
+        message: {
+          raw: base64Url(rfc2822Message({ ...message, from: aroGoogleEmail })),
+          ...(message.threadId ? { threadId: message.threadId } : {})
+        }
+      }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      method: "PUT"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gmail draft update failed: ${response.status}`);
+  }
+
+  return (await response.json()) as {
+    id: string;
+    message?: { id?: string; threadId?: string };
+  };
+}
+
+export async function sendExistingGmailDraft(
+  accessToken: string,
+  draftId: string
+) {
+  const response = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/drafts/send",
+    {
+      body: JSON.stringify({ id: draftId }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gmail draft send failed: ${response.status}`);
+  }
+
+  return (await response.json()) as { id: string; threadId?: string };
+}
+
 export async function sendGmailMessage(
   accessToken: string,
-  message: { bodyHtml: string; bodyText: string; subject: string; to: string }
+  message: GmailOutgoingMessage
 ) {
   const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     body: JSON.stringify({
-      raw: base64Url(rfc2822Message({ ...message, from: aroGoogleEmail }))
+      raw: base64Url(rfc2822Message({ ...message, from: aroGoogleEmail })),
+      ...(message.threadId ? { threadId: message.threadId } : {})
     }),
     headers: {
       Authorization: `Bearer ${accessToken}`,

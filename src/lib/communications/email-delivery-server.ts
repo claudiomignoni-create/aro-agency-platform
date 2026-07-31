@@ -7,8 +7,10 @@ import {
   encryptedGoogleTokenPayload,
   googleOAuthConfigured,
   refreshGoogleAccessToken,
+  sendExistingGmailDraft,
   sendGmailMessage,
-  shouldRefreshGoogleToken
+  shouldRefreshGoogleToken,
+  updateGmailDraftMessage
 } from "@/lib/communications/google-workspace";
 import {
   assertSafeRecipientForRealSend,
@@ -23,7 +25,7 @@ import {
   communicationsSchedulerConfigured,
   communicationsSchedulerEnabled
 } from "@/lib/communications/operational-state-server";
-import { decryptSecret } from "@/lib/communications/security";
+import { decryptSecret, encryptSecret } from "@/lib/communications/security";
 
 export type EmailDeliveryMode =
   | "gmail_draft"
@@ -38,6 +40,7 @@ type OutboundEmailRecord = {
   encrypted_payload: string | null;
   gmail_draft_id: string | null;
   gmail_message_id: string | null;
+  gmail_thread_id: string | null;
   id: string;
   idempotency_key: string;
   mode: EmailDeliveryMode;
@@ -58,16 +61,22 @@ type ConnectionRecord = {
 };
 
 export type SubmitOutboundEmailInput = {
+  bcc?: string | null;
   bodyHtml: string;
   bodyText: string;
+  cc?: string | null;
   createdBy: string;
+  gmailDraftId?: string | null;
   idempotencyKey: string;
+  inReplyTo?: string;
   mode: EmailDeliveryMode;
   recipientEmail: string;
   recipientName?: string | null;
   scheduledAt?: string | null;
   scheduledTimezone?: string | null;
   subject: string;
+  references?: string;
+  threadId?: string;
 };
 
 export type EmailDeliveryResult = {
@@ -84,14 +93,28 @@ export type QueueProcessingResult = {
 };
 
 const outboundEmailSelect =
-  "id, status, mode, recipient_email, subject, body_html, body_text, encrypted_payload, sender_connection_id, gmail_draft_id, gmail_message_id, attempt_count, idempotency_key, presentation_id, model_update_request_id";
+  "id, status, mode, recipient_email, subject, body_html, body_text, encrypted_payload, sender_connection_id, gmail_draft_id, gmail_message_id, gmail_thread_id, attempt_count, idempotency_key, presentation_id, model_update_request_id";
 
 function validRecipient(value: string) {
   return value.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
 }
 
+function recipientList(value: string | null | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function validateSubmission(input: SubmitOutboundEmailInput) {
   if (!validRecipient(input.recipientEmail)) {
+    throw new EmailDeliveryError("invalid-recipient");
+  }
+  if (
+    [...recipientList(input.cc), ...recipientList(input.bcc)].some(
+      (recipient) => !validRecipient(recipient)
+    )
+  ) {
     throw new EmailDeliveryError("invalid-recipient");
   }
   if (!input.subject.trim() || !input.bodyText.trim()) {
@@ -106,6 +129,30 @@ function statusForMode(mode: EmailDeliveryMode) {
   if (mode === "system_draft") return "draft";
   if (mode === "scheduled") return "scheduled";
   return "queued";
+}
+
+function encryptedDeliveryPayload(input: SubmitOutboundEmailInput) {
+  if (
+    !input.cc &&
+    !input.bcc &&
+    !input.threadId &&
+    !input.inReplyTo &&
+    !input.references
+  ) {
+    return null;
+  }
+
+  return encryptSecret(
+    JSON.stringify({
+      bcc: input.bcc ?? null,
+      bodyHtml: input.bodyHtml,
+      bodyText: input.bodyText,
+      cc: input.cc ?? null,
+      inReplyTo: input.inReplyTo ?? null,
+      references: input.references ?? null,
+      threadId: input.threadId ?? null
+    })
+  );
 }
 
 async function findByIdempotencyKey(idempotencyKey: string) {
@@ -130,11 +177,14 @@ async function insertFailureRecord(
       body_html: input.bodyHtml,
       body_text: input.bodyText,
       created_by: input.createdBy,
+      encrypted_payload: encryptedDeliveryPayload(input),
       error_code: code,
       error_message_sanitized: classifyEmailDeliveryError(
         new EmailDeliveryError(code)
       ).message,
       failed_at: new Date().toISOString(),
+      gmail_draft_id: input.gmailDraftId ?? null,
+      gmail_thread_id: input.threadId ?? null,
       idempotency_key: input.idempotencyKey,
       mode: input.mode,
       recipient_email: input.recipientEmail,
@@ -188,6 +238,9 @@ export async function submitOutboundEmail(
         body_html: input.bodyHtml,
         body_text: input.bodyText,
         created_by: input.createdBy,
+        encrypted_payload: encryptedDeliveryPayload(input),
+        gmail_draft_id: input.gmailDraftId ?? null,
+        gmail_thread_id: input.threadId ?? null,
         idempotency_key: input.idempotencyKey,
         mode: input.mode,
         recipient_email: input.recipientEmail,
@@ -227,17 +280,46 @@ export async function submitOutboundEmail(
 
 function resolveEmailContent(email: OutboundEmailRecord) {
   if (!email.encrypted_payload) {
-    return { bodyHtml: email.body_html, bodyText: email.body_text };
+    return {
+      bcc: null,
+      bodyHtml: email.body_html,
+      bodyText: email.body_text,
+      cc: null,
+      inReplyTo: null,
+      references: null,
+      threadId: email.gmail_thread_id
+    };
   }
 
   const decrypted = decryptSecret(email.encrypted_payload);
   if (!decrypted) throw new Error("Encrypted email payload is unavailable");
-  const payload = JSON.parse(decrypted) as { bodyHtml?: unknown; bodyText?: unknown };
+  const payload = JSON.parse(decrypted) as {
+    bcc?: unknown;
+    bodyHtml?: unknown;
+    bodyText?: unknown;
+    cc?: unknown;
+    inReplyTo?: unknown;
+    references?: unknown;
+    threadId?: unknown;
+  };
   if (typeof payload.bodyHtml !== "string" || typeof payload.bodyText !== "string") {
     throw new Error("Encrypted email payload is invalid");
   }
 
-  return { bodyHtml: payload.bodyHtml, bodyText: payload.bodyText };
+  return {
+    bcc: typeof payload.bcc === "string" ? payload.bcc : null,
+    bodyHtml: payload.bodyHtml,
+    bodyText: payload.bodyText,
+    cc: typeof payload.cc === "string" ? payload.cc : null,
+    inReplyTo:
+      typeof payload.inReplyTo === "string" ? payload.inReplyTo : null,
+    references:
+      typeof payload.references === "string" ? payload.references : null,
+    threadId:
+      typeof payload.threadId === "string"
+        ? payload.threadId
+        : email.gmail_thread_id
+  };
 }
 
 async function getQueueAccessToken(connectionId: string) {
@@ -394,9 +476,14 @@ async function deliverClaimedEmail(
 
     if (email.mode === "gmail_draft") {
       const draft = await createGmailDraft(accessToken, {
+        bcc: content.bcc ?? undefined,
         bodyHtml: content.bodyHtml,
         bodyText: content.bodyText,
+        cc: content.cc ?? undefined,
+        inReplyTo: content.inReplyTo ?? undefined,
+        references: content.references ?? undefined,
         subject: email.subject,
+        threadId: content.threadId ?? undefined,
         to: email.recipient_email
       });
       const { data, error } = await admin
@@ -420,12 +507,30 @@ async function deliverClaimedEmail(
     }
 
     assertSafeRecipientForRealSend(email.recipient_email);
-    const sent = await sendGmailMessage(accessToken, {
+    for (const recipient of [
+      ...recipientList(content.cc),
+      ...recipientList(content.bcc)
+    ]) {
+      assertSafeRecipientForRealSend(recipient);
+    }
+    const outgoing = {
+      bcc: content.bcc ?? undefined,
       bodyHtml: content.bodyHtml,
       bodyText: content.bodyText,
+      cc: content.cc ?? undefined,
+      inReplyTo: content.inReplyTo ?? undefined,
+      references: content.references ?? undefined,
       subject: email.subject,
+      threadId: content.threadId ?? undefined,
       to: email.recipient_email
-    });
+    };
+    const sent = email.gmail_draft_id
+      ? await updateGmailDraftMessage(
+          accessToken,
+          email.gmail_draft_id,
+          outgoing
+        ).then(() => sendExistingGmailDraft(accessToken, email.gmail_draft_id!))
+      : await sendGmailMessage(accessToken, outgoing);
     const sentAt = new Date().toISOString();
     const { data, error } = await admin
       .from("outbound_emails")

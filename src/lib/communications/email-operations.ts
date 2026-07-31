@@ -8,6 +8,7 @@ export type EmailOperationalState = {
   gmailApiConfigured: boolean;
   lastErrorCode: EmailDeliveryErrorCode | null;
   lastErrorMessage: string | null;
+  mailboxAuthorized: boolean;
   schedulingOperational: boolean;
 };
 
@@ -18,6 +19,7 @@ export type EmailOperationalInputs = {
   externalOperationsAllowed?: boolean;
   externalSendEnabled: boolean;
   gmailApiConfigured: boolean;
+  mailboxAuthorized?: boolean;
   schedulerEnabled: boolean;
   schedulerSecretConfigured: boolean;
 };
@@ -29,6 +31,7 @@ export function resolveEmailOperationalState({
   externalOperationsAllowed = true,
   externalSendEnabled,
   gmailApiConfigured,
+  mailboxAuthorized = false,
   schedulerEnabled,
   schedulerSecretConfigured
 }: EmailOperationalInputs): EmailOperationalState {
@@ -50,6 +53,7 @@ export function resolveEmailOperationalState({
       typeof connectionLastError === "string" && connectionLastError.trim()
         ? connectionLastError.trim()
         : null,
+    mailboxAuthorized,
     schedulingOperational
   };
 }
@@ -60,7 +64,9 @@ export function modeIsAvailable(
 ) {
   if (mode === "system_draft") return true;
   if (!state.externalOperationsAllowed) return false;
-  if (!state.gmailApiConfigured || !state.accountConnected) return false;
+  if (!state.gmailApiConfigured || !state.accountConnected || !state.mailboxAuthorized) {
+    return false;
+  }
   if (mode === "scheduled") return state.schedulingOperational;
   return mode === "gmail_draft" || mode === "send_now";
 }

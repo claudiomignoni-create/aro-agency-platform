@@ -8,6 +8,7 @@ import {
   exchangeGoogleCode,
   fetchGoogleUserInfo,
   googleScopes,
+  hasGoogleMailboxScope,
   revokeGoogleToken,
   safeGoogleError
 } from "@/lib/communications/google-workspace";
@@ -35,6 +36,11 @@ export async function GET(request: Request) {
     if (payload.profileId !== profile.id) throw new Error("OAuth profile mismatch");
 
     const token = await exchangeGoogleCode(code, verifier);
+    const grantedScopes = token.scope?.split(" ").filter(Boolean) ?? [];
+    if (!hasGoogleMailboxScope(grantedScopes)) {
+      await revokeGoogleToken(token.access_token);
+      throw new Error("Google OAuth insufficient scope: gmail.modify");
+    }
     const userInfo = await fetchGoogleUserInfo(token.access_token);
     const connectedEmail = userInfo.email.toLowerCase();
     const supabase = await createClient();
@@ -61,7 +67,7 @@ export async function GET(request: Request) {
           encrypted.encrypted_refresh_token ?? existingConnection?.encrypted_refresh_token ?? null,
         last_error: null,
         profile_id: profile.id,
-        scopes: token.scope?.split(" ") ?? [...googleScopes],
+        scopes: grantedScopes.length ? grantedScopes : [...googleScopes],
         status: "connected",
         token_expires_at: encrypted.token_expires_at
       },

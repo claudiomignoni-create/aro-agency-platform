@@ -5,6 +5,7 @@ import {
   aroGoogleEmail,
   encryptedGoogleTokenPayload,
   googleOAuthConfigured,
+  hasGoogleMailboxScope,
   refreshGoogleAccessToken,
   shouldRefreshGoogleToken
 } from "@/lib/communications/google-workspace";
@@ -15,6 +16,7 @@ type GoogleConnectionRecord = {
   encrypted_access_token: string | null;
   encrypted_refresh_token: string | null;
   id: string;
+  scopes: string[] | null;
   status: string;
   token_expires_at: string | null;
 };
@@ -27,7 +29,7 @@ export async function getGoogleConnectionForDelivery(profileId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("google_workspace_connections")
-    .select("id, encrypted_access_token, encrypted_refresh_token, connected_email, status, token_expires_at")
+    .select("id, encrypted_access_token, encrypted_refresh_token, connected_email, scopes, status, token_expires_at")
     .eq("profile_id", profileId)
     .maybeSingle();
 
@@ -47,6 +49,16 @@ export async function getGoogleConnectionForDelivery(profileId: string) {
   }
   if (connection.connected_email !== aroGoogleEmail) {
     throw new EmailDeliveryError("google-not-connected");
+  }
+
+  return connection;
+}
+
+export async function getGoogleConnectionForMailbox(profileId: string) {
+  const connection = await getGoogleConnectionForDelivery(profileId);
+
+  if (!hasGoogleMailboxScope(connection.scopes)) {
+    throw new EmailDeliveryError("google-scope-insufficient");
   }
 
   return connection;
@@ -103,6 +115,11 @@ export async function getUsableGoogleAccessToken(profileId: string) {
     accessToken,
     connectionId: connection.id
   };
+}
+
+export async function getUsableGoogleMailboxAccessToken(profileId: string) {
+  await getGoogleConnectionForMailbox(profileId);
+  return getUsableGoogleAccessToken(profileId);
 }
 
 export function externalEmailSendEnabled() {

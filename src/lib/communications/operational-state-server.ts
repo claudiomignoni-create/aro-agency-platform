@@ -12,7 +12,10 @@ import {
 import {
   externalEmailSendEnabled
 } from "@/lib/communications/google-server";
-import { googleOAuthConfigured } from "@/lib/communications/google-workspace";
+import {
+  googleOAuthConfigured,
+  hasGoogleMailboxScope
+} from "@/lib/communications/google-workspace";
 
 export function communicationsSchedulerConfigured() {
   return Boolean(process.env.COMMUNICATIONS_CRON_SECRET);
@@ -33,6 +36,7 @@ export async function getEmailOperationalState(
     externalOperationsAllowed: true,
     externalSendEnabled: externalEmailSendEnabled(),
     gmailApiConfigured: googleOAuthConfigured(),
+    mailboxAuthorized: hasGoogleMailboxScope(connection?.scopes),
     schedulerEnabled: communicationsSchedulerEnabled(),
     schedulerSecretConfigured: communicationsSchedulerConfigured()
   });

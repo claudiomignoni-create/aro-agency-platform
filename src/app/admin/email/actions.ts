@@ -114,8 +114,10 @@ export async function createOutboundEmailAction(formData: FormData) {
   let result: Awaited<ReturnType<typeof submitOutboundEmail>>;
   try {
     result = await submitOutboundEmail({
+      bcc: textValue(formData, "bcc") || null,
       bodyHtml: htmlFromText(bodyText),
       bodyText,
+      cc: textValue(formData, "cc") || null,
       createdBy: profile.id,
       idempotencyKey:
         textValue(formData, "idempotency_key") || randomToken(24),
